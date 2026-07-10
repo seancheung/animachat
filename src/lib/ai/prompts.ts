@@ -406,6 +406,18 @@ export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel)
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho responds next?` }] };
 }
 
+/** Resolve @mentions in a user message to character ids (partial names & nicknames allowed). */
+export function buildMentionResolveRequest(ctx: ChatContext, text: string): BuiltRequest {
+  const candidates = ctx.characters.map((c) => `"${c.id}" = ${c.name}`).join("\n");
+  const system =
+    `You route a group roleplay chat. The user's message addresses one or more characters with @mentions — ` +
+    `partial names and nicknames count, as long as it is clear who is meant.\n` +
+    `Characters:\n${candidates}\n` +
+    `Respond with ONLY a JSON object listing who should reply, in reply order: {"speakers": ["<character id>", ...]}. ` +
+    `Omit mentions that match no character. If no mention clearly matches anyone, respond {"speakers": []}.`;
+  return { system, messages: [{ role: "user", content: `Message:\n${text}\n\nWho is addressed?` }] };
+}
+
 export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
   const window = verbatimWindow(ctx, model);
   const system = [

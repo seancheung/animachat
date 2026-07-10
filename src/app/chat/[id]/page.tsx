@@ -12,7 +12,6 @@ import {
   GitFork,
   MapPin,
   Maximize,
-  MessageCircle,
   Rewind,
   ScrollText,
   Settings2,
@@ -228,7 +227,11 @@ export default function ChatPage() {
         <Textarea
           ref={inputRef}
           className="flex-1 h-16 min-h-16 resize-none"
-          placeholder={`Write as ${personaName}… (*asterisks* for actions)`}
+          placeholder={
+            characters.length > 1
+              ? `Write as ${personaName}… (*asterisks* for actions, @name/@all to address characters)`
+              : `Write as ${personaName}… (*asterisks* for actions)`
+          }
           value={input}
           onChange={setInput}
           onKeyDown={(e) => {
@@ -263,12 +266,6 @@ export default function ChatPage() {
             <ScrollText /> Narrate
           </Button>
         )}
-        {characters.length > 1 &&
-          characters.map((c) => (
-            <Button key={c.id} variant="secondary" size="sm" disabled={busy} title={`Make ${c.name} speak`} onClick={() => generate({ mode: "character", characterId: c.id })}>
-              <MessageCircle /> {c.name}
-            </Button>
-          ))}
         <div className="flex-1" />
         <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
           {muted ? <VolumeX /> : <Volume2 />}
