@@ -157,6 +157,7 @@ const characterFromRow = (r: Row): Character => ({
   personality: r.personality,
   greeting: r.greeting,
   exampleDialogue: r.example_dialogue,
+  imagePrompt: r.image_prompt,
   sprites: J.parse(r.sprites, {}),
   customExpressions: J.parse(r.custom_expressions, []),
   typingSfxAsset: r.typing_sfx_asset,
@@ -182,6 +183,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     personality: "",
     greeting: "",
     exampleDialogue: "",
+    imagePrompt: "",
     sprites: {},
     customExpressions: [],
     typingSfxAsset: null,
@@ -192,10 +194,10 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
   });
   getDb()
     .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,personality,greeting,example_dialogue,sprites,custom_expressions,typing_sfx_asset,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@personality,@greeting,@example,@sprites,@custom,@sfx,@created,@updated)
+      `INSERT INTO characters (id,name,avatar_asset,personality,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,created_at,updated_at)
+       VALUES (@id,@name,@avatar,@personality,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, personality=@personality, greeting=@greeting,
-         example_dialogue=@example, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx, updated_at=@updated`
+         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -204,6 +206,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
       personality: m.personality,
       greeting: m.greeting,
       example: m.exampleDialogue,
+      imagePrompt: m.imagePrompt,
       sprites: J.str(m.sprites),
       custom: J.str(m.customExpressions),
       sfx: m.typingSfxAsset,
@@ -266,6 +269,7 @@ const locationFromRow = (r: Row): Location => ({
   id: r.id,
   name: r.name,
   description: r.description,
+  imagePrompt: r.image_prompt,
   artworkAsset: r.artwork_asset,
   bgmAsset: r.bgm_asset,
   ambientAsset: r.ambient_asset,
@@ -288,6 +292,7 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
     id: existing?.id ?? x.id ?? uid(),
     name: "Unnamed place",
     description: "",
+    imagePrompt: "",
     artworkAsset: null,
     bgmAsset: null,
     ambientAsset: null,
@@ -298,14 +303,15 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
   });
   getDb()
     .prepare(
-      `INSERT INTO locations (id,name,description,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
-       VALUES (@id,@name,@description,@art,@bgm,@amb,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
+      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
+       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       description: m.description,
+      imagePrompt: m.imagePrompt,
       art: m.artworkAsset,
       bgm: m.bgmAsset,
       amb: m.ambientAsset,
@@ -325,6 +331,7 @@ const sceneFromRow = (r: Row): Scene => ({
   id: r.id,
   name: r.name,
   setup: r.setup,
+  imagePrompt: r.image_prompt,
   locationId: r.location_id,
   artworkAsset: r.artwork_asset,
   bgmAsset: r.bgm_asset,
@@ -348,6 +355,7 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
     id: existing?.id ?? x.id ?? uid(),
     name: "Unnamed scene",
     setup: "",
+    imagePrompt: "",
     locationId: null,
     artworkAsset: null,
     bgmAsset: null,
@@ -359,14 +367,15 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
   });
   getDb()
     .prepare(
-      `INSERT INTO scenes (id,name,setup,location_id,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
-       VALUES (@id,@name,@setup,@loc,@art,@bgm,@amb,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
+      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
+       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       setup: m.setup,
+      imagePrompt: m.imagePrompt,
       loc: m.locationId,
       art: m.artworkAsset,
       bgm: m.bgmAsset,

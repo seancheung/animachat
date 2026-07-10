@@ -31,6 +31,8 @@ export interface Character {
   personality: string;
   greeting: string;
   exampleDialogue: string;
+  /** text-to-image prompt for the neutral sprite */
+  imagePrompt: string;
   /** emotion name -> asset id */
   sprites: Record<string, string>;
   customExpressions: CustomExpression[];
@@ -51,6 +53,8 @@ export interface Location {
   id: string;
   name: string;
   description: string;
+  /** text-to-image prompt for the background artwork */
+  imagePrompt: string;
   artworkAsset: string | null;
   bgmAsset: string | null;
   ambientAsset: string | null;
@@ -62,6 +66,8 @@ export interface Scene {
   id: string;
   name: string;
   setup: string;
+  /** text-to-image prompt for the background artwork */
+  imagePrompt: string;
   locationId: string | null;
   artworkAsset: string | null;
   bgmAsset: string | null;

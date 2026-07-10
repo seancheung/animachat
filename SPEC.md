@@ -26,6 +26,7 @@ All world-building entities are reusable across chats.
 
 ### Character
 - Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), personality, greeting, example dialogue.
+- **Image prompt:** a stored text-to-image prompt describing the neutral sprite (co-writable by the AI assistant; for use with external image generators).
 - Avatars are used in the message list / character cards only — never on the VN stage.
 - **Expression sprite set** (**2:3** portrait):
   - ~12 predefined common expressions: `neutral, happy, sad, angry, surprised, embarrassed, thoughtful, fearful, disgusted, smug, excited, tired`. Shown as labeled upload slots; all optional, `neutral` is the expected fallback.
@@ -39,10 +40,12 @@ All world-building entities are reusable across chats.
 ### Location
 - Reusable place description.
 - Optional **artwork** (chat background, **16:9**), optional **BGM**, optional **ambient SFX loop** (rain, tavern chatter…) mixed under the BGM.
+- **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
 
 ### Scene
 - A situation/setup; optionally references a location.
 - Optional **artwork** (**16:9**), optional **BGM**, optional **ambient SFX loop**.
+- **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
 - **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced).
 
 ### Story
