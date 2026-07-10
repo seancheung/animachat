@@ -226,6 +226,8 @@ export interface Settings {
   chunkThreshold: number;
   outputReserve: number;
   typingSfxEnabled: boolean;
+  /** backdrop blur behind the floating chat panel */
+  chatPanelBlur: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -238,6 +240,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chunkThreshold: 3000,
   outputReserve: 2000,
   typingSfxEnabled: true,
+  chatPanelBlur: true,
 };
 
 export const EMOTIONS = [

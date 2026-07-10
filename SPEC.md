@@ -65,6 +65,7 @@ All world-building entities are reusable across chats.
   - **Casual** — no story, scene, or location.
 - Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[charN_name]` placeholders) and cannot be edited afterwards.
 - Any number of lorebooks can be attached.
+- **Greetings option at creation** (default on): characters open the chat with their greeting messages; disable it to speak first yourself.
 - Per-chat settings: model and narrator on/off are editable after creation; language and POV are fixed at creation and shown read-only in chat settings.
 
 ### Placeholder tags
@@ -127,7 +128,7 @@ Optional per chat (most useful with a story/scene attached).
 
 ## Visual-novel presentation
 
-- **Layout:** the default chat view is the VN stage on the **left** and the chat panel on the **right** (stacked vertically on narrow screens).
+- **Layout:** the default chat view is a full-bleed VN stage (sprites centered) with the chat panel **floating over it on the right** as a translucent sidebar; its backdrop blur is a global setting (default on). On narrow screens the panel spans the full width.
 - **Stage:** the speaking character's sprite displayed large. With multiple characters, **all** participants' sprites are on stage; the current speaker is at full brightness, others dimmed.
 - **Expression selection:** each character message carries an emotion tag chosen by the AI (see AI output structure). Resolution: exact match → `neutral` → placeholder sprite (avatars are never shown on stage). Tags are stored per message, so scrolling history and swiping alternatives replay expressions. The tag is user-correctable when editing a message.
 - **Background:** active scene/location artwork (precedence rules above).

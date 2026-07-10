@@ -294,6 +294,14 @@ export default function SettingsPage() {
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
+            <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel">
+              <Switch
+                className="h-8"
+                value={settings.chatPanelBlur}
+                onChange={(v) => patchSettings({ chatPanelBlur: v })}
+                label={settings.chatPanelBlur ? "Enabled" : "Disabled"}
+              />
+            </Field>
           </div>
         </section>
 

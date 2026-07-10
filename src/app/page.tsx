@@ -55,6 +55,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     locationId: null,
     lorebookIds: [],
     narratorEnabled: false,
+    greetings: true,
     modelId: null,
     language: "",
     pov: "",
@@ -220,6 +221,9 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           </Field>
           <Field label="Narrator" hint="narration & suggested actions">
             <Switch value={form.narratorEnabled} onChange={(v) => setForm({ ...form, narratorEnabled: v })} label={form.narratorEnabled ? "Enabled" : "Disabled"} className="h-8" />
+          </Field>
+          <Field label="Greetings" hint="disable to speak first yourself">
+            <Switch value={form.greetings} onChange={(v) => setForm({ ...form, greetings: v })} label={form.greetings ? "Characters open the chat" : "You speak first"} className="h-8" />
           </Field>
           <Field label="Lorebooks">
             <div className="flex flex-wrap gap-1.5">

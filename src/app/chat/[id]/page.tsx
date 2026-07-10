@@ -294,7 +294,7 @@ export default function ChatPage() {
           {streaming.role === "narrator" ? "Narrator" : characters.find((c) => c.id === streaming.characterId)?.name}
           {streaming.emotion && <Badge variant="secondary" rounded>{streaming.emotion}</Badge>}
         </div>
-        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "bg-base-100")}>
+        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "bg-base-100/85")}>
           <MessageText text={streaming.text} streaming />
         </div>
       </div>
@@ -302,9 +302,9 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="h-full flex flex-col lg:flex-row">
-      {/* VN stage — left column on wide screens */}
-      <div className="h-64 md:h-80 lg:h-full lg:w-[44%] xl:w-[46%] shrink-0 lg:border-r border-b lg:border-b-0 border-base-400">
+    <div className="h-full relative">
+      {/* full-bleed VN stage, sprites centered */}
+      <div className="absolute inset-0">
         <VNStage
           characters={characters}
           emotions={emotions}
@@ -314,9 +314,14 @@ export default function ChatPage() {
         />
       </div>
 
-      {/* chat panel — right column */}
-      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-      <div className="px-4 py-1.5 border-b border-base-400 bg-base-100 flex items-center gap-2 text-sm">
+      {/* chat panel — floats over the stage on the right, translucent */}
+      <div
+        className={cn(
+          "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col bg-base-200/45 sm:border-l border-base-400/60",
+          settings?.chatPanelBlur !== false && "backdrop-blur-md"
+        )}
+      >
+      <div className="px-4 py-1.5 border-b border-base-400/60 flex items-center gap-2 text-sm">
         <Button variant="ghost" size="sm" shape="square" onClick={() => router.push("/")}><ArrowLeft /></Button>
         <span className="font-medium truncate">{chat.title}</span>
         {data.stage?.scene && <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>}
@@ -364,7 +369,7 @@ export default function ChatPage() {
         {streamingRow}
       </div>
 
-      <div className="px-4 py-3 border-t border-base-400 bg-base-100">{inputBar}</div>
+      <div className="px-4 py-3 border-t border-base-400/60">{inputBar}</div>
       </div>
 
       {/* -------- fullscreen VN mode -------- */}

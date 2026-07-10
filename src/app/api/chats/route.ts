@@ -70,6 +70,9 @@ export const POST = handler(async (req: Request) => {
     tags: b.tags ?? [],
   });
 
+  // greetings can be disabled at creation so the user speaks first (default on)
+  if (b.greetings === false) return ok(chat);
+
   // initial stage values for greeting placeholder substitution
   const persona = chat.personaId ? getPersona(chat.personaId) : null;
   const story = storyId ? getStory(storyId) : null;
