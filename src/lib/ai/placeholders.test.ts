@@ -17,7 +17,7 @@ describe("substitutePlaceholders", () => {
   });
 
   it("resolves indexed character names, 1-based", () => {
-    expect(substitutePlaceholders("[char_1_name] and [char_2_name]", values)).toBe("Mira and Kael");
+    expect(substitutePlaceholders("[char1_name] and [char2_name]", values)).toBe("Mira and Kael");
   });
 
   it("treats persona_name as an alias of user_name", () => {
@@ -29,7 +29,7 @@ describe("substitutePlaceholders", () => {
   });
 
   it("uses neutral fallbacks for unresolvable tags", () => {
-    expect(substitutePlaceholders("[char_3_name]", values)).toBe("another character");
+    expect(substitutePlaceholders("[char3_name]", values)).toBe("another character");
     expect(substitutePlaceholders("[loc_name]", { characterNames: [] })).toBe("the current place");
     expect(substitutePlaceholders("[scene_name]", { characterNames: [] })).toBe("the current scene");
     expect(substitutePlaceholders("[story_name]", { characterNames: [] })).toBe("the story");
@@ -38,6 +38,7 @@ describe("substitutePlaceholders", () => {
 
   it("leaves unknown bracketed text alone", () => {
     expect(substitutePlaceholders("[something_else] stays", values)).toBe("[something_else] stays");
+    expect(substitutePlaceholders("[char_2_name] is no longer a tag", values)).toBe("[char_2_name] is no longer a tag");
   });
 
   it("returns text without brackets untouched", () => {

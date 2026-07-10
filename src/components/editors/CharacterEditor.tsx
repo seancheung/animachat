@@ -15,7 +15,7 @@ import { EMOTIONS, type Character, type CustomExpression } from "@/lib/types";
 import { EditorShell, useEditor } from "./SimpleEditors";
 
 const PLACEHOLDER_HINT =
-  "placeholders work here: [char_name], [char_2_name], [user_name], [loc_name], [scene_name], [story_name]";
+  "placeholders work here: [char_name], [char2_name], [user_name], [loc_name], [scene_name], [story_name]";
 
 function RelationshipsCard({ characterId }: { characterId: string }) {
   const { data, mutate } = useSWR<

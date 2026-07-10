@@ -29,7 +29,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 - **Emotion tagging is decoupled from sprite availability**: models always tag from the full vocabulary; sprite resolution (tag → neutral → placeholder) happens at render time only.
 - **Messages hold variants (swipes)**: regeneration appends a variant; edits modify the active variant in place (no branching). Edits/rewinds that touch summarized ranges must call `invalidateSummary`.
 - **Chat modes** (`story`/`scene`/`location`/`casual`) are fixed at creation and enforced server-side: scene switching only in story mode and only within the story's scenes; locations are never switchable.
-- **Character order in a chat is fixed at creation** — it drives `[char_N_name]` placeholder resolution.
+- **Character order in a chat is fixed at creation** — it drives `[charN_name]` placeholder resolution.
 - **Model resolution order**: per-character (group chats) → per-chat → per-task (`taskModels`) → global default.
 - **Asset & location/scene precedence**: location assets win over scene assets when present, falling back per-asset.
 

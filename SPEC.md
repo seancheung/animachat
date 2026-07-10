@@ -63,7 +63,7 @@ All world-building entities are reusable across chats.
   - **Scene** — one scene is required and stays fixed; no scene or location switching.
   - **Location** — one location is required and stays fixed; no switching.
   - **Casual** — no story, scene, or location.
-- Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[char_N_name]` placeholders) and cannot be edited afterwards.
+- Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[charN_name]` placeholders) and cannot be edited afterwards.
 - Any number of lorebooks can be attached.
 - Per-chat settings: model, language, POV, narrator on/off — all editable after creation (language/POV changes affect only new messages).
 
@@ -71,7 +71,7 @@ All world-building entities are reusable across chats.
 
 Sheets (character/persona/location/scene/story/lorebook text fields) may contain placeholder tags, replaced with actual chat values at injection time (prompt assembly and greeting insertion):
 
-- `[char_name]` — first character's name; `[char_N_name]` — Nth character (1-based; `[char_1_name]` = `[char_name]`)
+- `[char_name]` — first character's name; `[charN_name]` — Nth character (1-based; `[char1_name]` = `[char_name]`)
 - `[user_name]` / `[persona_name]` — active persona's name
 - `[loc_name]`, `[scene_name]`, `[story_name]` — active location/scene/story names
 - Case-insensitive. Unresolvable tags get a neutral fallback ("another character", "the current place", …) so the AI never sees broken brackets. Unknown bracketed text is left as-is.

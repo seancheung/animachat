@@ -3,7 +3,7 @@
  * Replaced with actual chat values at injection time (prompt assembly, greeting insertion):
  *
  *   [char_name]              first character's name
- *   [char_N_name]            Nth character's name (1-based; char_1_name == char_name)
+ *   [charN_name]             Nth character's name (1-based; char1_name == char_name)
  *   [user_name] / [persona_name]  the active persona's name
  *   [loc_name]               active location name
  *   [scene_name]             active scene name
@@ -31,7 +31,7 @@ const FALLBACKS = {
 export function substitutePlaceholders(text: string, v: PlaceholderValues): string {
   if (!text || !text.includes("[")) return text;
   return text.replace(
-    /\[(char(?:_(\d+))?_name|user_name|persona_name|loc_name|scene_name|story_name)\]/gi,
+    /\[(char(\d*)_name|user_name|persona_name|loc_name|scene_name|story_name)\]/gi,
     (_m, tag: string, n?: string) => {
       const t = tag.toLowerCase();
       if (t.startsWith("char")) {
