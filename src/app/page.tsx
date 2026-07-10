@@ -4,8 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
-  ArrowDown,
-  ArrowUp,
   BookOpen,
   Clapperboard,
   Coffee,
@@ -26,6 +24,7 @@ import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
+import Toggle, { ToggleGroup } from "@/components/ui/toggle";
 import { api, assetUrl } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { POV_LABELS, type ChatMode } from "@/lib/types";
@@ -73,14 +72,6 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     const cur: string[] = form.lorebookIds;
     setForm({ ...form, lorebookIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
-  const moveCharacter = (i: number, d: number) => {
-    const next = [...form.characterIds];
-    const j = i + d;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
-    setForm({ ...form, characterIds: next });
-  };
-
   const story = stories?.find((s) => s.id === form.storyId);
   const storyScenes: any[] = story
     ? story.sceneIds.map((sid: string) => scenes?.find((s) => s.id === sid)).filter(Boolean)
@@ -90,12 +81,14 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     (form.mode === "story" && form.storyId) ||
     (form.mode === "scene" && form.sceneId) ||
     (form.mode === "location" && form.locationId);
-  const charById = (id: string) => characters?.find((c) => c.id === id);
 
   return (
     <Modal open={open} onClose={onClose} title="New chat" wide>
       <div className="space-y-4">
-        <Field label="Characters" hint="pick one or more — multiple = group chat with orchestrated turns">
+        <Field
+          label="Characters"
+          hint="pick one or more in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
+        >
           <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
             {characters?.map((c) => {
               const idx = form.characterIds.indexOf(c.id);
@@ -104,7 +97,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                   key={c.id}
                   className={cn(
                     "panel overflow-hidden text-left transition-colors relative cursor-pointer",
-                    idx !== -1 && "border-primary-500 ring-1 ring-primary-500"
+                    idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
                   )}
                   onClick={() => toggleCharacter(c.id)}
                 >
@@ -113,11 +106,15 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                       {idx + 1}
                     </span>
                   )}
-                  {c.sprites?.neutral || c.avatarAsset ? (
+                  {c.avatarAsset || c.sprites?.neutral ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={assetUrl(c.sprites?.neutral ?? c.avatarAsset)!} alt="" className="w-full aspect-[2/3] object-cover" />
+                    <img
+                      src={assetUrl(c.avatarAsset ?? c.sprites?.neutral)!}
+                      alt=""
+                      className={cn("w-full aspect-square object-cover", !c.avatarAsset && "object-top")}
+                    />
                   ) : (
-                    <div className="w-full aspect-[2/3] flex items-center justify-center text-content-300 bg-base-200"><VenetianMask size={28} /></div>
+                    <div className="w-full aspect-square flex items-center justify-center text-content-300 bg-base-200"><VenetianMask size={28} /></div>
                   )}
                   <div className="text-xs p-1.5 truncate">{c.name}</div>
                 </button>
@@ -129,38 +126,18 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           </div>
         </Field>
 
-        {form.characterIds.length > 1 && (
-          <Field
-            label="Character order"
-            hint="[char_name] resolves to #1, [char_2_name] to #2… — fixed once the chat is created"
-          >
-            <div className="space-y-1">
-              {form.characterIds.map((id: string, i: number) => (
-                <div key={id} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1 text-sm">
-                  <span className="text-content-300 w-5">{i + 1}.</span>
-                  <span className="flex-1">{charById(id)?.name ?? "?"}</span>
-                  <Button variant="ghost" size="sm" shape="square" onClick={() => moveCharacter(i, -1)}><ArrowUp /></Button>
-                  <Button variant="ghost" size="sm" shape="square" onClick={() => moveCharacter(i, 1)}><ArrowDown /></Button>
-                </div>
-              ))}
-            </div>
-          </Field>
-        )}
-
         <Field label="Chat mode">
-          <div className="flex gap-1 flex-wrap">
+          <ToggleGroup
+            className="gap-1.5"
+            value={form.mode}
+            onChange={(v) => v && setForm({ ...form, mode: v, storyId: null, sceneId: null, locationId: null })}
+          >
             {MODES.map((m) => (
-              <Button
-                key={m.key}
-                size="sm"
-                variant={form.mode === m.key ? "primary" : "secondary"}
-                title={m.hint}
-                onClick={() => setForm({ ...form, mode: m.key, storyId: null, sceneId: null, locationId: null })}
-              >
+              <Toggle key={m.key} size="sm" value={m.key} title={m.hint}>
                 {m.icon} {m.label}
-              </Button>
+              </Toggle>
             ))}
-          </div>
+          </ToggleGroup>
           <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
         </Field>
 
@@ -245,19 +222,16 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             <Switch value={form.narratorEnabled} onChange={(v) => setForm({ ...form, narratorEnabled: v })} label={form.narratorEnabled ? "Enabled" : "Disabled"} className="h-8" />
           </Field>
           <Field label="Lorebooks">
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {lorebooks?.map((l) => (
-                <Badge
+                <Toggle
                   key={l.id}
-                  asChild
-                  rounded
-                  bordered
-                  variant={form.lorebookIds.includes(l.id) ? "primary" : "secondary"}
+                  size="sm"
+                  value={form.lorebookIds.includes(l.id)}
+                  onChange={() => toggleLorebook(l.id)}
                 >
-                  <button type="button" className="cursor-pointer" onClick={() => toggleLorebook(l.id)}>
-                    {l.name}
-                  </button>
-                </Badge>
+                  {l.name}
+                </Toggle>
               ))}
               {lorebooks?.length === 0 && <span className="text-xs text-content-400">none</span>}
             </div>
@@ -312,18 +286,16 @@ export default function HomePage() {
         </div>
 
         {folders.length > 0 && (
-          <div className="flex gap-1 flex-wrap">
-            <Badge asChild rounded bordered variant={!folder ? "primary" : "secondary"}>
-              <button className="cursor-pointer" onClick={() => setFolder("")}>all</button>
-            </Badge>
+          <ToggleGroup className="gap-1.5" value={folder} onChange={(v) => setFolder(v ?? "")}>
+            <Toggle size="sm" value="">
+              all
+            </Toggle>
             {folders.map((f) => (
-              <Badge key={f} asChild rounded bordered variant={folder === f ? "primary" : "secondary"}>
-                <button className="cursor-pointer" onClick={() => setFolder(f)}>
-                  <Folder size={11} /> {f}
-                </button>
-              </Badge>
+              <Toggle key={f} size="sm" value={f}>
+                <Folder size={11} /> {f}
+              </Toggle>
             ))}
-          </div>
+          </ToggleGroup>
         )}
 
         {q.trim() ? (

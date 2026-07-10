@@ -6,11 +6,14 @@ body {
   height: 100%;
 }
 
-/* card/panel surface (matches the ui components: dialogs, inputs, menus) */
-.panel {
-  background: var(--color-base-100);
-  border: 1px solid var(--color-base-400);
-  border-radius: 0.5rem;
+/* card/panel surface (matches the ui components: dialogs, inputs, menus).
+   In @layer components so border and background utilities can override it. */
+@layer components {
+  .panel {
+    background: var(--color-base-100);
+    border: 1px solid var(--color-base-400);
+    border-radius: 0.5rem;
+  }
 }
 
 /* roleplay text styling: *actions* muted stage directions, "dialogue" prominent */
