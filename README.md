@@ -38,6 +38,6 @@ Chat prose carries three inline tags, parsed out of the stream and stored as mes
 - `SPEC.md` — the full product spec this app implements.
 - `src/lib/` — db, store (all SQL), `ai/` (provider clients, tag parser, prompt builder, memory), bundle (import/export).
 - `src/app/api/` — REST + SSE routes. `src/app/` + `src/components/` — UI.
-- `npm run build` — production build; `npx tsc --noEmit` — typecheck.
+- `npm run build` — production build; `npm run typecheck` — typecheck; `npm test` — vitest unit tests (tag parser, placeholders, JSON extraction).
 
 No cloud, no telemetry, no accounts. Your keys stay in your local SQLite.
