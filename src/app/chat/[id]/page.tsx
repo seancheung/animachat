@@ -36,13 +36,12 @@ import Button from "@/components/ui/button";
 import Drawer from "@/components/ui/drawer";
 import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
-import Select from "@/components/ui/select";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { POV_LABELS, type Character, type Message, type Settings } from "@/lib/types";
+import { POV_LABELS, type Character, type Message, type Pov, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -529,7 +528,6 @@ function ChatDrawer({
   const [title, setTitle] = useState(chat.title);
   const [folder, setFolder] = useState(chat.folder);
   const [tags, setTags] = useState(chat.tags.join(", "));
-  const [language, setLanguage] = useState(chat.language);
 
   return (
     <div className="space-y-4">
@@ -553,19 +551,15 @@ function ChatDrawer({
         <ModelPicker value={chat.modelId} onChange={(v) => onPatch({ modelId: v })} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Language override">
-          <Input className="w-full" placeholder="(global default)" value={language} onChange={setLanguage} onBlur={() => onPatch({ language })} />
+        <Field label="Language">
+          <div className="text-sm text-content-200 h-8 flex items-center">
+            {chat.language || "(global default)"}
+          </div>
         </Field>
         <Field label="POV">
-          <Select
-            className="w-full"
-            value={chat.pov || null}
-            onChange={(v) => onPatch({ pov: v })}
-            options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
-            placeholder="(global default)"
-            clearable
-            onClear={() => onPatch({ pov: "" })}
-          />
+          <div className="text-sm text-content-200 h-8 flex items-center">
+            {POV_LABELS[chat.pov as Pov] ?? "(global default)"}
+          </div>
         </Field>
       </div>
       <Field label="Narrator">

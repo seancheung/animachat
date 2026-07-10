@@ -40,11 +40,26 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
   });
 });
 
+/** Everything else — mode, characterIds, storyId/sceneId/locationId, language, pov — is fixed at creation. */
+const MUTABLE_CHAT_FIELDS = [
+  "title",
+  "folder",
+  "tags",
+  "modelId",
+  "charModels",
+  "narratorEnabled",
+  "lorebookIds",
+  "personaId",
+  "overrides",
+] as const;
+
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
   if (!getChat(id)) return bad("Chat not found", 404);
   const body = await req.json();
-  return ok(saveChat({ ...body, id }));
+  const patch: Record<string, unknown> = {};
+  for (const k of MUTABLE_CHAT_FIELDS) if (k in body) patch[k] = body[k];
+  return ok(saveChat({ ...patch, id }));
 });
 
 export const DELETE = handler(async (_req: Request, { params }: IdParams) => {

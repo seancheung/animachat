@@ -65,7 +65,7 @@ All world-building entities are reusable across chats.
   - **Casual** — no story, scene, or location.
 - Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[charN_name]` placeholders) and cannot be edited afterwards.
 - Any number of lorebooks can be attached.
-- Per-chat settings: model, language, POV, narrator on/off — all editable after creation (language/POV changes affect only new messages).
+- Per-chat settings: model and narrator on/off are editable after creation; language and POV are fixed at creation and shown read-only in chat settings.
 
 ### Placeholder tags
 
@@ -114,7 +114,7 @@ Configurable: global default + per-chat override. Conventions:
 2. **All 3rd person** — co-written novel style.
 3. **2nd-person VN** — narrator/characters address the user as "you"; user writes 1st person.
 
-Character and narrator prompts adapt; narrator's suggested actions are written in the user's POV so they can be sent as-is. Changing POV mid-chat affects only new messages.
+Character and narrator prompts adapt; narrator's suggested actions are written in the user's POV so they can be sent as-is. A chat's POV is chosen at creation and cannot change afterwards.
 
 ## Narrator
 
