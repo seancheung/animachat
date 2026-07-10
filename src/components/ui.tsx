@@ -59,11 +59,30 @@ export function Field({
   hint?: string;
   className?: string;
 }) {
+  // deliberately a div, not a label: labels re-dispatch clicks to the first
+  // button child, which double-fires toggle buttons rendered inside a Field
   return (
-    <label className={cls("block", className)}>
+    <div className={cls("block", className)}>
       <div className="text-xs uppercase tracking-wider text-[var(--text-dim)] mb-1">{label}</div>
       {children}
       {hint && <div className="text-xs text-[var(--text-dim)] mt-1">{hint}</div>}
+    </div>
+  );
+}
+
+export function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-[var(--accent)]" />
+      {label}
     </label>
   );
 }

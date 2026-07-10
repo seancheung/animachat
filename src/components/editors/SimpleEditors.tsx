@@ -77,7 +77,7 @@ export function PersonaEditor({ initial, onSaved }: { initial: Partial<Persona>;
       <Field label="Name">
         <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       </Field>
-      <Field label="Description" hint="who you are in the roleplay — characters see this">
+      <Field label="Description" hint="who you are in the roleplay — characters see this; placeholders like [char_name] work here">
         <textarea className="input h-40" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </Field>
     </EditorShell>
@@ -108,7 +108,7 @@ export function LocationEditor({ initial, onSaved }: { initial: Partial<Location
       <Field label="Name">
         <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       </Field>
-      <Field label="Description">
+      <Field label="Description" hint="placeholders like [char_name], [user_name] work here">
         <textarea className="input h-32" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
@@ -124,7 +124,7 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
       <Field label="Name">
         <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       </Field>
-      <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens">
+      <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here">
         <textarea className="input h-32" value={form.setup ?? ""} onChange={(e) => setForm({ ...form, setup: e.target.value })} />
       </Field>
       <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
@@ -156,7 +156,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       <Field label="Name">
         <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
       </Field>
-      <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot">
+      <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot; placeholders like [char_name], [user_name] work here">
         <textarea className="input h-28" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </Field>
       <Field label="Scenes (in order)">
@@ -202,7 +202,7 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
       <Field label="Description">
         <input className="input" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </Field>
-      <Field label="Entries" hint="injected into the prompt when a keyword appears in recent messages">
+      <Field label="Entries" hint="injected into the prompt when a keyword appears in recent messages; placeholders like [char_name] work in content">
         <div className="space-y-3">
           {entries.map((en, i) => (
             <div key={en.id ?? i} className="panel p-3 space-y-2">

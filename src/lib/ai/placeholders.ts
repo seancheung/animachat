@@ -1,0 +1,47 @@
+/**
+ * Placeholder tags usable in character/persona/location/scene/story/lorebook sheets.
+ * Replaced with actual chat values at injection time (prompt assembly, greeting insertion):
+ *
+ *   [char_name]              first character's name
+ *   [char_N_name]            Nth character's name (1-based; char_1_name == char_name)
+ *   [user_name] / [persona_name]  the active persona's name
+ *   [loc_name]               active location name
+ *   [scene_name]             active scene name
+ *   [story_name]             the chat's story name
+ *
+ * Unresolvable tags get a neutral fallback so the AI never sees broken brackets.
+ */
+
+export interface PlaceholderValues {
+  characterNames: string[];
+  userName?: string | null;
+  locationName?: string | null;
+  sceneName?: string | null;
+  storyName?: string | null;
+}
+
+const FALLBACKS = {
+  char: "another character",
+  user: "the user",
+  loc: "the current place",
+  scene: "the current scene",
+  story: "the story",
+};
+
+export function substitutePlaceholders(text: string, v: PlaceholderValues): string {
+  if (!text || !text.includes("[")) return text;
+  return text.replace(
+    /\[(char(?:_(\d+))?_name|user_name|persona_name|loc_name|scene_name|story_name)\]/gi,
+    (_m, tag: string, n?: string) => {
+      const t = tag.toLowerCase();
+      if (t.startsWith("char")) {
+        const idx = n ? Number(n) - 1 : 0;
+        return v.characterNames[idx] ?? FALLBACKS.char;
+      }
+      if (t === "user_name" || t === "persona_name") return v.userName || FALLBACKS.user;
+      if (t === "loc_name") return v.locationName || FALLBACKS.loc;
+      if (t === "scene_name") return v.sceneName || FALLBACKS.scene;
+      return v.storyName || FALLBACKS.story;
+    }
+  );
+}

@@ -3,12 +3,31 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import {
+  ArrowDown,
+  ArrowUp,
+  BookOpen,
+  Clapperboard,
+  Coffee,
+  Folder,
+  MapPin,
+  Plus,
+  ScrollText,
+  Trash2,
+} from "lucide-react";
 import { ModelPicker } from "@/components/ModelPicker";
 import { EmptyState, Field, Modal } from "@/components/ui";
 import { api, assetUrl, cls } from "@/lib/ui";
-import { POV_LABELS } from "@/lib/types";
+import { POV_LABELS, type ChatMode } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+const MODES: { key: ChatMode; label: string; icon: React.ReactNode; hint: string }[] = [
+  { key: "casual", label: "Casual", icon: <Coffee size={14} />, hint: "no story, scene or location" },
+  { key: "story", label: "Story", icon: <BookOpen size={14} />, hint: "follow a story; switch between its scenes" },
+  { key: "scene", label: "Scene", icon: <Clapperboard size={14} />, hint: "one fixed scene" },
+  { key: "location", label: "Location", icon: <MapPin size={14} />, hint: "one fixed location" },
+];
 
 function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -19,6 +38,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
   const { data: locations } = useSWR<any[]>("/api/locations", api.get);
   const { data: lorebooks } = useSWR<any[]>("/api/lorebooks", api.get);
   const [form, setForm] = useState<any>({
+    mode: "casual",
     characterIds: [],
     personaId: null,
     storyId: null,
@@ -32,62 +52,148 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
   });
   const [busy, setBusy] = useState(false);
 
-  const toggle = (key: "characterIds" | "lorebookIds", id: string) => {
-    const cur: string[] = form[key];
-    setForm({ ...form, [key]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  const toggleCharacter = (id: string) => {
+    const cur: string[] = form.characterIds;
+    setForm({
+      ...form,
+      characterIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+    });
   };
+  const toggleLorebook = (id: string) => {
+    const cur: string[] = form.lorebookIds;
+    setForm({ ...form, lorebookIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+  };
+  const moveCharacter = (i: number, d: number) => {
+    const next = [...form.characterIds];
+    const j = i + d;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    setForm({ ...form, characterIds: next });
+  };
+
+  const story = stories?.find((s) => s.id === form.storyId);
+  const storyScenes: any[] = story
+    ? story.sceneIds.map((sid: string) => scenes?.find((s) => s.id === sid)).filter(Boolean)
+    : [];
+  const modeValid =
+    form.mode === "casual" ||
+    (form.mode === "story" && form.storyId) ||
+    (form.mode === "scene" && form.sceneId) ||
+    (form.mode === "location" && form.locationId);
+  const charById = (id: string) => characters?.find((c) => c.id === id);
 
   return (
     <Modal open={open} onClose={onClose} title="New chat" wide>
       <div className="space-y-4">
         <Field label="Characters" hint="pick one or more — multiple = group chat with orchestrated turns">
           <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-            {characters?.map((c) => (
-              <button
-                key={c.id}
-                className={cls(
-                  "panel overflow-hidden text-left transition-colors",
-                  form.characterIds.includes(c.id) && "border-[var(--accent)] ring-1 ring-[var(--accent)]"
-                )}
-                onClick={() => toggle("characterIds", c.id)}
-              >
-                {c.sprites?.neutral || c.avatarAsset ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={assetUrl(c.sprites?.neutral ?? c.avatarAsset)!} alt="" className="w-full aspect-[2/3] object-cover" />
-                ) : (
-                  <div className="w-full aspect-[2/3] flex items-center justify-center text-2xl bg-[var(--bg-soft)]">🎭</div>
-                )}
-                <div className="text-xs p-1.5 truncate">{c.name}</div>
-              </button>
-            ))}
+            {characters?.map((c) => {
+              const idx = form.characterIds.indexOf(c.id);
+              return (
+                <button
+                  key={c.id}
+                  className={cls(
+                    "panel overflow-hidden text-left transition-colors relative",
+                    idx !== -1 && "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+                  )}
+                  onClick={() => toggleCharacter(c.id)}
+                >
+                  {idx !== -1 && (
+                    <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-[var(--accent)] text-black text-xs flex items-center justify-center font-bold">
+                      {idx + 1}
+                    </span>
+                  )}
+                  {c.sprites?.neutral || c.avatarAsset ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetUrl(c.sprites?.neutral ?? c.avatarAsset)!} alt="" className="w-full aspect-[2/3] object-cover" />
+                  ) : (
+                    <div className="w-full aspect-[2/3] flex items-center justify-center text-2xl bg-[var(--bg-soft)]">🎭</div>
+                  )}
+                  <div className="text-xs p-1.5 truncate">{c.name}</div>
+                </button>
+              );
+            })}
             {characters?.length === 0 && (
               <div className="col-span-full text-sm text-[var(--text-dim)]">No characters yet — create one in the Library first.</div>
             )}
           </div>
         </Field>
+
+        {form.characterIds.length > 1 && (
+          <Field
+            label="Character order"
+            hint="[char_name] resolves to #1, [char_2_name] to #2… — fixed once the chat is created"
+          >
+            <div className="space-y-1">
+              {form.characterIds.map((id: string, i: number) => (
+                <div key={id} className="flex items-center gap-2 bg-[var(--bg-soft)] rounded-lg px-3 py-1 text-sm">
+                  <span className="text-[var(--text-dim)] w-5">{i + 1}.</span>
+                  <span className="flex-1">{charById(id)?.name ?? "?"}</span>
+                  <button className="btn btn-sm btn-ghost" onClick={() => moveCharacter(i, -1)}><ArrowUp size={13} /></button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => moveCharacter(i, 1)}><ArrowDown size={13} /></button>
+                </div>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        <Field label="Chat mode">
+          <div className="flex gap-1 flex-wrap">
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                title={m.hint}
+                className={cls("btn btn-sm", form.mode === m.key && "btn-primary")}
+                onClick={() => setForm({ ...form, mode: m.key, storyId: null, sceneId: null, locationId: null })}
+              >
+                {m.icon} {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-[var(--text-dim)] mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
+        </Field>
+
         <div className="grid md:grid-cols-3 gap-3">
+          {form.mode === "story" && (
+            <>
+              <Field label="Story (required)">
+                <select className="input" value={form.storyId ?? ""} onChange={(e) => setForm({ ...form, storyId: e.target.value || null, sceneId: null })}>
+                  <option value="">choose…</option>
+                  {stories?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+              {storyScenes.length > 0 && (
+                <Field label="Starting scene">
+                  <select className="input" value={form.sceneId ?? ""} onChange={(e) => setForm({ ...form, sceneId: e.target.value || null })}>
+                    <option value="">1. {storyScenes[0]?.name} (first)</option>
+                    {storyScenes.map((s, i) => (
+                      <option key={s.id} value={s.id}>{i + 1}. {s.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </>
+          )}
+          {form.mode === "scene" && (
+            <Field label="Scene (required)" hint="fixed for the whole chat">
+              <select className="input" value={form.sceneId ?? ""} onChange={(e) => setForm({ ...form, sceneId: e.target.value || null })}>
+                <option value="">choose…</option>
+                {scenes?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {form.mode === "location" && (
+            <Field label="Location (required)" hint="fixed for the whole chat">
+              <select className="input" value={form.locationId ?? ""} onChange={(e) => setForm({ ...form, locationId: e.target.value || null })}>
+                <option value="">choose…</option>
+                {locations?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Your persona">
             <select className="input" value={form.personaId ?? ""} onChange={(e) => setForm({ ...form, personaId: e.target.value || null })}>
               <option value="">(none)</option>
               {personas?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Story">
-            <select className="input" value={form.storyId ?? ""} onChange={(e) => setForm({ ...form, storyId: e.target.value || null, sceneId: null })}>
-              <option value="">(none)</option>
-              {stories?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Scene" hint="ignored when a story is set">
-            <select className="input" disabled={!!form.storyId} value={form.sceneId ?? ""} onChange={(e) => setForm({ ...form, sceneId: e.target.value || null })}>
-              <option value="">(none)</option>
-              {scenes?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Location" hint="standalone, or set by the scene">
-            <select className="input" value={form.locationId ?? ""} onChange={(e) => setForm({ ...form, locationId: e.target.value || null })}>
-              <option value="">(none)</option>
-              {locations?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </Field>
           <Field label="Model">
@@ -111,7 +217,12 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           <Field label="Lorebooks">
             <div className="flex flex-wrap gap-1">
               {lorebooks?.map((l) => (
-                <button key={l.id} className={cls("chip cursor-pointer", form.lorebookIds.includes(l.id) && "border-[var(--accent)] text-[var(--accent)]")} onClick={() => toggle("lorebookIds", l.id)}>
+                <button
+                  key={l.id}
+                  type="button"
+                  className={cls("chip cursor-pointer", form.lorebookIds.includes(l.id) && "border-[var(--accent)] text-[var(--accent)]")}
+                  onClick={() => toggleLorebook(l.id)}
+                >
                   {l.name}
                 </button>
               ))}
@@ -121,7 +232,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
         <button
           className="btn btn-primary"
-          disabled={busy || (!form.characterIds.length && !form.narratorEnabled)}
+          disabled={busy || !modeValid || (!form.characterIds.length && !form.narratorEnabled)}
           onClick={async () => {
             setBusy(true);
             try {
@@ -150,6 +261,7 @@ export default function HomePage() {
 
   const folders = useMemo(() => [...new Set((chats ?? []).map((c) => c.folder).filter(Boolean))].sort(), [chats]);
   const visible = (chats ?? []).filter((c) => !folder || c.folder === folder);
+  const modeIcon = (m: string) => MODES.find((x) => x.key === m)?.icon ?? null;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -157,7 +269,7 @@ export default function HomePage() {
         <div className="flex items-center gap-2">
           <input className="input" placeholder="Search all chats…" value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="btn btn-primary whitespace-nowrap" onClick={() => setWizard(true)}>
-            + New chat
+            <Plus size={15} /> New chat
           </button>
         </div>
 
@@ -168,7 +280,7 @@ export default function HomePage() {
             </button>
             {folders.map((f) => (
               <button key={f} className={cls("chip cursor-pointer", folder === f && "text-[var(--accent)] border-[var(--accent)]")} onClick={() => setFolder(f)}>
-                📁 {f}
+                <Folder size={11} /> {f}
               </button>
             ))}
           </div>
@@ -196,7 +308,10 @@ export default function HomePage() {
             {visible.map((c) => (
               <div key={c.id} className="panel p-3 cursor-pointer hover:border-[var(--accent)] transition-colors group" onClick={() => router.push(`/chat/${c.id}`)}>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium truncate">{c.title}</div>
+                  <div className="font-medium truncate flex items-center gap-2">
+                    <span className="text-[var(--text-dim)]">{modeIcon(c.mode)}</span>
+                    {c.title}
+                  </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {c.tags?.map((t: string) => <span key={t} className="chip">{t}</span>)}
                     <span className="text-xs text-[var(--text-dim)]">{c.messageCount} msgs</span>
@@ -210,13 +325,13 @@ export default function HomePage() {
                         }
                       }}
                     >
-                      🗑
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
-                <div className="text-xs text-[var(--text-dim)] mt-1 truncate">
+                <div className="text-xs text-[var(--text-dim)] mt-1 truncate flex items-center gap-1">
                   {c.characterNames.join(", ")}
-                  {c.narratorEnabled && " · 📜 narrator"}
+                  {c.narratorEnabled && <ScrollText size={11} />}
                   {c.lastMessage && ` — ${c.lastMessage}`}
                 </div>
               </div>

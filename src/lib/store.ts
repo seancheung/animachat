@@ -154,13 +154,15 @@ const characterFromRow = (r: Row): Character => ({
   id: r.id,
   name: r.name,
   avatarAsset: r.avatar_asset,
-  personality: r.personality,
+  description: r.description,
   greeting: r.greeting,
   exampleDialogue: r.example_dialogue,
   imagePrompt: r.image_prompt,
   sprites: J.parse(r.sprites, {}),
   customExpressions: J.parse(r.custom_expressions, []),
   typingSfxAsset: r.typing_sfx_asset,
+  trackRelationship: !!r.track_relationship,
+  idleMotion: !!r.idle_motion,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -180,13 +182,15 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     id: existing?.id ?? c.id ?? uid(),
     name: "Unnamed",
     avatarAsset: null,
-    personality: "",
+    description: "",
     greeting: "",
     exampleDialogue: "",
     imagePrompt: "",
     sprites: {},
     customExpressions: [],
     typingSfxAsset: null,
+    trackRelationship: true,
+    idleMotion: true,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -194,22 +198,25 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
   });
   getDb()
     .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,personality,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@personality,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, personality=@personality, greeting=@greeting,
-         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx, updated_at=@updated`
+      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,created_at,updated_at)
+       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@trackRel,@idle,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, description=@description, greeting=@greeting,
+         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx,
+         track_relationship=@trackRel, idle_motion=@idle, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       avatar: m.avatarAsset,
-      personality: m.personality,
+      description: m.description,
       greeting: m.greeting,
       example: m.exampleDialogue,
       imagePrompt: m.imagePrompt,
       sprites: J.str(m.sprites),
       custom: J.str(m.customExpressions),
       sfx: m.typingSfxAsset,
+      trackRel: m.trackRelationship ? 1 : 0,
+      idle: m.idleMotion ? 1 : 0,
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -499,6 +506,7 @@ export function deleteLorebook(id: string) {
 const chatFromRow = (r: Row): Chat => ({
   id: r.id,
   title: r.title,
+  mode: r.mode || (r.story_id ? "story" : r.scene_id ? "scene" : r.location_id ? "location" : "casual"),
   folder: r.folder,
   tags: J.parse(r.tags, []),
   storyId: r.story_id,
@@ -531,6 +539,7 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
   const m: Chat = touch({
     id: existing?.id ?? x.id ?? uid(),
     title: "New chat",
+    mode: "casual" as const,
     folder: "",
     tags: [],
     storyId: null,
@@ -552,15 +561,16 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
   });
   getDb()
     .prepare(
-      `INSERT INTO chats (id,title,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,model_id,char_models,language,pov,narrator_enabled,overrides,created_at,updated_at)
-       VALUES (@id,@title,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@model,@charModels,@language,@pov,@narrator,@overrides,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET title=@title, folder=@folder, tags=@tags, story_id=@story, scene_id=@scene, location_id=@loc,
+      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,model_id,char_models,language,pov,narrator_enabled,overrides,created_at,updated_at)
+       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@model,@charModels,@language,@pov,@narrator,@overrides,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET title=@title, mode=@mode, folder=@folder, tags=@tags, story_id=@story, scene_id=@scene, location_id=@loc,
          lorebook_ids=@lore, character_ids=@chars, persona_id=@persona, model_id=@model, char_models=@charModels,
          language=@language, pov=@pov, narrator_enabled=@narrator, overrides=@overrides, updated_at=@updated`
     )
     .run({
       id: m.id,
       title: m.title,
+      mode: m.mode,
       folder: m.folder,
       tags: J.str(m.tags),
       story: m.storyId,
@@ -806,6 +816,11 @@ export function listRelationships(characterId: string): Relationship[] {
   return (
     getDb().prepare("SELECT * FROM relationships WHERE character_id=?").all(characterId) as Row[]
   ).map(relationshipFromRow);
+}
+
+/** Reset: forget all relationship data for a character (all personas). */
+export function deleteRelationships(characterId: string) {
+  getDb().prepare("DELETE FROM relationships WHERE character_id=?").run(characterId);
 }
 
 export function putRelationship(characterId: string, personaId: string, affinity: number, notes: string) {

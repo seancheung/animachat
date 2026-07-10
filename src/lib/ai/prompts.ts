@@ -1,4 +1,5 @@
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
+import { substitutePlaceholders } from "./placeholders";
 import {
   getChat,
   getCharacter,
@@ -101,6 +102,8 @@ export interface ChatContext {
   contextBudget: (model: ResolvedModel) => number;
   verbatimShare: number;
   chunkThreshold: number;
+  /** substitute [char_name]-style placeholder tags with this chat's values */
+  sub: (text: string) => string;
 }
 
 export function buildContext(chatId: string): ChatContext {
@@ -110,21 +113,34 @@ export function buildContext(chatId: string): ChatContext {
   const messages = listMessages(chatId);
   const stage = computeStage(chat, messages);
   const summary = getSummary(chatId);
+  const characters = chat.characterIds.map(getCharacter).filter((c): c is Character => !!c);
+  const persona = chat.personaId ? getPersona(chat.personaId) : null;
+  const story = chat.storyId ? getStory(chat.storyId) : null;
+  const scene = stage.sceneId ? getScene(stage.sceneId) : null;
+  const location = stage.locationId ? getLocation(stage.locationId) : null;
   return {
     chat,
     settings,
     language: chat.language || settings.language,
     pov: (chat.pov || settings.pov) as Pov,
-    characters: chat.characterIds.map(getCharacter).filter((c): c is Character => !!c),
-    persona: chat.personaId ? getPersona(chat.personaId) : null,
-    story: chat.storyId ? getStory(chat.storyId) : null,
+    characters,
+    persona,
+    story,
     stage,
-    scene: stage.sceneId ? getScene(stage.sceneId) : null,
-    location: stage.locationId ? getLocation(stage.locationId) : null,
+    scene,
+    location,
     lorebooks: chat.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l),
     messages,
     summaryText: summary.content,
     summaryCovered: summary.coveredPosition,
+    sub: (text: string) =>
+      substitutePlaceholders(text, {
+        characterNames: characters.map((c) => c.name),
+        userName: persona?.name,
+        locationName: location?.name,
+        sceneName: scene?.name,
+        storyName: story?.name,
+      }),
     contextBudget: (model) =>
       chat.overrides.contextBudget ??
       Math.min(settings.contextBudgetCap, model.model.contextWindow - settings.outputReserve),
@@ -157,7 +173,7 @@ function renderMessageLine(ctx: ChatContext, m: Message): string | null {
     if (!m.sceneEvent) return null;
     if (m.sceneEvent.kind === "scene") {
       const s = m.sceneEvent.sceneId ? getScene(m.sceneEvent.sceneId) : null;
-      return `[The scene changes to: ${s?.name ?? "a new scene"}. ${s?.setup ?? ""}]`;
+      return ctx.sub(`[The scene changes to: ${s?.name ?? "a new scene"}. ${s?.setup ?? ""}]`);
     }
     const l = m.sceneEvent.locationId ? getLocation(m.sceneEvent.locationId) : null;
     return `[The setting moves to: ${l?.name ?? "a new place"}.]`;
@@ -197,7 +213,7 @@ export function triggeredLore(ctx: ChatContext, recent: Message[], extraText = "
         extraText
       ).toLowerCase();
       if (entry.keywords.some((k) => k.trim() && haystack.includes(k.trim().toLowerCase()))) {
-        hits.push(`${entry.title}: ${entry.content}`);
+        hits.push(ctx.sub(`${entry.title}: ${entry.content}`));
       }
     }
   }
@@ -229,12 +245,12 @@ function worldBlock(ctx: ChatContext): string {
   }
   if (ctx.scene) parts.push(`CURRENT SCENE: ${ctx.scene.name}\n${ctx.scene.setup}`);
   if (ctx.location) parts.push(`LOCATION: ${ctx.location.name}\n${ctx.location.description}`);
-  return parts.join("\n\n");
+  return ctx.sub(parts.join("\n\n"));
 }
 
 function personaBlock(ctx: ChatContext): string {
   if (!ctx.persona) return "";
-  return `THE USER'S CHARACTER (persona): ${ctx.persona.name}\n${ctx.persona.description}`;
+  return `THE USER'S CHARACTER (persona): ${ctx.persona.name}\n${ctx.sub(ctx.persona.description)}`;
 }
 
 function formatRules(ctx: ChatContext, selfName: string | null): string {
@@ -291,20 +307,23 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
   const facts = listFacts(character.id, 50);
-  const rel = ctx.persona ? getRelationship(character.id, ctx.persona.id) : null;
+  const rel =
+    ctx.persona && character.trackRelationship ? getRelationship(character.id, ctx.persona.id) : null;
   const others = ctx.characters.filter((c) => c.id !== character.id);
 
   const emotions = [
     ...EMOTIONS,
-    ...character.customExpressions.map((e) => `${e.name} (${e.description})`),
+    ...character.customExpressions.map((e) => `${e.name} (${ctx.sub(e.description)})`),
   ].join(", ");
 
   const system = [
     `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
-    `ABOUT ${character.name.toUpperCase()}:\n${character.personality}`,
-    character.exampleDialogue ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${character.exampleDialogue}` : "",
+    `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description)}`,
+    character.exampleDialogue
+      ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue)}`
+      : "",
     others.length
-      ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${c.personality.slice(0, 200)}`).join("; ")}`
+      ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${ctx.sub(c.description).slice(0, 200)}`).join("; ")}`
       : "",
     worldBlock(ctx),
     personaBlock(ctx),
@@ -340,13 +359,13 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
     const idx = ctx.story.sceneIds.indexOf(ctx.stage.sceneId);
     if (idx !== -1 && idx < ctx.story.sceneIds.length - 1) {
       const next = getScene(ctx.story.sceneIds[idx + 1]);
-      if (next) nextSceneInfo = `NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}`;
+      if (next) nextSceneInfo = ctx.sub(`NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}`);
     }
   }
 
   const system = [
     `You are the NARRATOR of an ongoing roleplay. You describe scenery, atmosphere, events and transitions; you move the plot forward. You never speak or decide for the characters or the user.`,
-    `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${c.personality.slice(0, 200)}`).join("; ")}`,
+    `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${ctx.sub(c.description).slice(0, 200)}`).join("; ")}`,
     worldBlock(ctx),
     personaBlock(ctx),
     nextSceneInfo,

@@ -25,7 +25,7 @@ All world-building entities are reusable across chats.
 **Image aspect ratios:** character sprites **2:3**, character avatars **1:1**, location/scene artwork **16:9**. Upload UI offers a crop tool targeting the ratio; images kept at other ratios are displayed with cover-fit.
 
 ### Character
-- Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), personality, greeting, example dialogue.
+- Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), **description** (personality, background, mannerisms, anything else), greeting, example dialogue.
 - **Image prompt:** a stored text-to-image prompt describing the neutral sprite (co-writable by the AI assistant; for use with external image generators).
 - Avatars are used in the message list / character cards only — never on the VN stage.
 - **Expression sprite set** (**2:3** portrait):
@@ -58,9 +58,23 @@ All world-building entities are reusable across chats.
 - Lorebooks are reusable entities; a chat (or a story/scene/character) can attach one or more.
 
 ### Chat
-- Attaches any combination: a full story, a standalone scene, or just a location (all optional), plus any number of lorebooks.
-- Participants: one or more characters + one persona.
-- Per-chat settings: model, language, POV, narrator on/off.
+- **Chat modes** (chosen at creation, fixed afterwards):
+  - **Story** — a story is required; optionally pick a starting scene from that story. In chat the user (and narrator) can switch between the story's scenes only; locations cannot be chosen or switched (they follow the scenes).
+  - **Scene** — one scene is required and stays fixed; no scene or location switching.
+  - **Location** — one location is required and stays fixed; no switching.
+  - **Casual** — no story, scene, or location.
+- Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[char_N_name]` placeholders) and cannot be edited afterwards.
+- Any number of lorebooks can be attached.
+- Per-chat settings: model, language, POV, narrator on/off — all editable after creation (language/POV changes affect only new messages).
+
+### Placeholder tags
+
+Sheets (character/persona/location/scene/story/lorebook text fields) may contain placeholder tags, replaced with actual chat values at injection time (prompt assembly and greeting insertion):
+
+- `[char_name]` — first character's name; `[char_N_name]` — Nth character (1-based; `[char_1_name]` = `[char_name]`)
+- `[user_name]` / `[persona_name]` — active persona's name
+- `[loc_name]`, `[scene_name]`, `[story_name]` — active location/scene/story names
+- Case-insensitive. Unresolvable tags get a neutral fallback ("another character", "the current place", …) so the AI never sees broken brackets. Unknown bracketed text is left as-is.
 
 ## Chat experience
 
@@ -81,7 +95,7 @@ All world-building entities are reusable across chats.
 - **Group chats:** multiple characters; **auto-orchestrated turn-taking** (an LLM picks the next speaker) with manual override to force a specific character to speak.
 - **Save states & rewind:** bookmark a moment in a chat (VN-style checkpoint); later "load" it, either truncating the chat back to that point or forking a copy from it.
 - **Impersonate:** a button that has the AI draft the *user's* next reply in the active persona's voice; editable before sending.
-- **Relationship/affinity tracking:** per character–persona pair, the AI maintains an evolving relationship state (affinity, trust, notes) that persists across chats and feeds prompts; inspectable in the UI (subtle meter / relationship card).
+- **Relationship/affinity tracking:** per character–persona pair, the AI maintains an evolving relationship state (affinity, trust, notes) that persists across chats and feeds prompts. Inspectable in the chat settings drawer and in the character editor. Can be **disabled per character** (global toggle: no updates, no prompt injection) and **reset** (deletes that character's relationship data with all personas).
 - **Organization:** chat tags/folders, auto-generated chat titles, full-text search across all chats.
 - Markdown rendering with styled action text.
 
@@ -108,17 +122,18 @@ Optional per chat (most useful with a story/scene attached).
 
 - **Triggers:** auto — narrates when it would help (scene-setting, transitions, plot advancement); also summonable on demand via a button.
 - **Suggested actions:** after narrating, offers 2–4 in-character choices rendered as buttons; clicking sends as the user's message (pre-formatted in the chat's convention/POV). Free-text input always remains available.
-- **Scene progression:** the narrator can advance the story to the next scene (via a structured scene-advance tag in its output); the user can also switch scene/location manually at any time.
+- **Scene progression:** in story mode, the narrator can advance the story to the next scene (via a structured scene-advance tag in its output); the user can also switch between the story's scenes manually. Other chat modes have no scene/location switching.
 - **Scene state derives from the timeline:** every scene/location change — narrator-driven or manual — is recorded as an event anchored in the message history (metadata on the narrator message, or a marker entry for manual switches). The current scene is computed as the last scene-change event at or before the end of visible history. Rewinds, save-state loads, and forks therefore restore the correct scene (and its background/BGM) automatically; there is no free-floating "current scene" field to go stale. Editing a narrator message shows its scene-advance metadata alongside the text, where it can be kept, changed, or removed.
 
 ## Visual-novel presentation
 
+- **Layout:** the default chat view is the VN stage on the **left** and the chat panel on the **right** (stacked vertically on narrow screens).
 - **Stage:** the speaking character's sprite displayed large. With multiple characters, **all** participants' sprites are on stage; the current speaker is at full brightness, others dimmed.
 - **Expression selection:** each character message carries an emotion tag chosen by the AI (see AI output structure). Resolution: exact match → `neutral` → placeholder sprite (avatars are never shown on stage). Tags are stored per message, so scrolling history and swiping alternatives replay expressions. The tag is user-correctable when editing a message.
 - **Background:** active scene/location artwork (precedence rules above).
 - **BGM:** active scene/location BGM (same precedence); loops, cross-fades on scene/location change. Volume slider + mute in chat UI (mute also covers typing SFX).
 - **Typing SFX:** `sfx-typewriter.wav` plays during streaming (VN-style blip); global toggle, per-character override.
-- **Sprite animation:** fade/slide transitions on expression change and character enter/leave; subtle idle motion (e.g. breathing bob) so the stage feels alive.
+- **Sprite animation:** fade/slide transitions on expression change and character enter/leave; subtle idle motion (e.g. breathing bob) so the stage feels alive — the idle motion can be disabled per character.
 - **Fullscreen VN mode:** toggle that hides app chrome — just background, stage, and a dialogue box at the bottom, advancing message-by-message on click like a real visual novel. Normal chat view remains the default.
 - Character-immersive theming throughout.
 

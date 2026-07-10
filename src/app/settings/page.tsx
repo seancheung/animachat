@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
+import { Download, Upload } from "lucide-react";
 import { Field, Modal, Row } from "@/components/ui";
 import { ModelPicker, useProviders } from "@/components/ModelPicker";
 import { api, downloadBlob } from "@/lib/ui";
@@ -306,10 +307,10 @@ export default function SettingsPage() {
                 await downloadBlob(res, "animachat-backup.zip");
               }}
             >
-              ⬇ Download full backup
+              <Download size={14} /> Download full backup
             </button>
             <button className="btn btn-danger" onClick={() => restoreRef.current?.click()}>
-              ⬆ Restore from backup…
+              <Upload size={14} /> Restore from backup…
             </button>
             <input
               ref={restoreRef}

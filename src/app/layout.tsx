@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { BookMarked, MessagesSquare, Settings, Sparkles } from "lucide-react";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,17 +22,17 @@ export const metadata: Metadata = {
 function Nav() {
   return (
     <nav className="flex items-center gap-1 px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-soft)] shrink-0">
-      <Link href="/" className="font-semibold tracking-wide text-[var(--accent)] mr-4">
-        ✦ AnimaChat
+      <Link href="/" className="font-semibold tracking-wide text-[var(--accent)] mr-4 inline-flex items-center gap-1.5">
+        <Sparkles size={16} /> AnimaChat
       </Link>
       <Link href="/" className="btn btn-ghost btn-sm">
-        Chats
+        <MessagesSquare size={14} /> Chats
       </Link>
       <Link href="/library" className="btn btn-ghost btn-sm">
-        Library
+        <BookMarked size={14} /> Library
       </Link>
       <Link href="/settings" className="btn btn-ghost btn-sm">
-        Settings
+        <Settings size={14} /> Settings
       </Link>
     </nav>
   );

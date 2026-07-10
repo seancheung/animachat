@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 const FIELD_DOCS: Record<string, string> = {
   character:
-    `"name": string; "personality": string (detailed personality, background, mannerisms); ` +
+    `"name": string; "description": string (detailed personality, background, mannerisms — the character sheet); ` +
     `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes); ` +
     `"exampleDialogue": string (a few example exchanges showing their voice); ` +
     `"imagePrompt": string (text-to-image prompt for their neutral sprite: appearance, outfit, style; 2:3 portrait); ` +

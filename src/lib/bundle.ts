@@ -160,6 +160,8 @@ export async function importBundle(buf: Buffer): Promise<{ imported: Record<stri
     count("story");
   }
   for (const it of byType("character")) {
+    if (it.data.personality && !it.data.description) it.data.description = it.data.personality;
+    delete it.data.personality;
     idMap.set(it.data.id, saveCharacter(prep("character", it.data) as Partial<Character>).id);
     count("character");
   }

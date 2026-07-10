@@ -3,6 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
+import {
+  ArrowLeft,
+  Bookmark,
+  Clapperboard,
+  Download,
+  GitFork,
+  MapPin,
+  Maximize,
+  MessageCircle,
+  Rewind,
+  ScrollText,
+  Settings2,
+  SkipForward,
+  Square,
+  Volume2,
+  VolumeX,
+  Wand2,
+  X,
+} from "lucide-react";
 import { useBlip, useChatAudio } from "@/components/chat/audio";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
@@ -208,38 +227,38 @@ export default function ChatPage() {
         />
         <div className="flex flex-col gap-1">
           {busy ? (
-            <button className="btn btn-danger" onClick={() => abortRef.current?.abort()}>■ Stop</button>
+            <button className="btn btn-danger" onClick={() => abortRef.current?.abort()}><Square size={13} /> Stop</button>
           ) : (
             <button className="btn btn-primary" disabled={!input.trim()} onClick={() => send()}>Send</button>
           )}
           <div className="flex gap-1">
             <button className="btn btn-sm" title="Wrap selection in *action*" onClick={wrapAction}>*…*</button>
-            <button className="btn btn-sm" title="AI drafts your reply" disabled={busy} onClick={impersonate}>🪄</button>
+            <button className="btn btn-sm" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 size={14} /></button>
           </div>
         </div>
       </div>
       <div className="flex gap-1 flex-wrap items-center">
         <button className="btn btn-sm" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
-          ⏭ Continue
+          <SkipForward size={13} /> Continue
         </button>
         {chat.narratorEnabled && (
           <button className="btn btn-sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
-            📜 Narrate
+            <ScrollText size={13} /> Narrate
           </button>
         )}
         {characters.length > 1 &&
           characters.map((c) => (
             <button key={c.id} className="btn btn-sm" disabled={busy} title={`Make ${c.name} speak`} onClick={() => generate({ mode: "character", characterId: c.id })}>
-              💬 {c.name}
+              <MessageCircle size={13} /> {c.name}
             </button>
           ))}
         <div className="flex-1" />
         <button className="btn btn-sm btn-ghost" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
-          {muted ? "🔇" : "🔊"}
+          {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
         </button>
         <input type="range" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-20 accent-[var(--accent)]" />
-        <button className="btn btn-sm btn-ghost" title="Fullscreen VN mode" onClick={() => setVnMode(true)}>⛶</button>
-        <button className="btn btn-sm btn-ghost" title="Chat settings" onClick={() => setDrawer(true)}>⚙</button>
+        <button className="btn btn-sm btn-ghost" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize size={15} /></button>
+        <button className="btn btn-sm btn-ghost" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 size={15} /></button>
       </div>
     </div>
   );
@@ -247,7 +266,7 @@ export default function ChatPage() {
   const streamingRow = streaming && (
     <div className="flex gap-3 fade-in">
       <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-[var(--panel-2)] flex items-center justify-center text-sm mt-1">
-        {streaming.role === "narrator" ? "📜" : (
+        {streaming.role === "narrator" ? <ScrollText size={15} /> : (
           characters.find((c) => c.id === streaming.characterId)?.name.slice(0, 1) ?? "?"
         )}
       </div>
@@ -264,18 +283,25 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="h-full flex flex-col">
-      <VNStage
-        characters={characters}
-        emotions={emotions}
-        speakingId={speakingId}
-        backgroundUrl={assetUrl(data.stage?.artworkAsset)}
-      />
+    <div className="h-full flex flex-col lg:flex-row">
+      {/* VN stage — left column on wide screens */}
+      <div className="h-64 md:h-80 lg:h-full lg:w-[44%] xl:w-[46%] shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--border)]">
+        <VNStage
+          characters={characters}
+          emotions={emotions}
+          speakingId={speakingId}
+          backgroundUrl={assetUrl(data.stage?.artworkAsset)}
+          tall
+        />
+      </div>
+
+      {/* chat panel — right column */}
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
       <div className="px-4 py-1.5 border-b border-[var(--border)] bg-[var(--bg-soft)] flex items-center gap-2 text-sm">
-        <button className="btn btn-sm btn-ghost" onClick={() => router.push("/")}>←</button>
+        <button className="btn btn-sm btn-ghost" onClick={() => router.push("/")}><ArrowLeft size={15} /></button>
         <span className="font-medium truncate">{chat.title}</span>
-        {data.stage?.scene && <span className="chip">🎬 {data.stage.scene.name}</span>}
-        {data.stage?.location && <span className="chip">📍 {data.stage.location.name}</span>}
+        {data.stage?.scene && <span className="chip"><Clapperboard size={11} /> {data.stage.scene.name}</span>}
+        {data.stage?.location && <span className="chip"><MapPin size={11} /> {data.stage.location.name}</span>}
         <span className="flex-1" />
         {chat.language && <span className="chip">{chat.language}</span>}
       </div>
@@ -320,6 +346,7 @@ export default function ChatPage() {
       </div>
 
       <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-soft)]">{inputBar}</div>
+      </div>
 
       {/* -------- fullscreen VN mode -------- */}
       {vnMode && (
@@ -343,8 +370,6 @@ export default function ChatPage() {
       <Modal open={drawer} onClose={() => setDrawer(false)} title="Chat settings" wide>
         <ChatDrawer
           data={data}
-          allScenes={allScenes ?? []}
-          allLocations={allLocations ?? []}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
@@ -423,7 +448,7 @@ function VnOverlay({
     <div className="fixed inset-0 z-40 bg-black flex flex-col">
       <div className="flex-1 relative min-h-0">
         <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} tall />
-        <button className="absolute top-3 right-3 btn btn-sm" onClick={onExit}>✕ Esc</button>
+        <button className="absolute top-3 right-3 btn btn-sm" onClick={onExit}><X size={13} /> Esc</button>
         {!atEnd && (
           <div className="absolute top-3 left-3 chip">history {idx + 1}/{messages.length} — click to advance</div>
         )}
@@ -458,9 +483,9 @@ function VnOverlay({
               onKeyDown={(e) => e.key === "Enter" && input.trim() && send()}
             />
             <button className="btn btn-primary btn-sm" disabled={busy || !input.trim()} onClick={() => send()}>Send</button>
-            <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "auto" })}>⏭</button>
+            <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward size={13} /></button>
             {data.chat.narratorEnabled && (
-              <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "narrator" })}>📜</button>
+              <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText size={13} /></button>
             )}
           </div>
         )}
@@ -473,8 +498,6 @@ function VnOverlay({
 
 function ChatDrawer({
   data,
-  allScenes,
-  allLocations,
   onPatch,
   onSwitch,
   onCheckpointLoad,
@@ -552,8 +575,8 @@ function ChatDrawer({
       </div>
 
       <div className="space-y-3">
-        {data.story && (
-          <Field label={`Story: ${data.story.name}`}>
+        {chat.mode === "story" && data.story && (
+          <Field label={`Story: ${data.story.name}`} hint="switch scenes — recorded in the timeline, rewinds restore them">
             <div className="space-y-1">
               {data.storyScenes.map((s: any, i: number) => (
                 <button
@@ -567,31 +590,27 @@ function ChatDrawer({
             </div>
           </Field>
         )}
-        <Field label="Switch scene" hint="recorded in the timeline — rewinds restore it">
-          <select className="input" value="" onChange={(e) => e.target.value && onSwitch("scene", e.target.value)}>
-            <option value="">choose a scene…</option>
-            {allScenes.map((s: any) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Switch location">
-          <select className="input" value="" onChange={(e) => e.target.value && onSwitch("location", e.target.value)}>
-            <option value="">choose a location…</option>
-            {allLocations.map((l: any) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
-        </Field>
+        {chat.mode === "scene" && data.stage?.scene && (
+          <Field label="Scene (fixed)">
+            <span className="chip"><Clapperboard size={11} /> {data.stage.scene.name}</span>
+          </Field>
+        )}
+        {chat.mode === "location" && data.stage?.location && (
+          <Field label="Location (fixed)">
+            <span className="chip"><MapPin size={11} /> {data.stage.location.name}</span>
+          </Field>
+        )}
         <Field label="Save states">
           <div className="space-y-1">
-            {data.checkpoints.length === 0 && <div className="text-xs text-[var(--text-dim)]">none — use 🔖 on any message</div>}
+            {data.checkpoints.length === 0 && (
+              <div className="text-xs text-[var(--text-dim)]">none — use the bookmark button on any message</div>
+            )}
             {data.checkpoints.map((cp: any) => (
               <div key={cp.id} className="flex items-center gap-1 bg-[var(--bg-soft)] rounded-lg px-2 py-1 text-sm">
-                <span className="flex-1 truncate">🔖 {cp.name}</span>
-                <button className="btn btn-sm" title="Rewind here" onClick={() => onCheckpointLoad(cp.id, "truncate")}>⏪ Load</button>
-                <button className="btn btn-sm" title="Fork a copy" onClick={() => onCheckpointLoad(cp.id, "fork")}>⑂ Fork</button>
-                <button className="btn btn-sm btn-ghost" onClick={() => onCheckpointDelete(cp.id)}>✕</button>
+                <span className="flex-1 truncate inline-flex items-center gap-1"><Bookmark size={12} /> {cp.name}</span>
+                <button className="btn btn-sm" title="Rewind here" onClick={() => onCheckpointLoad(cp.id, "truncate")}><Rewind size={13} /> Load</button>
+                <button className="btn btn-sm" title="Fork a copy" onClick={() => onCheckpointLoad(cp.id, "fork")}><GitFork size={13} /> Fork</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => onCheckpointDelete(cp.id)}><X size={13} /></button>
               </div>
             ))}
           </div>
@@ -602,13 +621,13 @@ function ChatDrawer({
               className="btn btn-sm"
               onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=md`), "chat.md")}
             >
-              ⬇ Markdown
+              <Download size={13} /> Markdown
             </button>
             <button
               className="btn btn-sm"
               onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=epub`), "chat.epub")}
             >
-              ⬇ EPUB
+              <Download size={13} /> EPUB
             </button>
           </div>
         </Field>

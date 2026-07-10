@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
+import { Download, Plus, Square, SquareCheck, Trash2, Upload } from "lucide-react";
 import { CharacterEditor } from "@/components/editors/CharacterEditor";
 import {
   LocationEditor,
@@ -40,7 +41,7 @@ function cardMeta(type: TypeKey, item: any): { img: string | null; sub: string }
     case "character":
       return {
         img: assetUrl(item.sprites?.neutral ?? item.avatarAsset),
-        sub: item.personality?.slice(0, 90) ?? "",
+        sub: item.description?.slice(0, 90) ?? "",
       };
     case "location":
     case "scene":
@@ -94,7 +95,7 @@ export default function LibraryPage() {
           ))}
           <div className="flex-1" />
           <button className="btn btn-sm" onClick={() => importRef.current?.click()}>
-            ⬆ Import bundle
+            <Upload size={13} /> Import bundle
           </button>
           {selectMode ? (
             <>
@@ -103,7 +104,7 @@ export default function LibraryPage() {
                 disabled={!selected.size}
                 onClick={() => exportItems([...selected].map((id) => ({ type: tab, id })))}
               >
-                ⬇ Export {selected.size} selected
+                <Download size={13} /> Export {selected.size} selected
               </button>
               <button className="btn btn-sm" onClick={() => setSelectMode(false)}>
                 Cancel
@@ -115,7 +116,7 @@ export default function LibraryPage() {
             </button>
           )}
           <button className="btn btn-sm btn-primary" onClick={() => setEditing({})}>
-            + New
+            <Plus size={13} /> New
           </button>
         </div>
 
@@ -146,8 +147,8 @@ export default function LibraryPage() {
                 }}
               >
                 {selectMode && (
-                  <div className="absolute top-2 left-2 z-10 text-lg">
-                    {selected.has(item.id) ? "☑" : "☐"}
+                  <div className="absolute top-2 left-2 z-10 text-[var(--accent)]">
+                    {selected.has(item.id) ? <SquareCheck size={18} /> : <Square size={18} />}
                   </div>
                 )}
                 {meta.img ? (
@@ -163,7 +164,7 @@ export default function LibraryPage() {
                   <div className="text-xs text-[var(--text-dim)] line-clamp-2 h-8">{meta.sub}</div>
                   <div className="flex gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
                     <button className="btn btn-sm btn-ghost" title="Export" onClick={() => exportItems([{ type: tab, id: item.id }])}>
-                      ⬇
+                      <Download size={13} />
                     </button>
                     <button
                       className="btn btn-sm btn-ghost"
@@ -175,7 +176,7 @@ export default function LibraryPage() {
                         }
                       }}
                     >
-                      🗑
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>

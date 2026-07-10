@@ -98,7 +98,7 @@ export async function runMemoryPass(chatId: string, force = false): Promise<void
     if (ctx.persona) {
       for (const r of out.relationships ?? []) {
         const c = r.character && byName.get(r.character.toLowerCase());
-        if (!c) continue;
+        if (!c || !c.trackRelationship) continue;
         const cur = getRelationship(c.id, ctx.persona.id);
         const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
         putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");

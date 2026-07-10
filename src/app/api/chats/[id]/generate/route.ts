@@ -77,7 +77,7 @@ async function pickSpeaker(
 }
 
 function nextSceneEvent(ctx: ChatContext): SceneEvent | null {
-  if (!ctx.chat.storyId || !ctx.stage.sceneId) return null;
+  if (ctx.chat.mode !== "story" || !ctx.chat.storyId || !ctx.stage.sceneId) return null;
   const story = getStory(ctx.chat.storyId);
   if (!story) return null;
   const idx = story.sceneIds.indexOf(ctx.stage.sceneId);

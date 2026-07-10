@@ -28,7 +28,8 @@ export interface Character {
   id: string;
   name: string;
   avatarAsset: string | null;
-  personality: string;
+  /** who the character is: personality, background, mannerisms, anything else */
+  description: string;
   greeting: string;
   exampleDialogue: string;
   /** text-to-image prompt for the neutral sprite */
@@ -37,6 +38,10 @@ export interface Character {
   sprites: Record<string, string>;
   customExpressions: CustomExpression[];
   typingSfxAsset: string | null;
+  /** affinity/relationship tracking with personas (global per character) */
+  trackRelationship: boolean;
+  /** subtle breathing idle motion on the VN stage */
+  idleMotion: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -111,9 +116,16 @@ export interface ChatOverrides {
   chunkThreshold?: number;
 }
 
+/**
+ * story: a story is required, scene switching within its scenes only, no location control.
+ * scene: one fixed scene, no switching. location: one fixed location. casual: none of these.
+ */
+export type ChatMode = "story" | "scene" | "location" | "casual";
+
 export interface Chat {
   id: string;
   title: string;
+  mode: ChatMode;
   folder: string;
   tags: string[];
   storyId: string | null;

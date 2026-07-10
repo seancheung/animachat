@@ -1,6 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  Clapperboard,
+  MapPin,
+  Pencil,
+  RefreshCw,
+  ScrollText,
+  Trash2,
+} from "lucide-react";
 import { MessageText } from "@/components/MessageText";
 import { assetUrl, cls } from "@/lib/ui";
 import { EMOTIONS, type Character, type Message } from "@/lib/types";
@@ -40,7 +51,8 @@ export function MessageRow({
     return (
       <div className="text-center my-2 fade-in">
         <span className="chip">
-          {message.sceneEvent?.kind === "scene" ? "🎬" : "📍"} {sceneName ?? "scene change"}
+          {message.sceneEvent?.kind === "scene" ? <Clapperboard size={11} /> : <MapPin size={11} />}{" "}
+          {sceneName ?? "scene change"}
         </span>
       </div>
     );
@@ -59,7 +71,7 @@ export function MessageRow({
     <div className={cls("group flex gap-3 fade-in", message.role === "user" && "flex-row-reverse")}>
       <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-[var(--panel-2)] flex items-center justify-center text-sm mt-1">
         {message.role === "narrator" ? (
-          <span>📜</span>
+          <ScrollText size={15} className="text-[var(--text-dim)]" />
         ) : char?.avatarAsset ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={assetUrl(char.avatarAsset)!} alt="" className="w-full h-full object-cover" />
@@ -131,9 +143,9 @@ export function MessageRow({
         >
           {message.variants.length > 1 && (
             <span className="flex items-center gap-0.5 mr-1 text-[var(--text-dim)]">
-              <button className="btn btn-sm btn-ghost" disabled={message.activeVariant === 0 || busy} onClick={() => onSwipe(message.activeVariant - 1)}>‹</button>
+              <button className="btn btn-sm btn-ghost" disabled={message.activeVariant === 0 || busy} onClick={() => onSwipe(message.activeVariant - 1)}><ChevronLeft size={14} /></button>
               {message.activeVariant + 1}/{message.variants.length}
-              <button className="btn btn-sm btn-ghost" disabled={message.activeVariant >= message.variants.length - 1 || busy} onClick={() => onSwipe(message.activeVariant + 1)}>›</button>
+              <button className="btn btn-sm btn-ghost" disabled={message.activeVariant >= message.variants.length - 1 || busy} onClick={() => onSwipe(message.activeVariant + 1)}><ChevronRight size={14} /></button>
             </span>
           )}
           <button
@@ -145,13 +157,13 @@ export function MessageRow({
               setEditing(true);
             }}
           >
-            ✎
+            <Pencil size={13} />
           </button>
           {(message.role === "character" || message.role === "narrator") && (
-            <button className="btn btn-sm btn-ghost" title="Regenerate (adds a swipe)" disabled={busy} onClick={onRegen}>↻</button>
+            <button className="btn btn-sm btn-ghost" title="Regenerate (adds a swipe)" disabled={busy} onClick={onRegen}><RefreshCw size={13} /></button>
           )}
-          <button className="btn btn-sm btn-ghost" title="Save state here" onClick={onCheckpoint}>🔖</button>
-          <button className="btn btn-sm btn-ghost" title="Delete" disabled={busy} onClick={() => confirm("Delete this message?") && onDelete()}>🗑</button>
+          <button className="btn btn-sm btn-ghost" title="Save state here" onClick={onCheckpoint}><Bookmark size={13} /></button>
+          <button className="btn btn-sm btn-ghost" title="Delete" disabled={busy} onClick={() => confirm("Delete this message?") && onDelete()}><Trash2 size={13} /></button>
         </div>
       </div>
     </div>

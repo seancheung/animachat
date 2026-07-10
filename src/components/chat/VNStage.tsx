@@ -42,7 +42,10 @@ export function VNStage({
           return (
             <div
               key={c.id}
-              className={cls("sprite h-full max-w-[45%] flex items-end justify-center", speaking ? "sprite-idle" : "sprite-dim")}
+              className={cls(
+                "sprite h-full max-w-[45%] flex items-end justify-center",
+                speaking ? (c.idleMotion ? "sprite-idle" : "") : "sprite-dim"
+              )}
               style={{ aspectRatio: "2/3" }}
               title={`${c.name}${emotions[c.id] ? ` (${emotions[c.id]})` : ""}`}
             >
