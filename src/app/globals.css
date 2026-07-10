@@ -1,26 +1,186 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #12101a;
+  --bg-soft: #1a1725;
+  --panel: #211d2f;
+  --panel-2: #2a2540;
+  --border: #383152;
+  --text: #eae6f5;
+  --text-dim: #a99fc4;
+  --accent: #a78bfa;
+  --accent-2: #f0abfc;
+  --action: #c4b5fd;
+  --danger: #f87171;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.input {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+}
+.input:focus {
+  border-color: var(--accent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: filter 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.btn:hover {
+  filter: brightness(1.15);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  border-color: #8b5cf6;
+  color: white;
+}
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+.btn-ghost:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.btn-danger {
+  border-color: #7f1d1d;
+  color: var(--danger);
+}
+.btn-sm {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* roleplay text styling */
+.msg-action {
+  color: var(--action);
+  font-style: italic;
+  opacity: 0.9;
+}
+.msg-quote {
+  color: var(--text);
+}
+
+/* VN stage */
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.004);
+  }
+}
+@keyframes sprite-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sprite {
+  animation: sprite-in 0.5s ease both;
+  transition: filter 0.45s ease, opacity 0.45s ease, transform 0.45s ease;
+}
+.sprite-idle {
+  animation: sprite-in 0.5s ease both, breathe 4.5s ease-in-out 0.5s infinite;
+}
+.sprite-dim {
+  filter: brightness(0.45) saturate(0.7);
+}
+.sprite-img {
+  transition: opacity 0.25s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.35s ease both;
+}
+
+.bg-art {
+  transition: opacity 0.8s ease;
+}
+
+/* typing caret */
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: "▌";
+  animation: blink 0.8s infinite;
+  color: var(--accent);
 }
