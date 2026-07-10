@@ -19,6 +19,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 - `src/lib/ai/` — `client.ts` (raw-fetch Anthropic + OpenAI-compatible clients, SSE, per-task model resolution, usage logging), `tags.ts` (streaming tag parser), `prompts.ts` (context assembly), `memory.ts` (rolling summarization), `placeholders.ts` (`[char_name]`-style substitution)
 - `src/app/api/` — REST + SSE routes; entity CRUD via `src/lib/entityRoutes.ts` factory
 - `src/components/` — UI; chat page at `src/app/chat/[id]/page.tsx`
+- `src/components/ui/` — vendored [retuned-ui](../retuned-ui) components (shadcn-style: we own the code; `"use client"` added for Next). Theme tokens in `src/app/theme.css` (dark-first amber; `base-*` surfaces, `content-*` text ladder, `primary-*` accent). App-level primitives (Modal/Field/Row/EmptyState) in `src/components/app.tsx`; `confirmDialog()` (promise-based window.confirm replacement, outlet in layout) in `src/components/confirm.tsx`; class merging via `cn` from `src/utils/cn.ts`.
 - `src/lib/seed.ts` — starter cast, runs once via `src/instrumentation.ts` when the library is empty
 
 ## Core invariants (violating these breaks features)
@@ -35,6 +36,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 ## Gotchas
 
 - `better-sqlite3` must stay in `serverExternalPackages` (next.config.ts).
-- Don't render toggle buttons inside a `<label>` — label click re-dispatch double-fires them. `Field` in `components/ui.tsx` is deliberately a `<div>`.
+- Don't render toggle buttons inside a `<label>` — label click re-dispatch double-fires them. `Field` in `components/app.tsx` is deliberately a `<div>`.
+- The vendored ui components compose classes with plain `cva` (no tailwind-merge), so a width/size override passed via `className` may lose to the component's own class — wrap in a sized container instead (see the volume `Slider` in the chat toolbar).
 - The user runs their own dev server on this repo — don't kill processes on port 3000, and don't run a second `next dev` (Next refuses); use `npm start` on another port with `ANIMACHAT_DB_PATH` instead.
 - The DB connection is cached in `globalThis` — schema changes take effect after the user restarts their dev server (with `./data` deleted).

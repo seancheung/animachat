@@ -1,122 +1,25 @@
 @import "tailwindcss";
-
-:root {
-  --bg: #12101a;
-  --bg-soft: #1a1725;
-  --panel: #211d2f;
-  --panel-2: #2a2540;
-  --border: #383152;
-  --text: #eae6f5;
-  --text-dim: #a99fc4;
-  --accent: #a78bfa;
-  --accent-2: #f0abfc;
-  --action: #c4b5fd;
-  --danger: #f87171;
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
+@import "./theme.css";
 
 html,
 body {
   height: 100%;
 }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-}
-
+/* card/panel surface (matches the ui components: dialogs, inputs, menus) */
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-}
-
-.input {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--color-base-100);
+  border: 1px solid var(--color-base-400);
   border-radius: 0.5rem;
-  padding: 0.4rem 0.65rem;
-  font-size: 0.875rem;
-  color: var(--text);
-  width: 100%;
-  outline: none;
-}
-.input:focus {
-  border-color: var(--accent);
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  border: 1px solid var(--border);
-  background: var(--panel-2);
-  color: var(--text);
-  cursor: pointer;
-  transition: filter 0.15s, background 0.15s;
-  white-space: nowrap;
-}
-.btn:hover {
-  filter: brightness(1.15);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  filter: none;
-}
-.btn-primary {
-  background: linear-gradient(135deg, #7c3aed, #a855f7);
-  border-color: #8b5cf6;
-  color: white;
-}
-.btn-ghost {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-dim);
-}
-.btn-ghost:hover {
-  color: var(--text);
-  background: var(--panel-2);
-}
-.btn-danger {
-  border-color: #7f1d1d;
-  color: var(--danger);
-}
-.btn-sm {
-  padding: 0.15rem 0.55rem;
-  font-size: 0.78rem;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.1rem 0.6rem;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
-
-/* roleplay text styling */
+/* roleplay text styling: *actions* muted stage directions, "dialogue" prominent */
 .msg-action {
-  color: var(--action);
+  color: var(--color-content-300);
   font-style: italic;
-  opacity: 0.9;
 }
 .msg-quote {
-  color: var(--text);
+  color: var(--color-content-100);
 }
 
 /* VN stage */
@@ -182,5 +85,5 @@ body {
 .caret::after {
   content: "▌";
   animation: blink 0.8s infinite;
-  color: var(--accent);
+  color: var(--color-primary-500);
 }

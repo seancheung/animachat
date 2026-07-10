@@ -3,7 +3,13 @@
 import useSWR from "swr";
 import { Heart, Plus, Trash2, X } from "lucide-react";
 import { AssetInput } from "@/components/AssetInput";
-import { Field, Toggle } from "@/components/ui";
+import { Field } from "@/components/app";
+import { confirmDialog } from "@/components/confirm";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
+import Progress from "@/components/ui/progress";
+import Switch from "@/components/ui/switch";
+import Textarea from "@/components/ui/textarea";
 import { api } from "@/lib/ui";
 import { EMOTIONS, type Character, type CustomExpression } from "@/lib/types";
 import { EditorShell, useEditor } from "./SimpleEditors";
@@ -15,33 +21,32 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
   const { data, mutate } = useSWR<
     { personaId: string; personaName: string; affinity: number; notes: string }[]
   >(`/api/characters/${characterId}/relationships`, api.get);
-  if (!data?.length) return <div className="text-xs text-[var(--text-dim)]">no relationship data yet</div>;
+  if (!data?.length) return <div className="text-xs text-content-400">no relationship data yet</div>;
   return (
     <div className="space-y-2">
       {data.map((r) => (
         <div key={r.personaId} className="panel p-2.5">
           <div className="flex justify-between text-sm">
             <span className="inline-flex items-center gap-1">
-              <Heart size={12} className="text-[var(--accent-2)]" /> with {r.personaName}
+              <Heart size={12} className="text-primary-400" /> with {r.personaName}
             </span>
-            <span className="text-[var(--text-dim)]">affinity {r.affinity}</span>
+            <span className="text-content-300">affinity {r.affinity}</span>
           </div>
-          <div className="h-1.5 rounded bg-[var(--bg-soft)] mt-1 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#f0abfc]" style={{ width: `${(r.affinity + 100) / 2}%` }} />
-          </div>
-          {r.notes && <div className="text-xs text-[var(--text-dim)] mt-1">{r.notes}</div>}
+          <Progress className="mt-1.5" value={(r.affinity + 100) / 2} />
+          {r.notes && <div className="text-xs text-content-300 mt-1">{r.notes}</div>}
         </div>
       ))}
-      <button
-        className="btn btn-sm btn-danger"
+      <Button
+        variant="danger"
+        size="sm"
         onClick={async () => {
-          if (!confirm("Reset this character's relationship data with all personas?")) return;
+          if (!(await confirmDialog({ title: "Reset relationships", message: "Reset this character's relationship data with all personas?", confirmLabel: "Reset", danger: true }))) return;
           await api.del(`/api/characters/${characterId}/relationships`);
           mutate();
         }}
       >
-        <Trash2 size={13} /> Reset relationships
-      </button>
+        <Trash2 /> Reset relationships
+      </Button>
     </div>
   );
 }
@@ -67,26 +72,26 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
         <AssetInput label="Avatar (1:1)" kind="image" ratio={1} value={form.avatarAsset ?? null} onChange={(v) => setForm({ ...form, avatarAsset: v })} />
         <div className="space-y-3">
           <Field label="Name">
-            <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
           </Field>
           <Field label="Greeting" hint="their opening message when a chat starts">
-            <textarea className="input h-20" value={form.greeting ?? ""} onChange={(e) => setForm({ ...form, greeting: e.target.value })} />
+            <Textarea className="w-full h-20" value={form.greeting ?? ""} onChange={(v) => setForm({ ...form, greeting: v })} />
           </Field>
         </div>
       </div>
       <Field label="Description" hint={`personality, background, mannerisms, anything else — ${PLACEHOLDER_HINT}`}>
-        <textarea className="input h-36" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Textarea className="w-full h-36" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <Field label="Example dialogue" hint="a few example exchanges showing their voice">
-        <textarea className="input h-24" value={form.exampleDialogue ?? ""} onChange={(e) => setForm({ ...form, exampleDialogue: e.target.value })} />
+        <Textarea className="w-full h-24" value={form.exampleDialogue ?? ""} onChange={(v) => setForm({ ...form, exampleDialogue: v })} />
       </Field>
       <Field label="Image prompt" hint="text-to-image prompt for the neutral sprite (2:3) — generate elsewhere, upload below">
-        <textarea className="input h-20" value={form.imagePrompt ?? ""} onChange={(e) => setForm({ ...form, imagePrompt: e.target.value })} />
+        <Textarea className="w-full h-20" value={form.imagePrompt ?? ""} onChange={(v) => setForm({ ...form, imagePrompt: v })} />
       </Field>
 
       <div className="flex gap-6">
-        <Toggle checked={form.trackRelationship ?? true} onChange={(v) => setForm({ ...form, trackRelationship: v })} label="Track relationship/affinity with personas" />
-        <Toggle checked={form.idleMotion ?? true} onChange={(v) => setForm({ ...form, idleMotion: v })} label="Idle motion on stage" />
+        <Switch value={form.trackRelationship ?? true} onChange={(v) => setForm({ ...form, trackRelationship: v })} label="Track relationship/affinity with personas" />
+        <Switch value={form.idleMotion ?? true} onChange={(v) => setForm({ ...form, idleMotion: v })} label="Idle motion on stage" />
       </div>
       {form.id && (form.trackRelationship ?? true) && (
         <Field label="Relationships">
@@ -99,7 +104,7 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
           {EMOTIONS.map((emo) => (
             <div key={emo}>
               <AssetInput kind="image" ratio={2 / 3} value={sprites[emo] ?? null} onChange={(v) => setSprite(emo, v)} />
-              <div className="text-center text-xs text-[var(--text-dim)] mt-0.5">{emo}</div>
+              <div className="text-center text-xs text-content-300 mt-0.5">{emo}</div>
             </div>
           ))}
         </div>
@@ -113,12 +118,12 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
                 <AssetInput kind="image" ratio={2 / 3} value={sprites[c.name] ?? null} onChange={(v) => setSprite(c.name, v)} />
               </div>
               <div className="flex-1 space-y-1">
-                <input
-                  className="input"
+                <Input
+                  className="w-full"
                   placeholder="name (kebab-case)"
                   value={c.name}
-                  onChange={(e) => {
-                    const name = e.target.value.toLowerCase().replace(/\s+/g, "-");
+                  onChange={(raw) => {
+                    const name = raw.toLowerCase().replace(/\s+/g, "-");
                     const next = [...customs];
                     const oldName = next[i].name;
                     next[i] = { ...next[i], name };
@@ -130,35 +135,38 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
                     setForm({ ...form, customExpressions: next, sprites: s });
                   }}
                 />
-                <input
-                  className="input"
+                <Input
+                  className="w-full"
                   placeholder="when to use it"
                   value={c.description}
-                  onChange={(e) => {
+                  onChange={(v) => {
                     const next = [...customs];
-                    next[i] = { ...next[i], description: e.target.value };
+                    next[i] = { ...next[i], description: v };
                     setForm({ ...form, customExpressions: next });
                   }}
                 />
               </div>
-              <button
-                className="btn btn-sm btn-ghost"
+              <Button
+                variant="ghost"
+                size="sm"
+                shape="square"
                 onClick={() => {
                   const s = { ...sprites };
                   delete s[c.name];
                   setForm({ ...form, customExpressions: customs.filter((_, k) => k !== i), sprites: s });
                 }}
               >
-                <X size={14} />
-              </button>
+                <X />
+              </Button>
             </div>
           ))}
-          <button
-            className="btn btn-sm"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setForm({ ...form, customExpressions: [...customs, { name: "", description: "" }] })}
           >
-            <Plus size={14} /> Add custom expression
-          </button>
+            <Plus /> Add custom expression
+          </Button>
         </div>
       </Field>
 

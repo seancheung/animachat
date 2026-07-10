@@ -2,9 +2,19 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
-import { Download, Upload } from "lucide-react";
-import { Field, Modal, Row } from "@/components/ui";
+import { Download, Plus, Upload, X } from "lucide-react";
+import { Field, Modal, Row } from "@/components/app";
+import { confirmDialog } from "@/components/confirm";
 import { ModelPicker, useProviders } from "@/components/ModelPicker";
+import Badge from "@/components/ui/badge";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
+import InputNumber from "@/components/ui/input-number";
+import InputPassword from "@/components/ui/input-password";
+import Select from "@/components/ui/select";
+import Switch from "@/components/ui/switch";
+import Textarea from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { api, downloadBlob } from "@/lib/ui";
 import { AI_TASKS, POV_LABELS, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
@@ -36,7 +46,7 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
       setNewModel(null);
       mutate();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     }
   }
   async function saveModel() {
@@ -45,7 +55,7 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
       setEditModel(null);
       mutate();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     }
   }
 
@@ -54,66 +64,72 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
       <div className="flex items-center justify-between">
         <div>
           <span className="font-medium">{provider.name}</span>{" "}
-          <span className="chip ml-2">{provider.type === "anthropic" ? "Anthropic" : "OpenAI-compatible"}</span>
-          <div className="text-xs text-[var(--text-dim)] mt-1">{provider.baseUrl}</div>
+          <Badge variant="secondary" rounded className="ml-2">
+            {provider.type === "anthropic" ? "Anthropic" : "OpenAI-compatible"}
+          </Badge>
+          <div className="text-xs text-content-300 mt-1">{provider.baseUrl}</div>
         </div>
         <div className="flex gap-1">
-          <button className="btn btn-sm" onClick={() => setEdit({ ...provider })}>
+          <Button variant="secondary" size="sm" onClick={() => setEdit({ ...provider })}>
             Edit
-          </button>
-          <button
-            className="btn btn-sm btn-danger"
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
             onClick={async () => {
-              if (confirm(`Delete provider ${provider.name} and its models?`)) {
+              if (await confirmDialog({ title: "Delete provider", message: `Delete provider ${provider.name} and its models?`, confirmLabel: "Delete", danger: true })) {
                 await api.del(`/api/providers/${provider.id}`);
                 mutate();
               }
             }}
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
       <div className="space-y-1">
         {models.map((m) => (
-          <div key={m.id} className="flex items-center justify-between bg-[var(--bg-soft)] rounded-lg px-3 py-1.5 text-sm">
+          <div key={m.id} className="flex items-center justify-between bg-base-200 rounded-md px-3 py-1.5 text-sm">
             <div>
-              {m.displayName} <span className="text-[var(--text-dim)] text-xs">({m.modelId}, ctx {Math.round(m.contextWindow / 1000)}k)</span>
-              {m.customBody && <span className="chip ml-2">custom body</span>}
+              {m.displayName} <span className="text-content-300 text-xs">({m.modelId}, ctx {Math.round(m.contextWindow / 1000)}k)</span>
+              {m.customBody && <Badge variant="secondary" rounded className="ml-2">custom body</Badge>}
             </div>
             <div className="flex gap-1">
-              <button
-                className="btn btn-sm btn-ghost"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setEditModel({ ...m, customBody: m.customBody ? JSON.stringify(m.customBody) : "" })}
               >
                 Edit
-              </button>
-              <button
-                className="btn btn-sm btn-ghost"
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                shape="square"
                 onClick={async () => {
-                  if (confirm(`Delete model ${m.displayName}?`)) {
+                  if (await confirmDialog({ title: "Delete model", message: `Delete model ${m.displayName}?`, confirmLabel: "Delete", danger: true })) {
                     await api.del(`/api/models/${m.id}`);
                     mutate();
                   }
                 }}
               >
-                ✕
-              </button>
+                <X />
+              </Button>
             </div>
           </div>
         ))}
-        <button className="btn btn-sm" onClick={() => setNewModel({ modelId: "", displayName: "", contextWindow: 128000, customBody: "" })}>
-          + Add model
-        </button>
+        <Button variant="secondary" size="sm" onClick={() => setNewModel({ modelId: "", displayName: "", contextWindow: 128000, customBody: "" })}>
+          <Plus /> Add model
+        </Button>
       </div>
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title="Edit provider">
         {edit && (
           <div className="space-y-3">
-            <Field label="Name"><input className="input" value={edit.name ?? ""} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
-            <Field label="Base URL"><input className="input" value={edit.baseUrl ?? ""} onChange={(e) => setEdit({ ...edit, baseUrl: e.target.value })} /></Field>
-            <Field label="API key"><input className="input" type="password" value={edit.apiKey ?? ""} onChange={(e) => setEdit({ ...edit, apiKey: e.target.value })} /></Field>
-            <button className="btn btn-primary" onClick={saveProvider}>Save</button>
+            <Field label="Name"><Input className="w-full" value={edit.name ?? ""} onChange={(v) => setEdit({ ...edit, name: v })} /></Field>
+            <Field label="Base URL"><Input className="w-full" value={edit.baseUrl ?? ""} onChange={(v) => setEdit({ ...edit, baseUrl: v })} /></Field>
+            <Field label="API key"><InputPassword className="w-full" value={edit.apiKey ?? ""} onChange={(v) => setEdit({ ...edit, apiKey: v })} /></Field>
+            <Button onClick={saveProvider}>Save</Button>
           </div>
         )}
       </Modal>
@@ -126,29 +142,28 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
           {state && (
             <div className="space-y-3">
               <Field label="Model ID" hint='as sent to the API, e.g. "claude-sonnet-5"'>
-                <input className="input" value={state.modelId} onChange={(e) => set({ ...state, modelId: e.target.value })} />
+                <Input className="w-full" value={state.modelId} onChange={(v) => set({ ...state, modelId: v })} />
               </Field>
               <Field label="Display name">
-                <input className="input" value={state.displayName} onChange={(e) => set({ ...state, displayName: e.target.value })} />
+                <Input className="w-full" value={state.displayName} onChange={(v) => set({ ...state, displayName: v })} />
               </Field>
               <Field label="Context window (tokens)" hint="the model's hard ceiling — used for context budgeting">
-                <input className="input" type="number" value={state.contextWindow} onChange={(e) => set({ ...state, contextWindow: Number(e.target.value) })} />
+                <InputNumber className="w-full" integer value={state.contextWindow} onChange={(v) => set({ ...state, contextWindow: v })} />
               </Field>
               <Field label="Custom request body (JSON)" hint='deep-merged into every request, e.g. {"thinking":{"type":"disabled"}}'>
-                <textarea
-                  className="input font-mono text-xs h-24"
+                <Textarea
+                  className="w-full font-mono text-xs h-24"
                   value={state.customBody ?? ""}
-                  onChange={(e) => set({ ...state, customBody: e.target.value })}
+                  onChange={(v) => set({ ...state, customBody: v })}
                 />
               </Field>
-              <button
-                className="btn btn-primary"
+              <Button
                 onClick={() => {
                   if (state.customBody?.trim()) {
                     try {
                       JSON.parse(state.customBody);
                     } catch {
-                      alert("Custom body is not valid JSON");
+                      toast.error("Custom body is not valid JSON");
                       return;
                     }
                   }
@@ -156,7 +171,7 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
                 }}
               >
                 Save
-              </button>
+              </Button>
             </div>
           )}
         </Modal>
@@ -173,30 +188,33 @@ function UsagePanel() {
   return (
     <div className="space-y-3">
       <Row>
-        <div className="text-sm text-[var(--text-dim)]">
+        <div className="text-sm text-content-300 flex items-center gap-2">
           Last
-          <select className="input inline-block w-auto mx-2" value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            {[7, 30, 90, 365].map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-          days: <b className="text-[var(--text)]">{fmt(data.totals.input)}</b> in / <b className="text-[var(--text)]">{fmt(data.totals.output)}</b> out tokens · {data.totals.calls} calls
+          <Select
+            className="min-w-20"
+            value={days}
+            onChange={(v) => setDays(v)}
+            options={[7, 30, 90, 365].map((d) => ({ value: d, label: String(d) }))}
+          />
+          days: <b className="text-content-100">{fmt(data.totals.input)}</b> in / <b className="text-content-100">{fmt(data.totals.output)}</b> out tokens · {data.totals.calls} calls
         </div>
       </Row>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="panel p-3">
-          <div className="text-xs uppercase tracking-wider text-[var(--text-dim)] mb-2">By feature</div>
+          <div className="text-xs uppercase tracking-wider text-content-300 mb-2">By feature</div>
           {data.byFeature.map((r: any) => (
             <div key={r.feature} className="flex justify-between text-sm py-0.5">
               <span>{TASK_LABELS[r.feature] ?? r.feature}</span>
-              <span className="text-[var(--text-dim)]">{fmt(r.input)} / {fmt(r.output)}</span>
+              <span className="text-content-300">{fmt(r.input)} / {fmt(r.output)}</span>
             </div>
           ))}
         </div>
         <div className="panel p-3">
-          <div className="text-xs uppercase tracking-wider text-[var(--text-dim)] mb-2">By model</div>
+          <div className="text-xs uppercase tracking-wider text-content-300 mb-2">By model</div>
           {data.byModel.map((r: any) => (
             <div key={r.provider + r.model} className="flex justify-between text-sm py-0.5">
               <span>{r.provider} · {r.model}</span>
-              <span className="text-[var(--text-dim)]">{fmt(r.input)} / {fmt(r.output)}</span>
+              <span className="text-content-300">{fmt(r.input)} / {fmt(r.output)}</span>
             </div>
           ))}
         </div>
@@ -216,7 +234,7 @@ export default function SettingsPage() {
     mutateSettings();
   }
 
-  if (!settings) return <div className="p-8 text-[var(--text-dim)]">Loading…</div>;
+  if (!settings) return <div className="p-8 text-content-300">Loading…</div>;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -224,12 +242,12 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold">Providers & models</h1>
-            <button className="btn btn-primary btn-sm" onClick={() => setAddingProvider({ name: "", type: "anthropic", baseUrl: "", apiKey: "" })}>
-              + Add provider
-            </button>
+            <Button size="sm" onClick={() => setAddingProvider({ name: "", type: "anthropic", baseUrl: "", apiKey: "" })}>
+              <Plus /> Add provider
+            </Button>
           </div>
           {pm?.providers.length === 0 && (
-            <div className="text-sm text-[var(--text-dim)]">Add a provider (Anthropic or any OpenAI-compatible API), then add models under it.</div>
+            <div className="text-sm text-content-300">Add a provider (Anthropic or any OpenAI-compatible API), then add models under it.</div>
           )}
           {pm?.providers.map((p) => (
             <ProviderCard key={p.id} provider={p} models={pm.models.filter((m) => m.providerId === p.id)} mutate={mutate} />
@@ -258,18 +276,23 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold">Defaults</h2>
           <div className="panel p-4 grid md:grid-cols-3 gap-3">
             <Field label="AI language" hint="what characters & narrator write in">
-              <input className="input" value={settings.language} onChange={(e) => patchSettings({ language: e.target.value })} />
+              <Input className="w-full" value={settings.language} onChange={(v) => patchSettings({ language: v })} />
             </Field>
             <Field label="Point of view">
-              <select className="input" value={settings.pov} onChange={(e) => patchSettings({ pov: e.target.value as Pov })}>
-                {Object.entries(POV_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              <Select
+                className="w-full"
+                value={settings.pov}
+                onChange={(v) => patchSettings({ pov: v as Pov })}
+                options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+              />
             </Field>
             <Field label="Typing sound">
-              <select className="input" value={settings.typingSfxEnabled ? "on" : "off"} onChange={(e) => patchSettings({ typingSfxEnabled: e.target.value === "on" })}>
-                <option value="on">Enabled</option>
-                <option value="off">Disabled</option>
-              </select>
+              <Switch
+                className="h-8"
+                value={settings.typingSfxEnabled}
+                onChange={(v) => patchSettings({ typingSfxEnabled: v })}
+                label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
+              />
             </Field>
           </div>
         </section>
@@ -278,16 +301,16 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold">Advanced: memory & context</h2>
           <div className="panel p-4 grid md:grid-cols-4 gap-3">
             <Field label="Context budget cap" hint="max prompt tokens per request">
-              <input className="input" type="number" value={settings.contextBudgetCap} onChange={(e) => patchSettings({ contextBudgetCap: Number(e.target.value) || 32000 })} />
+              <InputNumber className="w-full" integer value={settings.contextBudgetCap} onChange={(v) => patchSettings({ contextBudgetCap: v || 32000 })} />
             </Field>
             <Field label="Verbatim share" hint="fraction kept as raw messages">
-              <input className="input" type="number" step="0.05" min="0.1" max="0.9" value={settings.verbatimShare} onChange={(e) => patchSettings({ verbatimShare: Number(e.target.value) || 0.35 })} />
+              <InputNumber className="w-full" value={settings.verbatimShare} onChange={(v) => patchSettings({ verbatimShare: v || 0.35 })} />
             </Field>
             <Field label="Chunk threshold" hint="tokens before a summarization pass">
-              <input className="input" type="number" value={settings.chunkThreshold} onChange={(e) => patchSettings({ chunkThreshold: Number(e.target.value) || 3000 })} />
+              <InputNumber className="w-full" integer value={settings.chunkThreshold} onChange={(v) => patchSettings({ chunkThreshold: v || 3000 })} />
             </Field>
             <Field label="Output reserve" hint="tokens reserved for the reply">
-              <input className="input" type="number" value={settings.outputReserve} onChange={(e) => patchSettings({ outputReserve: Number(e.target.value) || 2000 })} />
+              <InputNumber className="w-full" integer value={settings.outputReserve} onChange={(v) => patchSettings({ outputReserve: v || 2000 })} />
             </Field>
           </div>
         </section>
@@ -300,18 +323,18 @@ export default function SettingsPage() {
         <section className="space-y-3 pb-10">
           <h2 className="text-lg font-semibold">Backup</h2>
           <Row>
-            <button
-              className="btn"
+            <Button
+              variant="secondary"
               onClick={async () => {
                 const res = await fetch("/api/backup");
                 await downloadBlob(res, "animachat-backup.zip");
               }}
             >
-              <Download size={14} /> Download full backup
-            </button>
-            <button className="btn btn-danger" onClick={() => restoreRef.current?.click()}>
-              <Upload size={14} /> Restore from backup…
-            </button>
+              <Download /> Download full backup
+            </Button>
+            <Button variant="danger" onClick={() => restoreRef.current?.click()}>
+              <Upload /> Restore from backup…
+            </Button>
             <input
               ref={restoreRef}
               type="file"
@@ -320,14 +343,15 @@ export default function SettingsPage() {
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
-                if (!f || !confirm("Restoring REPLACES the current database and assets. Continue?")) return;
+                if (!f) return;
+                if (!(await confirmDialog({ title: "Restore backup", message: "Restoring REPLACES the current database and assets. Continue?", confirmLabel: "Restore", danger: true }))) return;
                 const fd = new FormData();
                 fd.append("file", f);
                 const res = await fetch("/api/restore", { method: "POST", body: fd });
                 if (res.ok) {
-                  alert("Restored.");
+                  toast.success("Restored.");
                   location.reload();
-                } else alert((await res.json())?.error ?? "Restore failed");
+                } else toast.error((await res.json())?.error ?? "Restore failed");
               }}
             />
           </Row>
@@ -337,31 +361,35 @@ export default function SettingsPage() {
       <Modal open={!!addingProvider} onClose={() => setAddingProvider(null)} title="Add provider">
         {addingProvider && (
           <div className="space-y-3">
-            <Field label="Name"><input className="input" placeholder="Anthropic / OpenRouter / Groq…" value={addingProvider.name} onChange={(e) => setAddingProvider({ ...addingProvider, name: e.target.value })} /></Field>
+            <Field label="Name"><Input className="w-full" placeholder="Anthropic / OpenRouter / Groq…" value={addingProvider.name} onChange={(v) => setAddingProvider({ ...addingProvider, name: v })} /></Field>
             <Field label="Type">
-              <select className="input" value={addingProvider.type} onChange={(e) => setAddingProvider({ ...addingProvider, type: e.target.value })}>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI-compatible</option>
-              </select>
+              <Select
+                className="w-full"
+                value={addingProvider.type}
+                onChange={(v) => setAddingProvider({ ...addingProvider, type: v })}
+                options={[
+                  { value: "anthropic", label: "Anthropic" },
+                  { value: "openai", label: "OpenAI-compatible" },
+                ]}
+              />
             </Field>
             <Field label="Base URL" hint="leave empty for the official endpoint">
-              <input className="input" placeholder={addingProvider.type === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"} value={addingProvider.baseUrl} onChange={(e) => setAddingProvider({ ...addingProvider, baseUrl: e.target.value })} />
+              <Input className="w-full" placeholder={addingProvider.type === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"} value={addingProvider.baseUrl} onChange={(v) => setAddingProvider({ ...addingProvider, baseUrl: v })} />
             </Field>
-            <Field label="API key"><input className="input" type="password" value={addingProvider.apiKey} onChange={(e) => setAddingProvider({ ...addingProvider, apiKey: e.target.value })} /></Field>
-            <button
-              className="btn btn-primary"
+            <Field label="API key"><InputPassword className="w-full" value={addingProvider.apiKey} onChange={(v) => setAddingProvider({ ...addingProvider, apiKey: v })} /></Field>
+            <Button
               onClick={async () => {
                 try {
                   await api.post("/api/providers", addingProvider);
                   setAddingProvider(null);
                   mutate();
                 } catch (e: any) {
-                  alert(e.message);
+                  toast.error(e.message);
                 }
               }}
             >
               Add
-            </button>
+            </Button>
           </div>
         )}
       </Modal>

@@ -2,10 +2,6 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export function cls(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
-}
-
 export async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,

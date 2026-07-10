@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
-import { Download, Plus, Square, SquareCheck, Trash2, Upload } from "lucide-react";
+import { Download, Plus, Upload } from "lucide-react";
 import { CharacterEditor } from "@/components/editors/CharacterEditor";
 import {
   LocationEditor,
@@ -11,8 +11,13 @@ import {
   SceneEditor,
   StoryEditor,
 } from "@/components/editors/SimpleEditors";
-import { EmptyState, Modal } from "@/components/ui";
-import { api, assetUrl, cls, downloadBlob } from "@/lib/ui";
+import { LIBRARY_CARDS } from "@/components/library/cards";
+import { EmptyState, Modal } from "@/components/app";
+import { confirmDialog } from "@/components/confirm";
+import Button from "@/components/ui/button";
+import Tabs from "@/components/ui/tab";
+import { toast } from "@/components/ui/toast";
+import { api, downloadBlob } from "@/lib/ui";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -36,25 +41,6 @@ const EDITORS: Record<TypeKey, any> = {
   lorebook: LorebookEditor,
 };
 
-function cardMeta(type: TypeKey, item: any): { img: string | null; sub: string } {
-  switch (type) {
-    case "character":
-      return {
-        img: assetUrl(item.sprites?.neutral ?? item.avatarAsset),
-        sub: item.description?.slice(0, 90) ?? "",
-      };
-    case "location":
-    case "scene":
-      return { img: assetUrl(item.artworkAsset), sub: (item.description ?? item.setup ?? "").slice(0, 90) };
-    case "story":
-      return { img: null, sub: `${item.sceneIds?.length ?? 0} scenes — ${(item.description ?? "").slice(0, 70)}` };
-    case "lorebook":
-      return { img: null, sub: `${item.entries?.length ?? 0} entries — ${(item.description ?? "").slice(0, 70)}` };
-    default:
-      return { img: null, sub: (item.description ?? "").slice(0, 90) };
-  }
-}
-
 export default function LibraryPage() {
   const [tab, setTab] = useState<TypeKey>("character");
   const [editing, setEditing] = useState<any | null>(null);
@@ -65,6 +51,7 @@ export default function LibraryPage() {
   const type = TYPES.find((t) => t.key === tab)!;
   const { data: items, mutate } = useSWR<any[]>(type.endpoint, api.get);
   const Editor = EDITORS[tab];
+  const Card = LIBRARY_CARDS[tab];
 
   async function exportItems(ids: { type: string; id: string }[]) {
     const res = await fetch("/api/export", {
@@ -72,52 +59,61 @@ export default function LibraryPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ items: ids }),
     });
-    if (!res.ok) return alert("Export failed");
+    if (!res.ok) return toast.error("Export failed");
     await downloadBlob(res, "animachat-bundle.zip");
+  }
+
+  function toggleSelected(id: string) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
+
+  async function deleteItem(item: any) {
+    if (!(await confirmDialog({ title: `Delete ${tab}`, message: `Delete "${item.name}"?`, confirmLabel: "Delete", danger: true }))) return;
+    await api.del(`${type.endpoint}/${item.id}`);
+    mutate();
   }
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-6 space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
-          {TYPES.map((t) => (
-            <button
-              key={t.key}
-              className={cls("btn btn-sm", tab === t.key && "btn-primary")}
-              onClick={() => {
-                setTab(t.key);
-                setSelected(new Set());
-                setSelectMode(false);
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-          <div className="flex-1" />
-          <button className="btn btn-sm" onClick={() => importRef.current?.click()}>
-            <Upload size={13} /> Import bundle
-          </button>
+          <Tabs
+            className="flex-1 min-w-fit"
+            items={TYPES.map((t) => ({ value: t.key, label: t.label }))}
+            value={tab}
+            onChange={(v) => {
+              setTab(v as TypeKey);
+              setSelected(new Set());
+              setSelectMode(false);
+            }}
+          />
+          <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()}>
+            <Upload /> Import
+          </Button>
           {selectMode ? (
             <>
-              <button
-                className="btn btn-sm btn-primary"
+              <Button
+                size="sm"
                 disabled={!selected.size}
                 onClick={() => exportItems([...selected].map((id) => ({ type: tab, id })))}
               >
-                <Download size={13} /> Export {selected.size} selected
-              </button>
-              <button className="btn btn-sm" onClick={() => setSelectMode(false)}>
+                <Download /> Export {selected.size} selected
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setSelectMode(false)}>
                 Cancel
-              </button>
+              </Button>
             </>
           ) : (
-            <button className="btn btn-sm" onClick={() => setSelectMode(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setSelectMode(true)}>
               Select…
-            </button>
+            </Button>
           )}
-          <button className="btn btn-sm btn-primary" onClick={() => setEditing({})}>
-            <Plus size={13} /> New
-          </button>
+          <Button size="sm" onClick={() => setEditing({})}>
+            <Plus /> New
+          </Button>
         </div>
 
         {items?.length === 0 && (
@@ -128,61 +124,17 @@ export default function LibraryPage() {
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {items?.map((item) => {
-            const meta = cardMeta(tab, item);
-            return (
-              <div
-                key={item.id}
-                className={cls(
-                  "panel overflow-hidden cursor-pointer hover:border-[var(--accent)] transition-colors relative",
-                  selectMode && selected.has(item.id) && "border-[var(--accent)]"
-                )}
-                onClick={() => {
-                  if (selectMode) {
-                    const next = new Set(selected);
-                    if (next.has(item.id)) next.delete(item.id);
-                    else next.add(item.id);
-                    setSelected(next);
-                  } else setEditing(item);
-                }}
-              >
-                {selectMode && (
-                  <div className="absolute top-2 left-2 z-10 text-[var(--accent)]">
-                    {selected.has(item.id) ? <SquareCheck size={18} /> : <Square size={18} />}
-                  </div>
-                )}
-                {meta.img ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={meta.img} alt="" className={cls("w-full object-cover", tab === "character" ? "aspect-[2/3]" : "aspect-video")} />
-                ) : (
-                  <div className={cls("w-full flex items-center justify-center text-3xl text-[var(--text-dim)] bg-[var(--bg-soft)]", tab === "character" ? "aspect-[2/3]" : "aspect-video")}>
-                    {tab === "story" ? "📖" : tab === "lorebook" ? "📚" : tab === "persona" ? "🎭" : "🌄"}
-                  </div>
-                )}
-                <div className="p-2.5">
-                  <div className="font-medium text-sm truncate">{item.name}</div>
-                  <div className="text-xs text-[var(--text-dim)] line-clamp-2 h-8">{meta.sub}</div>
-                  <div className="flex gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-sm btn-ghost" title="Export" onClick={() => exportItems([{ type: tab, id: item.id }])}>
-                      <Download size={13} />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      title="Delete"
-                      onClick={async () => {
-                        if (confirm(`Delete "${item.name}"?`)) {
-                          await api.del(`${type.endpoint}/${item.id}`);
-                          mutate();
-                        }
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {items?.map((item) => (
+            <Card
+              key={item.id}
+              item={item}
+              selectMode={selectMode}
+              selected={selected.has(item.id)}
+              onOpen={() => (selectMode ? toggleSelected(item.id) : setEditing(item))}
+              onExport={() => exportItems([{ type: tab, id: item.id }])}
+              onDelete={() => deleteItem(item)}
+            />
+          ))}
         </div>
       </div>
 
@@ -211,8 +163,8 @@ export default function LibraryPage() {
           fd.append("file", f);
           const res = await fetch("/api/import", { method: "POST", body: fd });
           const data = await res.json();
-          if (!res.ok) return alert(data?.error ?? "Import failed");
-          alert(
+          if (!res.ok) return toast.error(data?.error ?? "Import failed");
+          toast.success(
             "Imported: " +
               (Object.entries(data.imported ?? {})
                 .map(([k, v]) => `${v} ${k}(s)`)

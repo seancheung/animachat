@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
-import { BookMarked, MessagesSquare, Settings, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { Confirmer } from "@/components/confirm";
+import { NavTabs } from "@/components/NavTabs";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,19 +25,16 @@ export const metadata: Metadata = {
 
 function Nav() {
   return (
-    <nav className="flex items-center gap-1 px-4 h-12 border-b border-[var(--border)] bg-[var(--bg-soft)] shrink-0">
-      <Link href="/" className="font-semibold tracking-wide text-[var(--accent)] mr-4 inline-flex items-center gap-1.5">
+    <nav className="flex items-center gap-1 px-4 h-12 border-b border-base-400 bg-base-100 shrink-0">
+      <Link
+        href="/"
+        className="font-semibold tracking-wide text-primary-500 mr-4 inline-flex items-center gap-1.5"
+      >
         <Sparkles size={16} /> AnimaChat
       </Link>
-      <Link href="/" className="btn btn-ghost btn-sm">
-        <MessagesSquare size={14} /> Chats
-      </Link>
-      <Link href="/library" className="btn btn-ghost btn-sm">
-        <BookMarked size={14} /> Library
-      </Link>
-      <Link href="/settings" className="btn btn-ghost btn-sm">
-        <Settings size={14} /> Settings
-      </Link>
+      <NavTabs />
+      <span className="flex-1" />
+      <ThemeToggle />
     </nav>
   );
 }
@@ -44,10 +45,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="h-full flex flex-col overflow-hidden">
+        {/* apply the stored theme before paint; light is the default */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{document.documentElement.dataset.theme=localStorage.getItem("animachat-theme")==="dark"?"dark":"light"}catch(e){document.documentElement.dataset.theme="light"}`,
+          }}
+        />
         <Nav />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
+        <Toaster position="bottom-right" />
+        <Confirmer />
       </body>
     </html>
   );

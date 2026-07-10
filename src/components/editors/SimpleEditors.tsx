@@ -2,9 +2,16 @@
 
 import { useState } from "react";
 import useSWR from "swr";
+import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { AssistPanel } from "@/components/AssistPanel";
 import { AssetInput } from "@/components/AssetInput";
-import { Field } from "@/components/ui";
+import { Field } from "@/components/app";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
+import InputNumber from "@/components/ui/input-number";
+import Select from "@/components/ui/select";
+import Textarea from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/ui";
 import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story } from "@/lib/types";
 
@@ -32,9 +39,9 @@ export function EditorShell({
       <div className="space-y-3 overflow-y-auto pr-1 min-h-0">
         {children}
         <div className="pt-2">
-          <button className="btn btn-primary" onClick={onSave} disabled={saving}>
+          <Button onClick={onSave} disabled={saving}>
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
       {assist && (
@@ -62,7 +69,7 @@ export function useEditor<T extends { id?: string }>(
       else await api.post(endpoint, form);
       onSaved();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     } finally {
       setSaving(false);
     }
@@ -75,10 +82,10 @@ export function PersonaEditor({ initial, onSaved }: { initial: Partial<Persona>;
   return (
     <EditorShell entityType="persona" form={form} setForm={setForm} onSave={save} saving={saving}>
       <Field label="Name">
-        <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Description" hint="who you are in the roleplay — characters see this; placeholders like [char_name] work here">
-        <textarea className="input h-40" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Textarea className="w-full h-40" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
     </EditorShell>
   );
@@ -95,7 +102,7 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
         </div>
       </div>
       <Field label="Image prompt" hint="text-to-image prompt for the background — generate the art elsewhere, upload it above">
-        <textarea className="input h-20" value={form.imagePrompt ?? ""} onChange={(e) => setForm({ ...form, imagePrompt: e.target.value })} />
+        <Textarea className="w-full h-20" value={form.imagePrompt ?? ""} onChange={(v) => setForm({ ...form, imagePrompt: v })} />
       </Field>
     </>
   );
@@ -106,10 +113,10 @@ export function LocationEditor({ initial, onSaved }: { initial: Partial<Location
   return (
     <EditorShell entityType="location" form={form} setForm={setForm} onSave={save} saving={saving}>
       <Field label="Name">
-        <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Description" hint="placeholders like [char_name], [user_name] work here">
-        <textarea className="input h-32" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Textarea className="w-full h-32" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
     </EditorShell>
@@ -122,18 +129,21 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
   return (
     <EditorShell entityType="scene" form={form} setForm={setForm} onSave={save} saving={saving}>
       <Field label="Name">
-        <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here">
-        <textarea className="input h-32" value={form.setup ?? ""} onChange={(e) => setForm({ ...form, setup: e.target.value })} />
+        <Textarea className="w-full h-32" value={form.setup ?? ""} onChange={(v) => setForm({ ...form, setup: v })} />
       </Field>
       <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
-        <select className="input" value={form.locationId ?? ""} onChange={(e) => setForm({ ...form, locationId: e.target.value || null })}>
-          <option value="">(none)</option>
-          {locations?.map((l) => (
-            <option key={l.id} value={l.id}>{l.name}</option>
-          ))}
-        </select>
+        <Select
+          className="w-full"
+          value={form.locationId ?? null}
+          onChange={(v) => setForm({ ...form, locationId: v })}
+          options={locations?.map((l) => ({ value: l.id, label: l.name })) ?? []}
+          placeholder="(none)"
+          clearable
+          onClear={() => setForm({ ...form, locationId: null })}
+        />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
     </EditorShell>
@@ -154,32 +164,29 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
   return (
     <EditorShell entityType="story" form={form} setForm={setForm} onSave={save} saving={saving}>
       <Field label="Name">
-        <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot; placeholders like [char_name], [user_name] work here">
-        <textarea className="input h-28" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <Field label="Scenes (in order)">
         <div className="space-y-1">
           {sceneIds.map((sid, i) => (
-            <div key={`${sid}-${i}`} className="flex items-center gap-2 bg-[var(--bg-soft)] rounded-lg px-3 py-1.5 text-sm">
-              <span className="text-[var(--text-dim)]">{i + 1}.</span>
+            <div key={`${sid}-${i}`} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1.5 text-sm">
+              <span className="text-content-300">{i + 1}.</span>
               <span className="flex-1">{scenes?.find((s) => s.id === sid)?.name ?? "?"}</span>
-              <button className="btn btn-sm btn-ghost" onClick={() => move(i, -1)}>↑</button>
-              <button className="btn btn-sm btn-ghost" onClick={() => move(i, 1)}>↓</button>
-              <button className="btn btn-sm btn-ghost" onClick={() => setForm({ ...form, sceneIds: sceneIds.filter((_, k) => k !== i) })}>✕</button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => move(i, -1)}><ArrowUp /></Button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => move(i, 1)}><ArrowDown /></Button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, sceneIds: sceneIds.filter((_, k) => k !== i) })}><X /></Button>
             </div>
           ))}
-          <select
-            className="input"
-            value=""
-            onChange={(e) => e.target.value && setForm({ ...form, sceneIds: [...sceneIds, e.target.value] })}
-          >
-            <option value="">+ add scene…</option>
-            {scenes?.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          <Select
+            className="w-full"
+            value={null}
+            onChange={(v) => v && setForm({ ...form, sceneIds: [...sceneIds, v] })}
+            options={scenes?.map((s) => ({ value: s.id, label: s.name })) ?? []}
+            placeholder="+ add scene…"
+          />
         </div>
       </Field>
     </EditorShell>
@@ -197,37 +204,38 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
   return (
     <EditorShell entityType="lorebook" form={form} setForm={setForm} onSave={save} saving={saving}>
       <Field label="Name">
-        <input className="input" value={form.name ?? ""} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Description">
-        <input className="input" value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        <Input className="w-full" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <Field label="Entries" hint="injected into the prompt when a keyword appears in recent messages; placeholders like [char_name] work in content">
         <div className="space-y-3">
           {entries.map((en, i) => (
             <div key={en.id ?? i} className="panel p-3 space-y-2">
               <div className="flex gap-2">
-                <input className="input" placeholder="Title" value={en.title} onChange={(e) => setEntry(i, { title: e.target.value })} />
-                <input
-                  className="input w-24"
-                  type="number"
+                <Input className="flex-1 min-w-0" placeholder="Title" value={en.title} onChange={(v) => setEntry(i, { title: v })} />
+                <InputNumber
+                  className="w-24 min-w-24"
+                  integer
                   title="scan depth (messages)"
                   value={en.scanDepth ?? 8}
-                  onChange={(e) => setEntry(i, { scanDepth: Number(e.target.value) || 8 })}
+                  onChange={(v) => setEntry(i, { scanDepth: v || 8 })}
                 />
-                <button className="btn btn-sm btn-ghost" onClick={() => setForm({ ...form, entries: entries.filter((_, k) => k !== i) })}>✕</button>
+                <Button variant="ghost" size="sm" shape="square" className="size-8" onClick={() => setForm({ ...form, entries: entries.filter((_, k) => k !== i) })}><X /></Button>
               </div>
-              <input
-                className="input"
+              <Input
+                className="w-full"
                 placeholder="keywords, comma, separated"
                 value={en.keywords.join(", ")}
-                onChange={(e) => setEntry(i, { keywords: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                onChange={(v) => setEntry(i, { keywords: v.split(",").map((s) => s.trim()).filter(Boolean) })}
               />
-              <textarea className="input h-20" placeholder="Content" value={en.content} onChange={(e) => setEntry(i, { content: e.target.value })} />
+              <Textarea className="w-full h-20" placeholder="Content" value={en.content} onChange={(v) => setEntry(i, { content: v })} />
             </div>
           ))}
-          <button
-            className="btn btn-sm"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() =>
               setForm({
                 ...form,
@@ -236,7 +244,7 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
             }
           >
             + Add entry
-          </button>
+          </Button>
         </div>
       </Field>
     </EditorShell>

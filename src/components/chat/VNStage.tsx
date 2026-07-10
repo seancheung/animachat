@@ -1,6 +1,7 @@
 "use client";
 
-import { assetUrl, cls } from "@/lib/ui";
+import { assetUrl } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 import type { Character } from "@/lib/types";
 
 export interface StageEmotions {
@@ -27,12 +28,12 @@ export function VNStage({
   tall?: boolean;
 }) {
   return (
-    <div className={cls("relative overflow-hidden shrink-0 select-none", tall ? "h-full" : "h-64 md:h-80")}>
+    <div className={cn("relative overflow-hidden shrink-0 select-none", tall ? "h-full" : "h-64 md:h-80")}>
       {backgroundUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img key={backgroundUrl} src={backgroundUrl} alt="" className="bg-art absolute inset-0 w-full h-full object-cover fade-in" />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-b from-[#241f38] to-[var(--bg)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-base-400 to-base-200" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
       <div className="absolute inset-x-0 bottom-0 top-4 flex items-end justify-center gap-[2%] px-4">
@@ -42,7 +43,7 @@ export function VNStage({
           return (
             <div
               key={c.id}
-              className={cls(
+              className={cn(
                 "sprite h-full max-w-[45%] flex items-end justify-center",
                 speaking ? (c.idleMotion ? "sprite-idle" : "") : "sprite-dim"
               )}
@@ -64,7 +65,7 @@ export function VNStage({
                     maskPosition: "bottom center",
                     WebkitMaskSize: "contain",
                     maskSize: "contain",
-                    backgroundColor: "var(--text-dim)",
+                    backgroundColor: "var(--color-content-300)",
                     opacity: 0.55,
                   }}
                 />

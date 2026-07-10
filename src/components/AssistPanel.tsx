@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
 import { streamSse } from "@/lib/ui";
 import { MessageText } from "./MessageText";
 
@@ -70,13 +72,13 @@ export function AssistPanel({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 border-l border-[var(--border)] pl-4">
-      <div className="text-xs uppercase tracking-wider text-[var(--text-dim)] mb-2">
+    <div className="flex flex-col h-full min-h-0 border-l border-base-400 pl-4">
+      <div className="text-xs uppercase tracking-wider text-content-300 mb-2">
         ✦ AI co-writer
       </div>
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
         {messages.length === 0 && (
-          <div className="text-xs text-[var(--text-dim)] leading-relaxed">
+          <div className="text-xs text-content-400 leading-relaxed">
             Describe what you want to create and we&apos;ll write it together — the form fills in as
             we go. e.g. &quot;a tsundere alchemist who secretly loves stray cats&quot;
           </div>
@@ -86,7 +88,7 @@ export function AssistPanel({
             key={i}
             className={
               m.role === "user"
-                ? "text-sm bg-[var(--panel-2)] rounded-lg px-3 py-2 ml-6"
+                ? "text-sm bg-base-400/60 rounded-md px-3 py-2 ml-6"
                 : "text-sm px-1"
             }
           >
@@ -95,17 +97,17 @@ export function AssistPanel({
         ))}
       </div>
       <div className="flex gap-2 pt-2">
-        <input
-          className="input"
+        <Input
+          className="flex-1 min-w-0"
           placeholder="Discuss ideas…"
           value={input}
           disabled={busy}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={setInput}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
         />
-        <button className="btn btn-primary btn-sm" onClick={send} disabled={busy || !input.trim()}>
+        <Button size="sm" className="h-8" onClick={send} disabled={busy || !input.trim()}>
           {busy ? "…" : "Send"}
-        </button>
+        </Button>
       </div>
     </div>
   );

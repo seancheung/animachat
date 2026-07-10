@@ -6,6 +6,7 @@ import useSWR from "swr";
 import {
   ArrowLeft,
   Bookmark,
+  ChevronRight,
   Clapperboard,
   Download,
   GitFork,
@@ -27,8 +28,20 @@ import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
 import { MessageText } from "@/components/MessageText";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Field, Modal } from "@/components/ui";
-import { api, assetUrl, cls, downloadBlob, streamSse } from "@/lib/ui";
+import { Field } from "@/components/app";
+import { confirmDialog } from "@/components/confirm";
+import Alert from "@/components/ui/alert";
+import Badge from "@/components/ui/badge";
+import Button from "@/components/ui/button";
+import Drawer from "@/components/ui/drawer";
+import Input from "@/components/ui/input";
+import Progress from "@/components/ui/progress";
+import Select from "@/components/ui/select";
+import Slider from "@/components/ui/slider";
+import Switch from "@/components/ui/switch";
+import Textarea from "@/components/ui/textarea";
+import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 import { POV_LABELS, type Character, type Message, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -188,7 +201,7 @@ export default function ChatPage() {
     await mutate();
   }
 
-  if (!data || !chat) return <div className="p-8 text-[var(--text-dim)]">Loading…</div>;
+  if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
   const lastNonMarker = [...messages].reverse().find((m) => m.role !== "marker");
   const wrapAction = () => {
@@ -203,17 +216,22 @@ export default function ChatPage() {
   const inputBar = (
     <div className="space-y-2">
       {error && (
-        <div className="text-xs text-[var(--danger)] px-1">
-          ⚠ {error} {error.includes("No model") && <a className="underline" href="/settings">→ Settings</a>}
-        </div>
+        <Alert variant="error" className="py-2">
+          {error}{" "}
+          {error.includes("No model") && (
+            <a className="underline" href="/settings">
+              → Settings
+            </a>
+          )}
+        </Alert>
       )}
       <div className="flex gap-2 items-end">
-        <textarea
+        <Textarea
           ref={inputRef}
-          className="input h-16 resize-none"
+          className="flex-1 h-16 min-h-16 resize-none"
           placeholder={`Write as ${personaName}… (*asterisks* for actions)`}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={setInput}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -227,55 +245,57 @@ export default function ChatPage() {
         />
         <div className="flex flex-col gap-1">
           {busy ? (
-            <button className="btn btn-danger" onClick={() => abortRef.current?.abort()}><Square size={13} /> Stop</button>
+            <Button variant="danger" onClick={() => abortRef.current?.abort()}><Square /> Stop</Button>
           ) : (
-            <button className="btn btn-primary" disabled={!input.trim()} onClick={() => send()}>Send</button>
+            <Button disabled={!input.trim()} onClick={() => send()}>Send</Button>
           )}
           <div className="flex gap-1">
-            <button className="btn btn-sm" title="Wrap selection in *action*" onClick={wrapAction}>*…*</button>
-            <button className="btn btn-sm" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 size={14} /></button>
+            <Button variant="secondary" size="sm" title="Wrap selection in *action*" onClick={wrapAction}>*…*</Button>
+            <Button variant="secondary" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
           </div>
         </div>
       </div>
       <div className="flex gap-1 flex-wrap items-center">
-        <button className="btn btn-sm" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
-          <SkipForward size={13} /> Continue
-        </button>
+        <Button variant="secondary" size="sm" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
+          <SkipForward /> Continue
+        </Button>
         {chat.narratorEnabled && (
-          <button className="btn btn-sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
-            <ScrollText size={13} /> Narrate
-          </button>
+          <Button variant="secondary" size="sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
+            <ScrollText /> Narrate
+          </Button>
         )}
         {characters.length > 1 &&
           characters.map((c) => (
-            <button key={c.id} className="btn btn-sm" disabled={busy} title={`Make ${c.name} speak`} onClick={() => generate({ mode: "character", characterId: c.id })}>
-              <MessageCircle size={13} /> {c.name}
-            </button>
+            <Button key={c.id} variant="secondary" size="sm" disabled={busy} title={`Make ${c.name} speak`} onClick={() => generate({ mode: "character", characterId: c.id })}>
+              <MessageCircle /> {c.name}
+            </Button>
           ))}
         <div className="flex-1" />
-        <button className="btn btn-sm btn-ghost" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
-          {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-        </button>
-        <input type="range" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} className="w-20 accent-[var(--accent)]" />
-        <button className="btn btn-sm btn-ghost" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize size={15} /></button>
-        <button className="btn btn-sm btn-ghost" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 size={15} /></button>
+        <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
+          {muted ? <VolumeX /> : <Volume2 />}
+        </Button>
+        <div className="w-24 flex items-center">
+          <Slider min={0} max={1} step={0.05} value={volume} onChange={setVolume} />
+        </div>
+        <Button variant="ghost" size="sm" shape="square" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 /></Button>
       </div>
     </div>
   );
 
   const streamingRow = streaming && (
     <div className="flex gap-3 fade-in">
-      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-[var(--panel-2)] flex items-center justify-center text-sm mt-1">
+      <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
         {streaming.role === "narrator" ? <ScrollText size={15} /> : (
           characters.find((c) => c.id === streaming.characterId)?.name.slice(0, 1) ?? "?"
         )}
       </div>
       <div className="max-w-[78%]">
-        <div className="text-xs text-[var(--text-dim)] mb-0.5">
+        <div className="text-xs text-content-300 mb-0.5 flex items-center gap-2">
           {streaming.role === "narrator" ? "Narrator" : characters.find((c) => c.id === streaming.characterId)?.name}
-          {streaming.emotion && <span className="chip ml-2">{streaming.emotion}</span>}
+          {streaming.emotion && <Badge variant="secondary" rounded>{streaming.emotion}</Badge>}
         </div>
-        <div className={cls("rounded-xl px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-[var(--border)] italic" : "bg-[var(--panel)]")}>
+        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "bg-base-100")}>
           <MessageText text={streaming.text} streaming />
         </div>
       </div>
@@ -285,7 +305,7 @@ export default function ChatPage() {
   return (
     <div className="h-full flex flex-col lg:flex-row">
       {/* VN stage — left column on wide screens */}
-      <div className="h-64 md:h-80 lg:h-full lg:w-[44%] xl:w-[46%] shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--border)]">
+      <div className="h-64 md:h-80 lg:h-full lg:w-[44%] xl:w-[46%] shrink-0 lg:border-r border-b lg:border-b-0 border-base-400">
         <VNStage
           characters={characters}
           emotions={emotions}
@@ -297,13 +317,13 @@ export default function ChatPage() {
 
       {/* chat panel — right column */}
       <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-      <div className="px-4 py-1.5 border-b border-[var(--border)] bg-[var(--bg-soft)] flex items-center gap-2 text-sm">
-        <button className="btn btn-sm btn-ghost" onClick={() => router.push("/")}><ArrowLeft size={15} /></button>
+      <div className="px-4 py-1.5 border-b border-base-400 bg-base-100 flex items-center gap-2 text-sm">
+        <Button variant="ghost" size="sm" shape="square" onClick={() => router.push("/")}><ArrowLeft /></Button>
         <span className="font-medium truncate">{chat.title}</span>
-        {data.stage?.scene && <span className="chip"><Clapperboard size={11} /> {data.stage.scene.name}</span>}
-        {data.stage?.location && <span className="chip"><MapPin size={11} /> {data.stage.location.name}</span>}
+        {data.stage?.scene && <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>}
+        {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
         <span className="flex-1" />
-        {chat.language && <span className="chip">{chat.language}</span>}
+        {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
@@ -334,10 +354,10 @@ export default function ChatPage() {
         ))}
         {pendingUser && (
           <div className="flex flex-row-reverse gap-3 fade-in opacity-70">
-            <div className="w-9 h-9 rounded-full shrink-0 bg-[var(--panel-2)] flex items-center justify-center text-sm mt-1 text-[var(--accent)] font-semibold">
+            <div className="w-9 h-9 rounded-full shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1 text-primary-500 font-semibold">
               {personaName.slice(0, 1).toUpperCase()}
             </div>
-            <div className="max-w-[78%] rounded-xl px-3.5 py-2.5 bg-[#312a4d] text-[0.925rem]">
+            <div className="max-w-[78%] rounded-lg px-3.5 py-2.5 bg-primary-500/15 text-[0.925rem]">
               <MessageText text={pendingUser} />
             </div>
           </div>
@@ -345,7 +365,7 @@ export default function ChatPage() {
         {streamingRow}
       </div>
 
-      <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-soft)]">{inputBar}</div>
+      <div className="px-4 py-3 border-t border-base-400 bg-base-100">{inputBar}</div>
       </div>
 
       {/* -------- fullscreen VN mode -------- */}
@@ -367,7 +387,7 @@ export default function ChatPage() {
       )}
 
       {/* -------- settings drawer -------- */}
-      <Modal open={drawer} onClose={() => setDrawer(false)} title="Chat settings" wide>
+      <Drawer open={drawer} onOpenChange={setDrawer} title="Chat settings" size="lg">
         <ChatDrawer
           data={data}
           onPatch={async (patch: any) => {
@@ -376,7 +396,7 @@ export default function ChatPage() {
           }}
           onSwitch={switchScene}
           onCheckpointLoad={async (cpId: string, mode: "truncate" | "fork") => {
-            if (mode === "truncate" && !confirm("Rewind the chat to this save state? Later messages are deleted.")) return;
+            if (mode === "truncate" && !(await confirmDialog({ title: "Rewind chat", message: "Rewind the chat to this save state? Later messages are deleted.", confirmLabel: "Rewind", danger: true }))) return;
             const res = await api.post(`/api/checkpoints/${cpId}`, { mode });
             if (mode === "fork") router.push(`/chat/${res.chatId}`);
             else {
@@ -389,7 +409,7 @@ export default function ChatPage() {
             await mutate();
           }}
         />
-      </Modal>
+      </Drawer>
     </div>
   );
 }
@@ -448,44 +468,46 @@ function VnOverlay({
     <div className="fixed inset-0 z-40 bg-black flex flex-col">
       <div className="flex-1 relative min-h-0">
         <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} tall />
-        <button className="absolute top-3 right-3 btn btn-sm" onClick={onExit}><X size={13} /> Esc</button>
+        <Button variant="secondary" size="sm" className="absolute top-3 right-3" onClick={onExit}><X /> Esc</Button>
         {!atEnd && (
-          <div className="absolute top-3 left-3 chip">history {idx + 1}/{messages.length} — click to advance</div>
+          <Badge variant="secondary" rounded className="absolute top-3 left-3">
+            history {idx + 1}/{messages.length} — click to advance
+          </Badge>
         )}
       </div>
       <div
         className="mx-auto w-full max-w-3xl px-6 pb-5 -mt-28 relative z-10 cursor-pointer select-none"
         onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
-        <div className="rounded-xl border border-[var(--border)] bg-[rgba(18,16,26,0.92)] backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
-          {speakerName && <div className="text-[var(--accent)] text-sm font-semibold mb-1">{speakerName}</div>}
+        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
+          {speakerName && <div className="text-primary-500 text-sm font-semibold mb-1">{speakerName}</div>}
           <div className="text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={!!streaming && atEnd} />
           </div>
           {atEnd && !busy && v?.options && (
             <div className="flex flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
               {v.options.map((o: string, i: number) => (
-                <button key={i} className="btn btn-sm text-left whitespace-normal" onClick={() => send(o)}>
-                  ▸ {o}
-                </button>
+                <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
+                  <ChevronRight /> {o}
+                </Button>
               ))}
             </div>
           )}
         </div>
         {atEnd && (
           <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-            <input
-              className="input"
+            <Input
+              className="flex-1"
               placeholder={`Write as ${personaName}…`}
               value={input}
               disabled={busy}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={setInput}
               onKeyDown={(e) => e.key === "Enter" && input.trim() && send()}
             />
-            <button className="btn btn-primary btn-sm" disabled={busy || !input.trim()} onClick={() => send()}>Send</button>
-            <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward size={13} /></button>
+            <Button size="sm" className="h-8" disabled={busy || !input.trim()} onClick={() => send()}>Send</Button>
+            <Button variant="secondary" size="sm" shape="square" className="size-8" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>
             {data.chat.narratorEnabled && (
-              <button className="btn btn-sm" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText size={13} /></button>
+              <Button variant="secondary" size="sm" shape="square" className="size-8" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
             )}
           </div>
         )}
@@ -510,128 +532,130 @@ function ChatDrawer({
   const [language, setLanguage] = useState(chat.language);
 
   return (
-    <div className="grid md:grid-cols-2 gap-5">
-      <div className="space-y-3">
-        <Field label="Title">
-          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => onPatch({ title })} />
+    <div className="space-y-4">
+      <Field label="Title">
+        <Input className="w-full" value={title} onChange={setTitle} onBlur={() => onPatch({ title })} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Folder">
+          <Input className="w-full" value={folder} onChange={setFolder} onBlur={() => onPatch({ folder })} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Folder">
-            <input className="input" value={folder} onChange={(e) => setFolder(e.target.value)} onBlur={() => onPatch({ folder })} />
-          </Field>
-          <Field label="Tags (comma-separated)">
-            <input
-              className="input"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              onBlur={() => onPatch({ tags: tags.split(",").map((t: string) => t.trim()).filter(Boolean) })}
-            />
-          </Field>
-        </div>
-        <Field label="Model override">
-          <ModelPicker value={chat.modelId} onChange={(v) => onPatch({ modelId: v })} />
+        <Field label="Tags (comma-separated)">
+          <Input
+            className="w-full"
+            value={tags}
+            onChange={setTags}
+            onBlur={() => onPatch({ tags: tags.split(",").map((t: string) => t.trim()).filter(Boolean) })}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Language override">
-            <input className="input" placeholder="(global default)" value={language} onChange={(e) => setLanguage(e.target.value)} onBlur={() => onPatch({ language })} />
-          </Field>
-          <Field label="POV">
-            <select className="input" value={chat.pov} onChange={(e) => onPatch({ pov: e.target.value })}>
-              <option value="">(global default)</option>
-              {Object.entries(POV_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Narrator">
-          <select className="input" value={chat.narratorEnabled ? "on" : "off"} onChange={(e) => onPatch({ narratorEnabled: e.target.value === "on" })}>
-            <option value="off">Disabled</option>
-            <option value="on">Enabled</option>
-          </select>
-        </Field>
-        {Object.keys(data.relationships ?? {}).length > 0 && (
-          <Field label="Relationships">
-            <div className="space-y-2">
-              {data.characters.map((c: Character) => {
-                const r = data.relationships[c.id];
-                if (!r) return null;
-                return (
-                  <div key={c.id} className="panel p-2.5">
-                    <div className="flex justify-between text-sm">
-                      <span>{c.name}</span>
-                      <span className="text-[var(--text-dim)]">affinity {r.affinity}</span>
-                    </div>
-                    <div className="h-1.5 rounded bg-[var(--bg-soft)] mt-1 overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#f0abfc]" style={{ width: `${(r.affinity + 100) / 2}%` }} />
-                    </div>
-                    {r.notes && <div className="text-xs text-[var(--text-dim)] mt-1">{r.notes}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </Field>
-        )}
       </div>
+      <Field label="Model override">
+        <ModelPicker value={chat.modelId} onChange={(v) => onPatch({ modelId: v })} />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Language override">
+          <Input className="w-full" placeholder="(global default)" value={language} onChange={setLanguage} onBlur={() => onPatch({ language })} />
+        </Field>
+        <Field label="POV">
+          <Select
+            className="w-full"
+            value={chat.pov || null}
+            onChange={(v) => onPatch({ pov: v })}
+            options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+            placeholder="(global default)"
+            clearable
+            onClear={() => onPatch({ pov: "" })}
+          />
+        </Field>
+      </div>
+      <Field label="Narrator">
+        <Switch
+          value={chat.narratorEnabled}
+          onChange={(v) => onPatch({ narratorEnabled: v })}
+          label={chat.narratorEnabled ? "Enabled" : "Disabled"}
+        />
+      </Field>
+      {Object.keys(data.relationships ?? {}).length > 0 && (
+        <Field label="Relationships">
+          <div className="space-y-2">
+            {data.characters.map((c: Character) => {
+              const r = data.relationships[c.id];
+              if (!r) return null;
+              return (
+                <div key={c.id} className="panel p-2.5">
+                  <div className="flex justify-between text-sm">
+                    <span>{c.name}</span>
+                    <span className="text-content-300">affinity {r.affinity}</span>
+                  </div>
+                  <Progress className="mt-1.5" value={(r.affinity + 100) / 2} />
+                  {r.notes && <div className="text-xs text-content-300 mt-1">{r.notes}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </Field>
+      )}
 
-      <div className="space-y-3">
-        {chat.mode === "story" && data.story && (
-          <Field label={`Story: ${data.story.name}`} hint="switch scenes — recorded in the timeline, rewinds restore them">
-            <div className="space-y-1">
-              {data.storyScenes.map((s: any, i: number) => (
-                <button
-                  key={s.id}
-                  className={cls("btn btn-sm w-full justify-start", data.stage?.sceneId === s.id && "btn-primary")}
-                  onClick={() => onSwitch("scene", s.id)}
-                >
-                  {i + 1}. {s.name}
-                </button>
-              ))}
-            </div>
-          </Field>
-        )}
-        {chat.mode === "scene" && data.stage?.scene && (
-          <Field label="Scene (fixed)">
-            <span className="chip"><Clapperboard size={11} /> {data.stage.scene.name}</span>
-          </Field>
-        )}
-        {chat.mode === "location" && data.stage?.location && (
-          <Field label="Location (fixed)">
-            <span className="chip"><MapPin size={11} /> {data.stage.location.name}</span>
-          </Field>
-        )}
-        <Field label="Save states">
+      {chat.mode === "story" && data.story && (
+        <Field label={`Story: ${data.story.name}`} hint="switch scenes — recorded in the timeline, rewinds restore them">
           <div className="space-y-1">
-            {data.checkpoints.length === 0 && (
-              <div className="text-xs text-[var(--text-dim)]">none — use the bookmark button on any message</div>
-            )}
-            {data.checkpoints.map((cp: any) => (
-              <div key={cp.id} className="flex items-center gap-1 bg-[var(--bg-soft)] rounded-lg px-2 py-1 text-sm">
-                <span className="flex-1 truncate inline-flex items-center gap-1"><Bookmark size={12} /> {cp.name}</span>
-                <button className="btn btn-sm" title="Rewind here" onClick={() => onCheckpointLoad(cp.id, "truncate")}><Rewind size={13} /> Load</button>
-                <button className="btn btn-sm" title="Fork a copy" onClick={() => onCheckpointLoad(cp.id, "fork")}><GitFork size={13} /> Fork</button>
-                <button className="btn btn-sm btn-ghost" onClick={() => onCheckpointDelete(cp.id)}><X size={13} /></button>
-              </div>
+            {data.storyScenes.map((s: any, i: number) => (
+              <Button
+                key={s.id}
+                variant={data.stage?.sceneId === s.id ? "primary" : "secondary"}
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => onSwitch("scene", s.id)}
+              >
+                {i + 1}. {s.name}
+              </Button>
             ))}
           </div>
         </Field>
-        <Field label="Export as novel">
-          <div className="flex gap-2">
-            <button
-              className="btn btn-sm"
-              onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=md`), "chat.md")}
-            >
-              <Download size={13} /> Markdown
-            </button>
-            <button
-              className="btn btn-sm"
-              onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=epub`), "chat.epub")}
-            >
-              <Download size={13} /> EPUB
-            </button>
-          </div>
+      )}
+      {chat.mode === "scene" && data.stage?.scene && (
+        <Field label="Scene (fixed)">
+          <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>
         </Field>
-      </div>
+      )}
+      {chat.mode === "location" && data.stage?.location && (
+        <Field label="Location (fixed)">
+          <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>
+        </Field>
+      )}
+      <Field label="Save states">
+        <div className="space-y-1">
+          {data.checkpoints.length === 0 && (
+            <div className="text-xs text-content-400">none — use the bookmark button on any message</div>
+          )}
+          {data.checkpoints.map((cp: any) => (
+            <div key={cp.id} className="flex items-center gap-1 bg-base-200 rounded-md px-2 py-1 text-sm">
+              <span className="flex-1 truncate inline-flex items-center gap-1"><Bookmark size={12} /> {cp.name}</span>
+              <Button variant="secondary" size="sm" title="Rewind here" onClick={() => onCheckpointLoad(cp.id, "truncate")}><Rewind /> Load</Button>
+              <Button variant="secondary" size="sm" title="Fork a copy" onClick={() => onCheckpointLoad(cp.id, "fork")}><GitFork /> Fork</Button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => onCheckpointDelete(cp.id)}><X /></Button>
+            </div>
+          ))}
+        </div>
+      </Field>
+      <Field label="Export as novel">
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=md`), "chat.md")}
+          >
+            <Download /> Markdown
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=epub`), "chat.epub")}
+          >
+            <Download /> EPUB
+          </Button>
+        </div>
+      </Field>
     </div>
   );
 }

@@ -1,7 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { assetUrl, cls, cropToRatio, uploadFile } from "@/lib/ui";
+import { X } from "lucide-react";
+import Button from "@/components/ui/button";
+import Checkbox from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/toast";
+import { assetUrl, cropToRatio, uploadFile } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 
 /**
  * Image upload with crop-to-ratio (2:3 sprites, 1:1 avatars, 16:9 artwork),
@@ -40,20 +45,20 @@ export function AssetInput({
       const named = new File([blob], file.name, { type: blob.type || file.type });
       onChange(await uploadFile(named));
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className={cls("space-y-1", className)}>
+    <div className={cn("space-y-1", className)}>
       {label && (
-        <div className="text-xs uppercase tracking-wider text-[var(--text-dim)]">{label}</div>
+        <div className="text-xs uppercase tracking-wider text-content-300">{label}</div>
       )}
       <div
-        className={cls(
-          "relative border border-dashed border-[var(--border)] rounded-lg overflow-hidden bg-[var(--bg-soft)] group",
+        className={cn(
+          "relative border border-dashed border-base-400 rounded-md overflow-hidden bg-base-200 group",
           kind === "image" ? "flex items-center justify-center" : "p-2"
         )}
         style={kind === "image" ? { aspectRatio: `${ratio ?? 1}` } : undefined}
@@ -63,34 +68,37 @@ export function AssetInput({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={assetUrl(value)!} alt="" className="w-full h-full object-cover" />
           ) : (
-            <span className="text-[var(--text-dim)] text-xs">no image</span>
+            <span className="text-content-400 text-xs">no image</span>
           )
         ) : value ? (
           <audio controls src={assetUrl(value)!} className="w-full h-8" />
         ) : (
-          <span className="text-[var(--text-dim)] text-xs">no audio</span>
+          <span className="text-content-400 text-xs">no audio</span>
         )}
         <div className="absolute inset-x-0 bottom-0 flex gap-1 justify-center p-1 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
+          <Button
             type="button"
-            className="btn btn-sm"
+            variant="secondary"
+            size="sm"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
             {busy ? "…" : value ? "Replace" : "Upload"}
-          </button>
+          </Button>
           {value && (
-            <button type="button" className="btn btn-sm btn-danger" onClick={() => onChange(null)}>
-              ✕
-            </button>
+            <Button type="button" variant="danger" size="sm" shape="square" onClick={() => onChange(null)}>
+              <X />
+            </Button>
           )}
         </div>
       </div>
       {kind === "image" && ratio && (
-        <label className="flex items-center gap-1 text-xs text-[var(--text-dim)] cursor-pointer">
-          <input type="checkbox" checked={crop} onChange={(e) => setCrop(e.target.checked)} />
-          crop to ratio on upload
-        </label>
+        <Checkbox
+          className="text-xs text-content-300"
+          value={crop}
+          onChange={setCrop}
+          label="crop to ratio on upload"
+        />
       )}
       <input
         ref={fileRef}

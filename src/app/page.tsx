@@ -13,11 +13,21 @@ import {
   MapPin,
   Plus,
   ScrollText,
+  Search,
   Trash2,
+  VenetianMask,
 } from "lucide-react";
 import { ModelPicker } from "@/components/ModelPicker";
-import { EmptyState, Field, Modal } from "@/components/ui";
-import { api, assetUrl, cls } from "@/lib/ui";
+import { EmptyState, Field, Modal } from "@/components/app";
+import { confirmDialog } from "@/components/confirm";
+import Badge from "@/components/ui/badge";
+import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
+import Select from "@/components/ui/select";
+import Switch from "@/components/ui/switch";
+import { toast } from "@/components/ui/toast";
+import { api, assetUrl } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 import { POV_LABELS, type ChatMode } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -92,14 +102,14 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               return (
                 <button
                   key={c.id}
-                  className={cls(
-                    "panel overflow-hidden text-left transition-colors relative",
-                    idx !== -1 && "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+                  className={cn(
+                    "panel overflow-hidden text-left transition-colors relative cursor-pointer",
+                    idx !== -1 && "border-primary-500 ring-1 ring-primary-500"
                   )}
                   onClick={() => toggleCharacter(c.id)}
                 >
                   {idx !== -1 && (
-                    <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-[var(--accent)] text-black text-xs flex items-center justify-center font-bold">
+                    <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
                       {idx + 1}
                     </span>
                   )}
@@ -107,14 +117,14 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={assetUrl(c.sprites?.neutral ?? c.avatarAsset)!} alt="" className="w-full aspect-[2/3] object-cover" />
                   ) : (
-                    <div className="w-full aspect-[2/3] flex items-center justify-center text-2xl bg-[var(--bg-soft)]">🎭</div>
+                    <div className="w-full aspect-[2/3] flex items-center justify-center text-content-300 bg-base-200"><VenetianMask size={28} /></div>
                   )}
                   <div className="text-xs p-1.5 truncate">{c.name}</div>
                 </button>
               );
             })}
             {characters?.length === 0 && (
-              <div className="col-span-full text-sm text-[var(--text-dim)]">No characters yet — create one in the Library first.</div>
+              <div className="col-span-full text-sm text-content-300">No characters yet — create one in the Library first.</div>
             )}
           </div>
         </Field>
@@ -126,11 +136,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           >
             <div className="space-y-1">
               {form.characterIds.map((id: string, i: number) => (
-                <div key={id} className="flex items-center gap-2 bg-[var(--bg-soft)] rounded-lg px-3 py-1 text-sm">
-                  <span className="text-[var(--text-dim)] w-5">{i + 1}.</span>
+                <div key={id} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1 text-sm">
+                  <span className="text-content-300 w-5">{i + 1}.</span>
                   <span className="flex-1">{charById(id)?.name ?? "?"}</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => moveCharacter(i, -1)}><ArrowUp size={13} /></button>
-                  <button className="btn btn-sm btn-ghost" onClick={() => moveCharacter(i, 1)}><ArrowDown size={13} /></button>
+                  <Button variant="ghost" size="sm" shape="square" onClick={() => moveCharacter(i, -1)}><ArrowUp /></Button>
+                  <Button variant="ghost" size="sm" shape="square" onClick={() => moveCharacter(i, 1)}><ArrowDown /></Button>
                 </div>
               ))}
             </div>
@@ -140,98 +150,120 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
         <Field label="Chat mode">
           <div className="flex gap-1 flex-wrap">
             {MODES.map((m) => (
-              <button
+              <Button
                 key={m.key}
+                size="sm"
+                variant={form.mode === m.key ? "primary" : "secondary"}
                 title={m.hint}
-                className={cls("btn btn-sm", form.mode === m.key && "btn-primary")}
                 onClick={() => setForm({ ...form, mode: m.key, storyId: null, sceneId: null, locationId: null })}
               >
                 {m.icon} {m.label}
-              </button>
+              </Button>
             ))}
           </div>
-          <div className="text-xs text-[var(--text-dim)] mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
+          <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
         </Field>
 
         <div className="grid md:grid-cols-3 gap-3">
           {form.mode === "story" && (
             <>
               <Field label="Story (required)">
-                <select className="input" value={form.storyId ?? ""} onChange={(e) => setForm({ ...form, storyId: e.target.value || null, sceneId: null })}>
-                  <option value="">choose…</option>
-                  {stories?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <Select
+                  className="w-full"
+                  value={form.storyId}
+                  onChange={(v) => setForm({ ...form, storyId: v, sceneId: null })}
+                  options={stories?.map((s) => ({ value: s.id, label: s.name })) ?? []}
+                  placeholder="choose…"
+                />
               </Field>
               {storyScenes.length > 0 && (
                 <Field label="Starting scene">
-                  <select className="input" value={form.sceneId ?? ""} onChange={(e) => setForm({ ...form, sceneId: e.target.value || null })}>
-                    <option value="">1. {storyScenes[0]?.name} (first)</option>
-                    {storyScenes.map((s, i) => (
-                      <option key={s.id} value={s.id}>{i + 1}. {s.name}</option>
-                    ))}
-                  </select>
+                  <Select
+                    className="w-full"
+                    value={form.sceneId}
+                    onChange={(v) => setForm({ ...form, sceneId: v })}
+                    options={storyScenes.map((s, i) => ({ value: s.id, label: `${i + 1}. ${s.name}` }))}
+                    placeholder={`1. ${storyScenes[0]?.name} (first)`}
+                    clearable
+                    onClear={() => setForm({ ...form, sceneId: null })}
+                  />
                 </Field>
               )}
             </>
           )}
           {form.mode === "scene" && (
             <Field label="Scene (required)" hint="fixed for the whole chat">
-              <select className="input" value={form.sceneId ?? ""} onChange={(e) => setForm({ ...form, sceneId: e.target.value || null })}>
-                <option value="">choose…</option>
-                {scenes?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <Select
+                className="w-full"
+                value={form.sceneId}
+                onChange={(v) => setForm({ ...form, sceneId: v })}
+                options={scenes?.map((s) => ({ value: s.id, label: s.name })) ?? []}
+                placeholder="choose…"
+              />
             </Field>
           )}
           {form.mode === "location" && (
             <Field label="Location (required)" hint="fixed for the whole chat">
-              <select className="input" value={form.locationId ?? ""} onChange={(e) => setForm({ ...form, locationId: e.target.value || null })}>
-                <option value="">choose…</option>
-                {locations?.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              <Select
+                className="w-full"
+                value={form.locationId}
+                onChange={(v) => setForm({ ...form, locationId: v })}
+                options={locations?.map((l) => ({ value: l.id, label: l.name })) ?? []}
+                placeholder="choose…"
+              />
             </Field>
           )}
           <Field label="Your persona">
-            <select className="input" value={form.personaId ?? ""} onChange={(e) => setForm({ ...form, personaId: e.target.value || null })}>
-              <option value="">(none)</option>
-              {personas?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <Select
+              className="w-full"
+              value={form.personaId}
+              onChange={(v) => setForm({ ...form, personaId: v })}
+              options={personas?.map((p) => ({ value: p.id, label: p.name })) ?? []}
+              placeholder="(none)"
+              clearable
+              onClear={() => setForm({ ...form, personaId: null })}
+            />
           </Field>
           <Field label="Model">
             <ModelPicker value={form.modelId} onChange={(v) => setForm({ ...form, modelId: v })} />
           </Field>
-          <Field label="Narrator">
-            <select className="input" value={form.narratorEnabled ? "on" : "off"} onChange={(e) => setForm({ ...form, narratorEnabled: e.target.value === "on" })}>
-              <option value="off">Disabled</option>
-              <option value="on">Enabled — narration & suggested actions</option>
-            </select>
-          </Field>
           <Field label="Language override">
-            <input className="input" placeholder="(global default)" value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
+            <Input className="w-full" placeholder="(global default)" value={form.language} onChange={(v) => setForm({ ...form, language: v })} />
           </Field>
           <Field label="POV override">
-            <select className="input" value={form.pov} onChange={(e) => setForm({ ...form, pov: e.target.value })}>
-              <option value="">(global default)</option>
-              {Object.entries(POV_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            <Select
+              className="w-full"
+              value={form.pov || null}
+              onChange={(v) => setForm({ ...form, pov: v })}
+              options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+              placeholder="(global default)"
+              clearable
+              onClear={() => setForm({ ...form, pov: "" })}
+            />
+          </Field>
+          <Field label="Narrator" hint="narration & suggested actions">
+            <Switch value={form.narratorEnabled} onChange={(v) => setForm({ ...form, narratorEnabled: v })} label={form.narratorEnabled ? "Enabled" : "Disabled"} className="h-8" />
           </Field>
           <Field label="Lorebooks">
             <div className="flex flex-wrap gap-1">
               {lorebooks?.map((l) => (
-                <button
+                <Badge
                   key={l.id}
-                  type="button"
-                  className={cls("chip cursor-pointer", form.lorebookIds.includes(l.id) && "border-[var(--accent)] text-[var(--accent)]")}
-                  onClick={() => toggleLorebook(l.id)}
+                  asChild
+                  rounded
+                  bordered
+                  variant={form.lorebookIds.includes(l.id) ? "primary" : "secondary"}
                 >
-                  {l.name}
-                </button>
+                  <button type="button" className="cursor-pointer" onClick={() => toggleLorebook(l.id)}>
+                    {l.name}
+                  </button>
+                </Badge>
               ))}
-              {lorebooks?.length === 0 && <span className="text-xs text-[var(--text-dim)]">none</span>}
+              {lorebooks?.length === 0 && <span className="text-xs text-content-400">none</span>}
             </div>
           </Field>
         </div>
-        <button
-          className="btn btn-primary"
+        <Button
           disabled={busy || !modeValid || (!form.characterIds.length && !form.narratorEnabled)}
           onClick={async () => {
             setBusy(true);
@@ -239,13 +271,13 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               const chat = await api.post("/api/chats", form);
               router.push(`/chat/${chat.id}`);
             } catch (e: any) {
-              alert(e.message);
+              toast.error(e.message);
               setBusy(false);
             }
           }}
         >
           {busy ? "Creating…" : "Start chat"}
-        </button>
+        </Button>
       </div>
     </Modal>
   );
@@ -267,32 +299,40 @@ export default function HomePage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <input className="input" placeholder="Search all chats…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button className="btn btn-primary whitespace-nowrap" onClick={() => setWizard(true)}>
-            <Plus size={15} /> New chat
-          </button>
+          <Input
+            className="flex-1"
+            icon={<Search />}
+            placeholder="Search all chats…"
+            value={q}
+            onChange={setQ}
+          />
+          <Button className="whitespace-nowrap" onClick={() => setWizard(true)}>
+            <Plus /> New chat
+          </Button>
         </div>
 
         {folders.length > 0 && (
           <div className="flex gap-1 flex-wrap">
-            <button className={cls("chip cursor-pointer", !folder && "text-[var(--accent)] border-[var(--accent)]")} onClick={() => setFolder("")}>
-              all
-            </button>
+            <Badge asChild rounded bordered variant={!folder ? "primary" : "secondary"}>
+              <button className="cursor-pointer" onClick={() => setFolder("")}>all</button>
+            </Badge>
             {folders.map((f) => (
-              <button key={f} className={cls("chip cursor-pointer", folder === f && "text-[var(--accent)] border-[var(--accent)]")} onClick={() => setFolder(f)}>
-                <Folder size={11} /> {f}
-              </button>
+              <Badge key={f} asChild rounded bordered variant={folder === f ? "primary" : "secondary"}>
+                <button className="cursor-pointer" onClick={() => setFolder(f)}>
+                  <Folder size={11} /> {f}
+                </button>
+              </Badge>
             ))}
           </div>
         )}
 
         {q.trim() ? (
           <div className="space-y-2">
-            <div className="text-xs uppercase tracking-wider text-[var(--text-dim)]">Search results</div>
+            <div className="text-xs uppercase tracking-wider text-content-300">Search results</div>
             {searchResults?.map((r) => (
-              <div key={r.messageId} className="panel p-3 cursor-pointer hover:border-[var(--accent)]" onClick={() => router.push(`/chat/${r.chatId}`)}>
+              <div key={r.messageId} className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors" onClick={() => router.push(`/chat/${r.chatId}`)}>
                 <div className="text-sm font-medium">{r.chatTitle}</div>
-                <div className="text-xs text-[var(--text-dim)] mt-1">{r.snippet}</div>
+                <div className="text-xs text-content-300 mt-1">{r.snippet}</div>
               </div>
             ))}
             {searchResults?.length === 0 && <EmptyState>No matches.</EmptyState>}
@@ -306,30 +346,33 @@ export default function HomePage() {
               </EmptyState>
             )}
             {visible.map((c) => (
-              <div key={c.id} className="panel p-3 cursor-pointer hover:border-[var(--accent)] transition-colors group" onClick={() => router.push(`/chat/${c.id}`)}>
+              <div key={c.id} className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group" onClick={() => router.push(`/chat/${c.id}`)}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-medium truncate flex items-center gap-2">
-                    <span className="text-[var(--text-dim)]">{modeIcon(c.mode)}</span>
+                    <span className="text-content-300">{modeIcon(c.mode)}</span>
                     {c.title}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    {c.tags?.map((t: string) => <span key={t} className="chip">{t}</span>)}
-                    <span className="text-xs text-[var(--text-dim)]">{c.messageCount} msgs</span>
-                    <button
-                      className="btn btn-sm btn-ghost opacity-0 group-hover:opacity-100"
+                    {c.tags?.map((t: string) => <Badge key={t} variant="secondary" rounded>{t}</Badge>)}
+                    <span className="text-xs text-content-300">{c.messageCount} msgs</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      shape="square"
+                      className="opacity-0 group-hover:opacity-100"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        if (confirm(`Delete chat "${c.title}"?`)) {
+                        if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
                           await api.del(`/api/chats/${c.id}`);
                           mutate();
                         }
                       }}
                     >
-                      <Trash2 size={14} />
-                    </button>
+                      <Trash2 />
+                    </Button>
                   </div>
                 </div>
-                <div className="text-xs text-[var(--text-dim)] mt-1 truncate flex items-center gap-1">
+                <div className="text-xs text-content-300 mt-1 truncate flex items-center gap-1">
                   {c.characterNames.join(", ")}
                   {c.narratorEnabled && <ScrollText size={11} />}
                   {c.lastMessage && ` — ${c.lastMessage}`}
