@@ -13,7 +13,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 
 ## Architecture
 
-- `src/lib/db.ts` — schema + column migrations (run in `migrate()` on connection open; add ALTERs there for old DBs, and the new column to `SCHEMA` for fresh ones)
+- `src/lib/db.ts` — schema (no migration system: on schema changes, delete `./data` and let it recreate — the user has agreed local data is disposable)
 - `src/lib/store.ts` — ALL SQL + row↔object marshalling (camelCase objects, snake_case columns, JSON-string columns)
 - `src/lib/types.ts` — shared types, `EMOTIONS`, `AI_TASKS`, defaults
 - `src/lib/ai/` — `client.ts` (raw-fetch Anthropic + OpenAI-compatible clients, SSE, per-task model resolution, usage logging), `tags.ts` (streaming tag parser), `prompts.ts` (context assembly), `memory.ts` (rolling summarization), `placeholders.ts` (`[char_name]`-style substitution)
@@ -36,6 +36,5 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 
 - `better-sqlite3` must stay in `serverExternalPackages` (next.config.ts).
 - Don't render toggle buttons inside a `<label>` — label click re-dispatch double-fires them. `Field` in `components/ui.tsx` is deliberately a `<div>`.
-- Character field is `description` (renamed from `personality`); bundle import still maps the old key.
 - The user runs their own dev server on this repo — don't kill processes on port 3000, and don't run a second `next dev` (Next refuses); use `npm start` on another port with `ANIMACHAT_DB_PATH` instead.
-- DB migrations only run on connection open — schema changes need the user to restart their dev server.
+- The DB connection is cached in `globalThis` — schema changes take effect after the user restarts their dev server (with `./data` deleted).

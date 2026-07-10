@@ -177,25 +177,6 @@ declare global {
   var __animachatDb: Database.Database | undefined;
 }
 
-/** Column-level migrations for databases created by older versions. */
-function migrate(db: Database.Database) {
-  const cols = (table: string) =>
-    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
-  const charCols = cols("characters");
-  if (charCols.includes("personality") && !charCols.includes("description")) {
-    db.exec("ALTER TABLE characters RENAME COLUMN personality TO description");
-  }
-  if (!charCols.includes("track_relationship")) {
-    db.exec("ALTER TABLE characters ADD COLUMN track_relationship INTEGER NOT NULL DEFAULT 1");
-  }
-  if (!charCols.includes("idle_motion")) {
-    db.exec("ALTER TABLE characters ADD COLUMN idle_motion INTEGER NOT NULL DEFAULT 1");
-  }
-  if (!cols("chats").includes("mode")) {
-    db.exec("ALTER TABLE chats ADD COLUMN mode TEXT NOT NULL DEFAULT ''");
-  }
-}
-
 export function getDb(): Database.Database {
   if (!globalThis.__animachatDb) {
     fs.mkdirSync(ASSETS_DIR, { recursive: true });
@@ -203,7 +184,6 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     db.exec(SCHEMA);
-    migrate(db);
     globalThis.__animachatDb = db;
   }
   return globalThis.__animachatDb;

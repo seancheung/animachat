@@ -506,7 +506,7 @@ export function deleteLorebook(id: string) {
 const chatFromRow = (r: Row): Chat => ({
   id: r.id,
   title: r.title,
-  mode: r.mode || (r.story_id ? "story" : r.scene_id ? "scene" : r.location_id ? "location" : "casual"),
+  mode: r.mode,
   folder: r.folder,
   tags: J.parse(r.tags, []),
   storyId: r.story_id,
