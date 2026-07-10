@@ -168,8 +168,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: unknown) =>
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      const send = (obj: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        } catch {
+          /* client disconnected — keep going so the message still gets saved */
+        }
+      };
       let content = "";
       let emotion: string | null = null;
       let options: string[] | null = null;
@@ -255,7 +260,11 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
       } else {
         send({ type: "done", message: null, options: null, stage: null });
       }
-      controller.close();
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
     },
   });
 

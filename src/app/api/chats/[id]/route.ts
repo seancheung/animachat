@@ -5,6 +5,7 @@ import {
   getChat,
   getCharacter,
   getPersona,
+  getRelationship,
   getStory,
   getScene,
   listCheckpoints,
@@ -29,6 +30,13 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     story,
     storyScenes: story ? story.sceneIds.map((sid) => getScene(sid)).filter(Boolean) : [],
     checkpoints: listCheckpoints(id),
+    relationships: chat.personaId
+      ? Object.fromEntries(
+          chat.characterIds
+            .map((cid) => [cid, getRelationship(cid, chat.personaId!)] as const)
+            .filter(([, r]) => r)
+        )
+      : {},
   });
 });
 
