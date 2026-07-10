@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import Dialog from "@/components/ui/dialog";
 import { cn } from "@/utils/cn";
 
@@ -18,6 +18,11 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  // call sites render children as `{state && <Editor/>}`, which becomes falsy
+  // the moment the modal closes — keep the last real children through the
+  // close transition so the dialog doesn't collapse while fading out
+  const lastChildren = useRef(children);
+  if (open) lastChildren.current = children;
   return (
     <Dialog
       open={open}
@@ -25,7 +30,7 @@ export function Modal({
       title={title}
       className={wide ? "max-w-5xl" : undefined}
     >
-      {children}
+      {open ? children : lastChildren.current}
     </Dialog>
   );
 }
