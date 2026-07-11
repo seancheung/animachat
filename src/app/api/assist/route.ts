@@ -27,16 +27,16 @@ const FIELD_DOCS: Record<string, string> = {
     `"name": string; "description": string (detailed personality, background, mannerisms — the character sheet); ` +
     `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes); ` +
     `"exampleDialogue": string (a few short sample lines showing their voice — one utterance per line, *actions* in asterisks, "dialogue" in quotes; to demonstrate a reply to the user, label the turns with the literal tags: "[user_name]: ..." then "[char_name]: ..."); ` +
-    `"imagePrompt": string (text-to-image prompt for their neutral sprite: appearance, outfit, style; 2:3 portrait); ` +
+    `"imagePrompt": string (text-to-image prompt for their neutral sprite — see IMAGE PROMPT RULES; cover, in order: physical appearance (body, face, hair), outfit, a neutral standing pose, the framing/view distance (e.g. "full-body shot"), and end with a solid flat single-color background); ` +
     `"customExpressions": [{"name": "kebab-case", "description": "when to use it"}]`,
   persona: `"name": string; "description": string (who the user is in the roleplay)`,
   location:
     `"name": string; "description": string (the place, its atmosphere, sensory details); ` +
-    `"imagePrompt": string (text-to-image prompt for a 16:9 background artwork of this place); ` +
+    `"imagePrompt": string (text-to-image prompt for the background artwork of this place — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
   scene:
     `"name": string; "setup": string (the situation: what is happening, stakes, how it starts); ` +
-    `"imagePrompt": string (text-to-image prompt for a 16:9 background artwork of this scene); ` +
+    `"imagePrompt": string (text-to-image prompt for the background artwork of this scene — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
   story: `"name": string; "description": string (premise and arc of the story)`,
   lorebook:
@@ -149,6 +149,13 @@ export const POST = handler(async (req: Request) => {
     `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
     `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
     `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n` +
+    (isLibrary || ["character", "location", "scene"].includes(body.entityType)
+      ? `IMAGE PROMPT RULES — every "imagePrompt" field is fed directly to a text-to-image generator:\n` +
+        `- STRICTLY VISUAL: describe only what a camera would capture. Never include names, placeholder tags, personality, feelings, backstory, or lore — translate such traits into visible details instead (e.g. "a battle-worn veteran" → "scratched armor, a faded scar across the brow").\n` +
+        `- Always write it in English, whatever the conversation language, unless the user explicitly asks for the prompt in another language.\n` +
+        `- Never mention aspect ratio or image dimensions.\n` +
+        `- Character sprites only: no environment or scenery — cover appearance, outfit, pose and framing, then end with a solid flat single-color background (pick a color that complements the design).\n\n`
+      : "") +
     `Whenever you and the user have converged on content (or the user asks you to write it), apply it: end your reply with\n` +
     (isLibrary
       ? `${OPEN}{ "items": [ ...only items you are adding or changing... ] }${CLOSE}\n` +
