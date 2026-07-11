@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
   BookOpen,
+  Captions,
   Clapperboard,
   Coffee,
   Folder,
   MapPin,
+  PanelRight,
   Plus,
   ScrollText,
   Search,
@@ -23,6 +25,7 @@ import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
+import SegmentedControl from "@/components/ui/segmented-control";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
@@ -86,6 +89,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     modelId: null,
     language: "",
     pov: "",
+    layout: "panel",
   });
   const [busy, setBusy] = useState(false);
 
@@ -323,6 +327,18 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               onClear={() => setForm({ ...form, pov: "" })}
             />
           </Field>
+          <Field label="Chat layout" hint="presentation only — switchable anytime in chat settings">
+            <SegmentedControl
+              className="w-full"
+              size="sm"
+              value={form.layout}
+              onChange={(v) => setForm({ ...form, layout: v })}
+              items={[
+                { value: "panel", label: (<span className="inline-flex items-center gap-1.5"><PanelRight size={13} /> Side panel</span>) },
+                { value: "dialogue", label: (<span className="inline-flex items-center gap-1.5"><Captions size={13} /> Dialogue box</span>) },
+              ]}
+            />
+          </Field>
           <Field
             label="Narrator"
             hint={form.mode === "story" ? "always on — the narrator directs playthroughs" : "narration, suggested actions — speaks first"}
@@ -372,6 +388,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 ...form,
                 narratorEnabled: narrator,
                 greetings: greetingsAvailable && form.greetings,
+                overrides: form.layout === "dialogue" ? { layout: "dialogue" } : {},
               });
               router.push(`/chat/${chat.id}`);
             } catch (e: any) {

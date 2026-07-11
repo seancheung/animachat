@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { AppNav } from "@/components/AppNav";
 import { Confirmer } from "@/components/confirm";
-import { NavTabs } from "@/components/NavTabs";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
 
@@ -22,22 +19,6 @@ export const metadata: Metadata = {
   title: "AnimaChat",
   description: "AI-driven virtual character chat with a visual-novel soul",
 };
-
-function Nav() {
-  return (
-    <nav className="flex items-center gap-1 px-4 h-12 border-b border-base-400 bg-base-100 shrink-0">
-      <Link
-        href="/"
-        className="font-semibold tracking-wide mr-4"
-      >
-          Anima<span className="text-primary-500">Chat</span>
-      </Link>
-      <NavTabs />
-      <span className="flex-1" />
-      <ThemeToggle />
-    </nav>
-  );
-}
 
 export default function RootLayout({
   children,
@@ -57,7 +38,7 @@ export default function RootLayout({
             __html: `try{var m=localStorage.getItem("animachat-theme");if(m!=="dark"&&m!=="light"){m=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=m}catch(e){document.documentElement.dataset.theme="light"}`,
           }}
         />
-        <Nav />
+        <AppNav />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
         <Toaster position="bottom-right" />
         <Confirmer />

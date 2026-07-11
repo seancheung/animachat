@@ -127,6 +127,7 @@ export const POST = handler(async (req: Request) => {
     charModels: b.charModels ?? {},
     folder: b.folder ?? "",
     tags: b.tags ?? [],
+    overrides: b.overrides ?? {},
   });
 
   // greeting: opt-in, and only for the one shape it suits — a casual 1:1 without narrator

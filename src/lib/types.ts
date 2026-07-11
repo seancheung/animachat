@@ -67,9 +67,9 @@ export interface StageStyle {
   panelBg?: string | null;
   /** floating chat panel & its controls: text & icons (title, names, buttons, muted steps) */
   panelFg?: string | null;
-  /** message bubbles (and the fullscreen-VN dialogue box): background */
+  /** message bubbles (and the VN dialogue box): background */
   messageBg?: string | null;
-  /** message bubbles (and the fullscreen-VN dialogue box): text */
+  /** message bubbles (and the VN dialogue box): text */
   messageFg?: string | null;
   /** accent surfaces (primary buttons, slider, focus rings, decorative highlights) */
   accent?: string | null;
@@ -144,12 +144,21 @@ export interface Lorebook {
 
 export type Pov = "user1st" | "third" | "vn2nd";
 
+/**
+ * panel: chat log in a floating side panel on the right (the default).
+ * dialogue: VN-style dialogue box + input centered at the bottom of the stage,
+ * advancing message by message. Presentation only — switchable anytime.
+ */
+export type ChatLayout = "panel" | "dialogue";
+
 export interface ChatOverrides {
   contextBudget?: number;
   verbatimShare?: number;
   chunkThreshold?: number;
   /** characters may chain @mentions without the per-request turn cap; toggling it off stops a running chain after the current reply */
   infiniteMentions?: boolean;
+  /** chat layout — side panel (default) or VN dialogue box */
+  layout?: ChatLayout;
 }
 
 /**

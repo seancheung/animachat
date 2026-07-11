@@ -7,17 +7,16 @@ import {
   ArrowLeft,
   Asterisk,
   Bookmark,
+  CameraIcon,
+  CameraOffIcon,
+  Captions,
   ChevronDown,
   ChevronRight,
   Clapperboard,
   Download,
   GitFork,
   MapPin,
-  Maximize,
-  MessageSquare,
-  MessageSquareOff,
-  PanelRightClose,
-  PanelRightOpen,
+  PanelRight,
   Rewind,
   ScrollText,
   SendHorizontal,
@@ -42,12 +41,13 @@ import Button from "@/components/ui/button";
 import Drawer from "@/components/ui/drawer";
 import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
+import SegmentedControl from "@/components/ui/segmented-control";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { POV_LABELS, type Character, type Message, type Pov, type Settings } from "@/lib/types";
+import { POV_LABELS, type Character, type ChatLayout, type Message, type Pov, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -73,8 +73,8 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
-  const [vnMode, setVnMode] = useState(false);
-  const [panelHidden, setPanelHidden] = useState(false);
+  // picture mode hides the chat UI (panel/dialogue box + stage chip) to enjoy the stage — never persisted
+  const [pictureMode, setPictureMode] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const openedRef = useRef(false);
@@ -83,6 +83,8 @@ export default function ChatPage() {
   const blip = useBlip();
 
   const chat = data?.chat;
+  // presentation layout — persisted per chat in overrides; the corner button and the settings drawer both write it
+  const layout: ChatLayout = chat?.overrides?.layout === "dialogue" ? "dialogue" : "panel";
   const characters: Character[] = useMemo(() => data?.characters ?? [], [data]);
   const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
   const personaName = data?.persona?.name ?? "You";
@@ -225,6 +227,11 @@ export default function ChatPage() {
 
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
+  const switchLayout = async (v: ChatLayout) => {
+    await api.patch(`/api/chats/${id}`, { overrides: { ...chat.overrides, layout: v } });
+    await mutate();
+  };
+
   // active scene/location coloring (location fields win) — gated by the global switch.
   // Per-surface token derivation lives in lib/stageStyle.ts. Styles supply colors only;
   // panel & bubble opacity are system settings.
@@ -353,32 +360,26 @@ export default function ChatPage() {
         />
       </div>
 
-      {/* stage context chip — remounts (and fades in) on scene/location change */}
-      {stageBadges && (
-        <div
-          key={`${data.stage?.sceneId ?? ""}:${data.stage?.locationId ?? ""}`}
-          className="absolute top-3 left-3 z-10 hidden sm:flex items-center gap-1.5 fade-in"
-          style={styleVars}
-        >
-          {stageBadges}
-        </div>
-      )}
-
-      {/* panel hidden — floating button on the stage brings it back */}
-      {panelHidden && (
-        <Button
-          variant="secondary"
-          size="sm"
-          className="absolute top-3 right-3 z-10 shadow-lg"
-          title="Show chat panel"
-          onClick={() => setPanelHidden(false)}
-        >
-          <PanelRightOpen /> Chat{busy ? "…" : ""}
+      {/* floating header — back button and the stage context chip
+          (the chip remounts, and fades in, on scene/location change) */}
+      <div className="absolute top-3 left-3 z-20 max-w-[75%] flex items-center gap-2">
+        <Button variant="secondary" size="sm" shape="circle" className="shadow-lg shrink-0 opacity-40 hover:opacity-100 transition-opacity" title="Back to chats" onClick={() => router.push("/")}>
+          <ArrowLeft />
         </Button>
-      )}
+        {data.ended && <Badge rounded className="shrink-0">The End</Badge>}
+        {stageBadges && !pictureMode && (
+          <div
+            key={`${data.stage?.sceneId ?? ""}:${data.stage?.locationId ?? ""}`}
+            className="flex items-center gap-1.5 fade-in"
+            style={styleVars}
+          >
+            {stageBadges}
+          </div>
+        )}
+      </div>
 
       {/* chat panel — floats over the stage on the right, translucent */}
-      {!panelHidden && (
+      {layout === "panel" && !pictureMode && (
       <div
         className={cn(
           "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col sm:border-l border-base-400/60",
@@ -386,25 +387,8 @@ export default function ChatPage() {
         )}
         style={panelInline}
       >
-      <div className="px-4 py-1.5 border-b border-base-400/60 flex items-center gap-2 text-sm">
-        <Button variant="ghost" size="sm" shape="square" onClick={() => router.push("/")}><ArrowLeft /></Button>
-        <span className="font-medium truncate">{chat.title}</span>
-        {data.ended && <Badge rounded>The End</Badge>}
-        <span className="flex-1" />
-        {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
-        <Button variant="ghost" size="sm" shape="square" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize /></Button>
-        <Button variant="ghost" size="sm" shape="square" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 /></Button>
-        <Button variant="ghost" size="sm" shape="square" title="Hide chat panel" onClick={() => setPanelHidden(true)}><PanelRightClose /></Button>
-      </div>
-
-      {/* narrow screens: the panel covers the stage, so the stage chip moves in here */}
-      {stageBadges && (
-        <div className="sm:hidden px-4 py-1.5 border-b border-base-400/60 flex items-center gap-1.5">
-          {stageBadges}
-        </div>
-      )}
-
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+      {/* extra top padding on narrow screens clears the floating header, which sits over the full-width panel */}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-14 sm:pt-6 space-y-4">
         {messages.map((m) => (
           <MessageRow
             key={m.id}
@@ -444,33 +428,59 @@ export default function ChatPage() {
         {streamingRow}
       </div>
 
-      <div className="px-4 py-3 border-t border-base-400/60">{inputBar}</div>
+      {/* corner-button clearance on narrow screens, where the panel spans the full width */}
+      <div className="px-4 pt-3 pb-16 sm:pb-3 border-t border-base-400/60">{inputBar}</div>
       </div>
       )}
 
-      {/* -------- fullscreen VN mode -------- */}
-      {vnMode && (
-        <VnOverlay
+      {/* -------- dialogue layout — VN dialogue box + input over the stage -------- */}
+      {layout === "dialogue" && (
+        <DialogueLayout
           data={data}
-          backgroundColor={stageStyle?.stageBg}
           styleVars={styleVars}
           characters={characters}
-          stageCharacters={stageCharacters}
-          emotions={emotions}
-          speakingId={speakingId}
           streaming={streaming}
           personaName={personaName}
           busy={busy}
+          error={error}
+          hidden={pictureMode}
           input={input}
           setInput={setInput}
           send={send}
           generate={generate}
-          onExit={() => setVnMode(false)}
+          impersonate={impersonate}
         />
       )}
 
+      {/* corner controls — layout switch (persisted), settings, picture mode */}
+      <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-2 opacity-40 hover:opacity-100 transition-opacity">
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="circle"
+          className="shadow-lg"
+          title={layout === "panel" ? "Switch to dialogue box layout" : "Switch to side panel layout"}
+          onClick={() => switchLayout(layout === "panel" ? "dialogue" : "panel")}
+        >
+          {layout === "panel" ? <Captions /> : <PanelRight />}
+        </Button>
+        <Button variant="secondary" size="sm" shape="circle" className="shadow-lg" title="Chat settings" onClick={() => setDrawer(true)}>
+          <Settings2 />
+        </Button>
+        <Button
+          variant={pictureMode ? undefined : "secondary"}
+          size="sm"
+          shape="circle"
+          className={cn("shadow-lg", pictureMode && busy && "animate-pulse")}
+          title={pictureMode ? `Exit picture mode${busy ? " (generating…)" : ""}` : "Picture mode — hide the chat UI"}
+          onClick={() => setPictureMode(!pictureMode)}
+        >
+          {pictureMode ? <CameraOffIcon /> : <CameraIcon />}
+        </Button>
+      </div>
+
       {/* -------- settings drawer -------- */}
-      <Drawer open={drawer} onOpenChange={setDrawer} title="Chat settings" size="lg">
+      <Drawer open={drawer} onOpenChange={setDrawer} title="Chat settings" side="left" size="lg">
         <ChatDrawer
           data={data}
           muted={muted}
@@ -500,24 +510,22 @@ export default function ChatPage() {
   );
 }
 
-/* ================= fullscreen VN overlay ================= */
+/* ================= dialogue layout — VN dialogue box over the stage ================= */
 
-function VnOverlay({
+function DialogueLayout({
   data,
-  backgroundColor,
   styleVars,
   characters,
-  stageCharacters,
-  emotions,
-  speakingId,
   streaming,
   personaName,
   busy,
+  error,
+  hidden,
   input,
   setInput,
   send,
   generate,
-  onExit,
+  impersonate,
 }: any) {
   const messages: Message[] = data.messages.filter((m: Message) => m.role !== "marker");
   const [idx, setIdx] = useState(messages.length - 1);
@@ -526,8 +534,6 @@ function VnOverlay({
   const [page, setPage] = useState(0);
   const atEnd = idx >= messages.length - 1;
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
-
-  const [boxHidden, setBoxHidden] = useState(false);
 
   const v = shown?.variants[shown.activeVariant];
   const isStreamingShown = !!streaming && atEnd;
@@ -540,14 +546,18 @@ function VnOverlay({
   const displayText = isStreamingShown ? fullText : pages[pageIdx] ?? "";
 
   // after a reply streamed in the user has already read it — land on its last
-  // page instead of making them click through again; plain navigation starts at 0
+  // page instead of making them click through again; plain navigation starts at 0.
+  // The flag is only consumed here: the streamed message arrives (via mutate) after
+  // streaming has already flipped back to null, so clearing it on that transition
+  // would lose the landing.
   const wasStreaming = useRef(false);
   useEffect(() => {
-    wasStreaming.current = !!streaming;
+    if (streaming) wasStreaming.current = true;
   }, [streaming]);
   useEffect(() => {
     setIdx(messages.length - 1);
     setPage(wasStreaming.current ? Number.MAX_SAFE_INTEGER : 0);
+    wasStreaming.current = false;
   }, [messages.length]);
 
   const advance = () => {
@@ -573,8 +583,8 @@ function VnOverlay({
   });
 
   useEffect(() => {
+    if (hidden) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onExit();
       const typing =
         document.activeElement?.tagName === "TEXTAREA" || document.activeElement?.tagName === "INPUT";
       if (typing) return;
@@ -589,7 +599,7 @@ function VnOverlay({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onExit]);
+  }, [hidden]);
 
   // wheel on the stage navigates (VN backlog gesture); wheel over the dialogue
   // box keeps scrolling the box's own overflowing content natively
@@ -623,57 +633,52 @@ function VnOverlay({
           ? "Narrator"
           : characters.find((c: Character) => c.id === shown?.characterId)?.name;
 
+  if (hidden) return null; // stays mounted so the backlog position survives picture mode
+
   return (
-    <div className="fixed inset-0 z-40 bg-black">
-      {/* the stage always fills the viewport — the dialogue box floats over it,
-          so its height never squashes the sprites */}
-      <div className="absolute inset-0" onWheel={onStageWheel}>
-        <VNStage characters={stageCharacters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
-      </div>
-      <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        shape="circle"
-        className="absolute top-3 right-12 opacity-15 hover:opacity-100 transition-opacity"
-        title={boxHidden ? "Show dialogue box" : "Hide dialogue box"}
-        onClick={() => setBoxHidden(!boxHidden)}
-      >
-        {boxHidden ? <MessageSquareOff /> : <MessageSquare />}
-      </Button>
+    <>
+      {/* invisible layer over the stage — wheel steps through the backlog */}
+      <div className="absolute inset-0" onWheel={onStageWheel} />
       {!atEnd && (
-        <Badge variant="secondary" rounded className="absolute top-3 left-3">
+        <Badge variant="secondary" rounded className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
           history {idx + 1}/{messages.length} — scroll or ←/→
         </Badge>
       )}
       <div
-        className={cn(
-          "absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-3xl px-6 pb-5",
-          !boxHidden && "cursor-pointer select-none"
-        )}
+        className="absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-3xl px-6 pb-16 sm:pb-5 cursor-pointer select-none"
         style={styleVars}
-        onClick={boxHidden ? undefined : advance}
+        onClick={advance}
       >
-        {!boxHidden && (
-          <div className="msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
-            {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
-            <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
-              <MessageText text={displayText} streaming={isStreamingShown} />
-            </div>
-            {hasMorePages && (
-              <ChevronDown className="absolute right-3 bottom-2 size-4 animate-bounce text-content-300" />
-            )}
-            {atEnd && !hasMorePages && !busy && v?.options && (
-              <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
-                {v.options.map((o: string, i: number) => (
-                  <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
-                    <ChevronRight /> {o}
-                  </Button>
-                ))}
-              </div>
-            )}
+        {error && (
+          <div className="mb-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
+            <Alert variant="error" className="py-2">
+              {error}{" "}
+              {error.includes("No model") && (
+                <a className="underline" href="/settings">
+                  → Settings
+                </a>
+              )}
+            </Alert>
           </div>
         )}
+        <div className="msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
+          {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
+          <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
+            <MessageText text={displayText} streaming={isStreamingShown} />
+          </div>
+          {hasMorePages && (
+            <ChevronDown className="absolute right-3 bottom-2 size-4 animate-bounce text-content-300" />
+          )}
+          {atEnd && !hasMorePages && !busy && v?.options && (
+            <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
+              {v.options.map((o: string, i: number) => (
+                <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
+                  <ChevronRight /> {o}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         {atEnd && !hasMorePages && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
             <InputBox
@@ -689,6 +694,7 @@ function VnOverlay({
                 }
               }}
             >
+              <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
               <span className="flex-1" />
               <Button variant="ghost" size="sm" shape="square" title="Let the AI continue" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>
               {data.chat.narratorEnabled && (
@@ -699,7 +705,7 @@ function VnOverlay({
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -722,6 +728,18 @@ function ChatDrawer({
 
   return (
     <div className="space-y-4">
+      <Field label="Chat layout" hint="side panel chat log, or a VN dialogue box over the stage — the corner button switches it too">
+        <SegmentedControl
+          className="w-full"
+          size="sm"
+          value={chat.overrides?.layout === "dialogue" ? "dialogue" : "panel"}
+          onChange={(v) => onPatch({ overrides: { ...chat.overrides, layout: v } })}
+          items={[
+            { value: "panel", label: (<span className="inline-flex items-center gap-1.5"><PanelRight size={13} /> Side panel</span>) },
+            { value: "dialogue", label: (<span className="inline-flex items-center gap-1.5"><Captions size={13} /> Dialogue box</span>) },
+          ]}
+        />
+      </Field>
       <Field label="Volume">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
