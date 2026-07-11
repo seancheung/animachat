@@ -103,6 +103,60 @@ Sheets (character/persona/location/scene/story/lorebook text fields) may contain
 - **Organization:** chat tags/folders, auto-generated chat titles, full-text search across all chats.
 - Markdown rendering with styled action text.
 
+### Turn & message workflow
+
+One generation request handles a whole turn: the user's message (if any) is saved to the timeline **before** any AI call, then speaker routing decides who replies — the narrator is just one candidate in the orchestrator's vote, never a middleman. A turn can produce several replies (multiple @mentions, `@all`, or characters chaining mentions).
+
+```mermaid
+flowchart TD
+    U["user acts: send text / pick suggested option /
+    Continue / Narrate / regenerate"] --> HasText{"message text included?"}
+    HasText -- yes --> Save[("append user message
+    to the timeline")]
+    HasText -- no --> Route
+    Save --> Route{"route the turn"}
+
+    Route -- "Narrate button" --> Narr["narrator"]
+    Route -- regenerate --> Regen["original message's speaker"]
+    Route -- "text has @all" --> All["every character, chat order"]
+    Route -- "text has @mentions" --> Ment["orchestrator resolves mentions →
+    addressed characters, in turn
+    (none match → normal routing)"]
+    Route -- otherwise --> Single{"exactly one character
+    and narrator disabled?"}
+    Single -- yes --> That["that character (no orchestrator call)"]
+    Single -- no --> Orch["orchestrator picks the next speaker
+    among characters + narrator — prefers whoever
+    was addressed; narration only when it helps"]
+
+    Narr --> Q["speaker queue"]
+    Regen --> Q
+    All --> Q
+    Ment --> Q
+    That --> Q
+    Orch --> Q
+
+    Q --> Turn["next speaker: resolve model
+    (character → chat task, narrator → narrator task)"]
+    Turn --> Prompt["assemble prompt: system + sheets + world →
+    rolling summary + facts → verbatim window"]
+    Prompt --> Stream["stream the reply through the tag parser
+    (emotion prefix; narrator: options + next-scene tags)"]
+    Stream --> Persist[("save message — regenerate adds
+    a swipe variant; recompute stage")]
+    Persist --> Chain{"character reply
+    with @mentions?"}
+    Chain -- "yes — enqueue them (cap 8 turns unless
+    infinite mentions; never self/user,
+    no back-to-back repeats)" --> Q
+    Chain -- no --> More{"queue empty?"}
+    More -- no --> Q
+    More -- yes --> Bg["background: memory pass +
+    auto title (first exchange)"]
+```
+
+Notes: each queued turn rebuilds the context, so later speakers see earlier replies (and live settings changes like the infinite-mentions toggle); the orchestrator and mention resolution run on the `orchestrator` task model; a Stop press ends the chain after the current reply is saved.
+
 ### Message format (speech & actions)
 
 Shared convention for AI and user:
