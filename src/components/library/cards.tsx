@@ -48,7 +48,7 @@ function CardShell({
     >
       <div
         className={cn(
-          "w-full flex items-center justify-center text-content-300 bg-base-200 overflow-hidden",
+          "w-full flex items-center justify-center text-content-300 bg-base-300 overflow-hidden",
           coverAspect === "square" ? "aspect-square" : "aspect-video"
         )}
       >

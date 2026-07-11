@@ -28,9 +28,9 @@ function Nav() {
     <nav className="flex items-center gap-1 px-4 h-12 border-b border-base-400 bg-base-100 shrink-0">
       <Link
         href="/"
-        className="font-semibold tracking-wide text-primary-500 mr-4 inline-flex items-center gap-1.5"
+        className="font-semibold tracking-wide mr-4"
       >
-        <Sparkles size={16} /> AnimaChat
+          Anima<span className="text-primary-500">Chat</span>
       </Link>
       <NavTabs />
       <span className="flex-1" />
