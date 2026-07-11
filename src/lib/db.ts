@@ -2,7 +2,9 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 
-export const DATA_DIR = path.join(process.cwd(), "data");
+// ANIMACHAT_DATA_DIR relocates everything (db + assets) — lets a test instance
+// run fully isolated; ANIMACHAT_DB_PATH additionally overrides just the db file
+export const DATA_DIR = process.env.ANIMACHAT_DATA_DIR ?? path.join(process.cwd(), "data");
 export const ASSETS_DIR = path.join(DATA_DIR, "assets");
 const DB_PATH = path.join(DATA_DIR, "animachat.db");
 

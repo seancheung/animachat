@@ -8,7 +8,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 
 - `npm run dev` — dev server (port 3000 is often taken by another app; Next falls back to 3001)
 - `npm run build` / `npm run typecheck` / `npm test` (vitest; tests live next to sources as `src/**/*.test.ts`)
-- Data lives in `./data` (SQLite + content-addressed assets), gitignored. `ANIMACHAT_DB_PATH` env overrides the DB file — use it plus `PORT=… npm start` to run an isolated instance for API testing without touching the user's running dev server or data.
+- Data lives in `./data` (SQLite + content-addressed assets), gitignored. `ANIMACHAT_DATA_DIR` env relocates the whole data dir (db + uploaded assets) — use it plus `PORT=… npm start` to run an isolated instance for API testing without touching the user's running dev server or data. (`ANIMACHAT_DB_PATH` overrides only the db file and leaves assets shared — insufficient for tests that upload or delete files.)
 - For end-to-end tests without an API key: run a mock OpenAI-compatible server and register it as a provider with baseUrl `http://localhost:<port>/v1` (pattern: respond to `/chat/completions`, keyed off the system prompt).
 
 ## Architecture

@@ -937,3 +937,16 @@ export function getAsset(id: string): { id: string; filename: string; mime: stri
   const r = getDb().prepare("SELECT * FROM assets WHERE id=?").get(id) as Row | undefined;
   return r ? { id: r.id, filename: r.filename, mime: r.mime, size: r.size } : null;
 }
+
+export function listAssets(): { id: string; size: number }[] {
+  const rows = getDb().prepare("SELECT id, size FROM assets").all() as Row[];
+  return rows.map((r) => ({ id: r.id, size: r.size }));
+}
+
+export function deleteAssets(ids: string[]) {
+  const db = getDb();
+  const stmt = db.prepare("DELETE FROM assets WHERE id=?");
+  db.transaction((list: string[]) => {
+    for (const id of list) stmt.run(id);
+  })(ids);
+}

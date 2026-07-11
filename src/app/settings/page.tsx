@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
-import { Download, Plus, Upload, X } from "lucide-react";
+import { Download, Eraser, Plus, Upload, X } from "lucide-react";
 import { Field, Modal, Row } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import { ModelPicker, useProviders } from "@/components/ModelPicker";
@@ -34,6 +34,13 @@ function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: numbe
     </div>
   );
 }
+
+const fmtBytes = (b: number) =>
+  b >= 1048576
+    ? `${(b / 1048576).toFixed(1)} MB`
+    : b > 0
+      ? `${Math.max(1, Math.round(b / 1024))} KB`
+      : "0 KB";
 
 const TASK_LABELS: Record<string, string> = {
   chat: "Chat generation",
@@ -241,6 +248,7 @@ function UsagePanel() {
 export default function SettingsPage() {
   const { data: pm, mutate } = useProviders();
   const { data: settings, mutate: mutateSettings } = useSWR<Settings>("/api/settings", api.get);
+  const { data: storage, mutate: mutateStorage } = useSWR<{ count: number; bytes: number }>("/api/assets", api.get);
   const [addingProvider, setAddingProvider] = useState<any | null>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
 
@@ -377,6 +385,40 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Token usage</h2>
           <UsagePanel />
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Storage</h2>
+          <div className="panel p-4 flex items-center gap-4 flex-wrap">
+            <div className="text-sm text-content-300">
+              Uploaded assets:{" "}
+              <b className="text-content-100">{storage?.count ?? "…"}</b> file
+              {storage?.count === 1 ? "" : "s"} ·{" "}
+              <b className="text-content-100">{storage ? fmtBytes(storage.bytes) : "…"}</b>
+            </div>
+            <span className="flex-1" />
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                const { count, bytes } = await api.get("/api/assets/prune");
+                if (!count) return toast.success("No unused assets found");
+                if (
+                  !(await confirmDialog({
+                    title: "Prune unused assets",
+                    message: `Delete ${count} uploaded file${count === 1 ? "" : "s"} (${fmtBytes(bytes)}) that no character, location or scene references? Files uploaded in an editor you haven't saved yet also count as unused.`,
+                    confirmLabel: "Prune",
+                    danger: true,
+                  }))
+                )
+                  return;
+                const res = await api.post("/api/assets/prune");
+                toast.success(`Removed ${res.removed} file${res.removed === 1 ? "" : "s"}, freed ${fmtBytes(res.bytes)}`);
+                mutateStorage();
+              }}
+            >
+              <Eraser /> Prune unused assets
+            </Button>
+          </div>
         </section>
 
         <section className="space-y-3 pb-10">

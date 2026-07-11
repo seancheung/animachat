@@ -51,7 +51,7 @@ const getters: Record<BundleItemType, (id: string) => any> = {
   lorebook: getLorebook,
 };
 
-function assetIdsOf(type: BundleItemType, data: any): string[] {
+export function assetIdsOf(type: BundleItemType, data: any): string[] {
   switch (type) {
     case "character":
       return [data.avatarAsset, data.typingSfxAsset, ...Object.values(data.sprites ?? {})].filter(Boolean);

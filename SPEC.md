@@ -206,6 +206,7 @@ Parser rules:
 - Import restores everything, with duplicate handling.
 - **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter.
 - **Full backup/restore:** one-click export of the entire database + all assets as a single archive (distinct from entity bundles); restore from archive.
+- **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files no character, location or scene references (after a confirm showing count & size; unsaved editor uploads count as unused).
 
 ## Assets in repo
 

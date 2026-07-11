@@ -5,6 +5,20 @@ import { bad, handler, ok } from "@/lib/api";
 import { ASSETS_DIR } from "@/lib/db";
 import { registerAsset } from "@/lib/store";
 
+/** Uploads-folder stats: file count and total bytes on disk. */
+export const GET = handler(() => {
+  let count = 0;
+  let bytes = 0;
+  if (fs.existsSync(ASSETS_DIR)) {
+    for (const f of fs.readdirSync(ASSETS_DIR)) {
+      if (!/^[a-f0-9]{32}$/.test(f)) continue;
+      count++;
+      bytes += fs.statSync(path.join(ASSETS_DIR, f)).size;
+    }
+  }
+  return ok({ count, bytes });
+});
+
 export const POST = handler(async (req: Request) => {
   const form = await req.formData();
   const file = form.get("file");
