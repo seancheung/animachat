@@ -567,14 +567,19 @@ function VnOverlay({
           )}
         </div>
         {atEnd && (
-          <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-            <Input
-              className="flex-1"
+          <div className="flex gap-2 mt-2 items-end" onClick={(e) => e.stopPropagation()}>
+            <Textarea
+              className="flex-1 h-12 min-h-12 resize-none"
               placeholder={`Write as ${personaName}…`}
               value={input}
               disabled={busy}
               onChange={setInput}
-              onKeyDown={(e) => e.key === "Enter" && input.trim() && send()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && input.trim()) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
             />
             <Button size="sm" className="h-8" disabled={busy || !input.trim()} onClick={() => send()}>Send</Button>
             <Button variant="secondary" size="sm" shape="square" className="size-8" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>

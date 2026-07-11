@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Button from "@/components/ui/button";
-import Input from "@/components/ui/input";
+import Textarea from "@/components/ui/textarea";
 import { streamSse } from "@/lib/ui";
 import { MessageText } from "./MessageText";
 
@@ -96,14 +96,19 @@ export function AssistPanel({
           </div>
         ))}
       </div>
-      <div className="flex gap-2 pt-2">
-        <Input
-          className="flex-1 min-w-0"
-          placeholder="Discuss ideas…"
+      <div className="flex gap-2 pt-2 items-end">
+        <Textarea
+          className="flex-1 min-w-0 h-14 min-h-14 resize-none"
+          placeholder="Discuss ideas… (Shift+Enter for a new line)"
           value={input}
           disabled={busy}
           onChange={setInput}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
         />
         <Button size="sm" className="h-8" onClick={send} disabled={busy || !input.trim()}>
           {busy ? "…" : "Send"}
