@@ -40,6 +40,24 @@ Picks per provider (as of July 2026 — lineups move fast, check your provider's
 
 Splurge picks for chat if cost is no object: Claude Opus 4.8 (`claude-opus-4-8`) or GPT-5.6 Sol (`gpt-5.6-sol`). DeepSeek is the budget king — V4 Flash costs a fraction of the others and holds up fine as a utility model.
 
+### Thinking / reasoning models
+
+Short version: **turn reasoning off (or to its minimum) for every task.** Roleplay prose doesn't benefit from chain-of-thought, and it actively hurts here:
+
+- Reasoning happens before the first visible token, so replies stall exactly where the VN stage is most sensitive — the `<emo>` tag arrives first and switches the sprite as the character "starts talking".
+- AnimaChat streams only regular text deltas; reasoning tokens are never shown but are billed as output **and count against the per-reply output budget**, so a long think can eat the room the reply needed.
+- The group-chat orchestrator fires before every auto turn — a reasoning model there adds seconds of dead air to every reply for a one-word JSON decision.
+
+Disable it with the model's **custom request body** (deep-merged into every request, your values win):
+
+| Provider | What to do |
+|---|---|
+| Anthropic | Claude Sonnet 5 thinks by default — add `{"thinking":{"type":"disabled"}}` to the model. Claude Opus 4.8 and Haiku 4.5 don't think unless asked; no config needed. (Don't use the old `budget_tokens` form — current Claude models reject it.) |
+| OpenAI / Google / xAI | `{"reasoning_effort":"low"}` — use the lowest value the model accepts (some take `"minimal"` or `"none"`); exact field names vary, check the provider's docs |
+| DeepSeek | Stick to the chat models in the table above and skip the reasoner variants |
+
+If a reasoning model does slip through, nothing breaks — the app simply ignores reasoning output — but you'll wait longer and pay for tokens you never see.
+
 Provider setup (`Settings → Add provider`):
 
 | Provider | Type | Base URL |
