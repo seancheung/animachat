@@ -32,6 +32,25 @@ const FALLBACKS = {
   story: "the story",
 };
 
+/**
+ * Rewrite a bracketed literal self-name ("[Tom]" in Tom's own sheet) to the [char_name] tag,
+ * recursively across string fields. AI co-writers sometimes fill the character's name into
+ * the tag brackets instead of writing the tag verbatim.
+ */
+export function normalizeSelfTags<T>(value: T, selfName: string | null | undefined): T {
+  const name = selfName?.trim();
+  if (!name) return value;
+  const re = new RegExp(`\\[${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]`, "gi");
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "string") return v.replace(re, "[char_name]");
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(value) as T;
+}
+
 export function substitutePlaceholders(text: string, v: PlaceholderValues): string {
   if (!text || !text.includes("[")) return text;
   return text.replace(

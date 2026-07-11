@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { substitutePlaceholders } from "./placeholders";
+import { normalizeSelfTags, substitutePlaceholders } from "./placeholders";
 
 const values = {
   characterNames: ["Mira", "Kael"],
@@ -55,5 +55,39 @@ describe("substitutePlaceholders", () => {
 
   it("returns text without brackets untouched", () => {
     expect(substitutePlaceholders("no tags here", values)).toBe("no tags here");
+  });
+});
+
+describe("normalizeSelfTags", () => {
+  it("rewrites a bracketed self-name to [char_name], case-insensitively", () => {
+    expect(normalizeSelfTags('[Tom]: "Hi." [tom] waves.', "Tom")).toBe('[char_name]: "Hi." [char_name] waves.');
+  });
+
+  it("leaves other bracketed names and real tags alone", () => {
+    expect(normalizeSelfTags("[Kael]: hello [char_name] and [user_name]", "Tom")).toBe(
+      "[Kael]: hello [char_name] and [user_name]"
+    );
+  });
+
+  it("does not touch the unbracketed name", () => {
+    expect(normalizeSelfTags("Tom is tired.", "Tom")).toBe("Tom is tired.");
+  });
+
+  it("recurses into objects and arrays", () => {
+    expect(
+      normalizeSelfTags(
+        { greeting: "[Mira] nods.", customExpressions: [{ name: "smug", description: "[Mira] smirks" }], count: 3 },
+        "Mira"
+      )
+    ).toEqual({
+      greeting: "[char_name] nods.",
+      customExpressions: [{ name: "smug", description: "[char_name] smirks" }],
+      count: 3,
+    });
+  });
+
+  it("escapes regex metacharacters in the name and no-ops without a name", () => {
+    expect(normalizeSelfTags("[Dr. X (prime)] speaks", "Dr. X (prime)")).toBe("[char_name] speaks");
+    expect(normalizeSelfTags("[Tom] stays", null)).toBe("[Tom] stays");
   });
 });
