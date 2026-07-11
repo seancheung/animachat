@@ -305,9 +305,17 @@ export interface BuiltRequest {
   messages: LlmMessage[];
 }
 
+/** Own replies in the verbatim window before example dialogue drops out of the prompt. */
+const EXAMPLE_DIALOGUE_FADE = 8;
+
 export function buildCharacterRequest(ctx: ChatContext, character: Character, model: ResolvedModel): BuiltRequest {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
+  // example dialogue seeds the voice early on; once the character has real replies
+  // in the window those anchor the style, and the static example only invites copying
+  const ownReplies = window.filter(
+    (m) => m.role === "character" && m.characterId === character.id
+  ).length;
   const facts = listFacts(character.id, 50);
   const rel =
     ctx.persona && ctx.settings.userRelationshipsEnabled && character.trackRelationship
@@ -331,7 +339,7 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
   const system = [
     `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
     `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description)}`,
-    character.exampleDialogue
+    character.exampleDialogue && ownReplies < EXAMPLE_DIALOGUE_FADE
       ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue)}`
       : "",
     others.length
@@ -359,6 +367,7 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
       `Speak and act ONLY as ${character.name}. Never write the user's actions, dialogue or decisions.\n` +
+      `Your character sheet is private background knowledge, not content: never quote, paraphrase or re-announce your own traits, backstory or appearance — reveal them through how you act and speak, and only when the scene calls for them. Don't reuse distinctive phrases from your earlier messages.\n` +
       (others.length
         ? `You may hand the conversation to another character by addressing them as @Name in your reply — they will respond next. Do it only when the scene calls for it.\n`
         : "") +
