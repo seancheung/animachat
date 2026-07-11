@@ -37,6 +37,7 @@ All world-building entities are reusable across chats.
 
 ### Persona
 - Multiple user personas (name + description); chosen per chat. Characters respond according to the active persona.
+- **Create from character:** a button on a character's library card copies its name + description into a new persona (a snapshot — later character edits don't propagate; self-referential `[char_name]` tags are converted to `[user_name]`).
 
 ### Location
 - Reusable place description.
