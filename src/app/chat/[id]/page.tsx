@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
   ArrowLeft,
+  Asterisk,
   Bookmark,
   ChevronRight,
   Clapperboard,
@@ -16,6 +17,7 @@ import {
   PanelRightOpen,
   Rewind,
   ScrollText,
+  SendHorizontal,
   Settings2,
   SkipForward,
   Square,
@@ -29,7 +31,7 @@ import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
 import { MessageText } from "@/components/MessageText";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Field } from "@/components/app";
+import { Field, InputBox } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Alert from "@/components/ui/alert";
 import Badge from "@/components/ui/badge";
@@ -39,7 +41,6 @@ import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
-import Textarea from "@/components/ui/textarea";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
@@ -238,59 +239,43 @@ export default function ChatPage() {
           )}
         </Alert>
       )}
-      <div className="flex gap-2 items-end">
-        <Textarea
-          ref={inputRef}
-          className="flex-1 h-16 min-h-16 resize-none"
-          placeholder={
-            characters.length > 1
-              ? `Write as ${personaName}… (*asterisks* for actions, @name/@all to address characters)`
-              : `Write as ${personaName}… (*asterisks* for actions)`
+      <InputBox
+        textareaRef={inputRef}
+        placeholder={
+          characters.length > 1
+            ? `Write as ${personaName}… (*asterisks* for actions, @name/@all to address characters)`
+            : `Write as ${personaName}… (*asterisks* for actions)`
+        }
+        value={input}
+        onChange={setInput}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            send();
           }
-          value={input}
-          onChange={setInput}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-            if (e.key === "*" && e.ctrlKey) {
-              e.preventDefault();
-              wrapAction();
-            }
-          }}
-        />
-        <div className="flex flex-col gap-1">
-          {busy ? (
-            <Button variant="danger" onClick={() => abortRef.current?.abort()}><Square /> Stop</Button>
-          ) : (
-            <Button disabled={!input.trim()} onClick={() => send()}>Send</Button>
-          )}
-          <div className="flex gap-1">
-            <Button variant="secondary" size="sm" title="Wrap selection in *action*" onClick={wrapAction}>*…*</Button>
-            <Button variant="secondary" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
-          </div>
-        </div>
-      </div>
-      <div className="flex gap-1 flex-wrap items-center">
-        <Button variant="secondary" size="sm" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
-          <SkipForward /> Continue
+          if (e.key === "*" && e.ctrlKey) {
+            e.preventDefault();
+            wrapAction();
+          }
+        }}
+      >
+        <Button variant="ghost" size="sm" shape="square" title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
+        <span className="flex-1" />
+        <Button variant="ghost" size="sm" shape="square" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
+          <SkipForward />
         </Button>
         {chat.narratorEnabled && (
-          <Button variant="secondary" size="sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
+          <Button variant="ghost" size="sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
             <ScrollText /> Narrate
           </Button>
         )}
-        <div className="flex-1" />
-        <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
-          {muted ? <VolumeX /> : <Volume2 />}
-        </Button>
-        <div className="w-24 flex items-center">
-          <Slider min={0} max={1} step={0.05} value={volume} onChange={setVolume} />
-        </div>
-        <Button variant="ghost" size="sm" shape="square" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize /></Button>
-        <Button variant="ghost" size="sm" shape="square" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 /></Button>
-      </div>
+        {busy ? (
+          <Button variant="danger" size="sm" shape="square" title="Stop generating" onClick={() => abortRef.current?.abort()}><Square /></Button>
+        ) : (
+          <Button size="sm" shape="square" title="Send (Enter)" disabled={!input.trim()} onClick={() => send()}><SendHorizontal /></Button>
+        )}
+      </InputBox>
     </div>
   );
 
@@ -356,6 +341,8 @@ export default function ChatPage() {
         {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
         <span className="flex-1" />
         {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
+        <Button variant="ghost" size="sm" shape="square" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 /></Button>
         <Button variant="ghost" size="sm" shape="square" title="Hide chat panel" onClick={() => setPanelHidden(true)}><PanelRightClose /></Button>
       </div>
 
@@ -426,6 +413,10 @@ export default function ChatPage() {
       <Drawer open={drawer} onOpenChange={setDrawer} title="Chat settings" size="lg">
         <ChatDrawer
           data={data}
+          muted={muted}
+          setMuted={setMuted}
+          volume={volume}
+          setVolume={setVolume}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
@@ -534,9 +525,9 @@ function VnOverlay({
           )}
         </div>
         {atEnd && (
-          <div className="flex gap-2 mt-2 items-end" onClick={(e) => e.stopPropagation()}>
-            <Textarea
-              className="flex-1 h-12 min-h-12 resize-none"
+          <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
+            <InputBox
+              textareaClassName="h-10"
               placeholder={`Write as ${personaName}…`}
               value={input}
               disabled={busy}
@@ -547,12 +538,14 @@ function VnOverlay({
                   send();
                 }
               }}
-            />
-            <Button size="sm" className="h-8" disabled={busy || !input.trim()} onClick={() => send()}>Send</Button>
-            <Button variant="secondary" size="sm" shape="square" className="size-8" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>
-            {data.chat.narratorEnabled && (
-              <Button variant="secondary" size="sm" shape="square" className="size-8" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
-            )}
+            >
+              <span className="flex-1" />
+              <Button variant="ghost" size="sm" shape="square" title="Let the AI continue" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>
+              {data.chat.narratorEnabled && (
+                <Button variant="ghost" size="sm" shape="square" title="Summon the narrator" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
+              )}
+              <Button size="sm" shape="square" title="Send (Enter)" disabled={busy || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
+            </InputBox>
           </div>
         )}
       </div>
@@ -564,6 +557,10 @@ function VnOverlay({
 
 function ChatDrawer({
   data,
+  muted,
+  setMuted,
+  volume,
+  setVolume,
   onPatch,
   onSwitch,
   onCheckpointLoad,
@@ -576,6 +573,16 @@ function ChatDrawer({
 
   return (
     <div className="space-y-4">
+      <Field label="Volume">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
+            {muted ? <VolumeX /> : <Volume2 />}
+          </Button>
+          <div className="flex-1 flex items-center">
+            <Slider min={0} max={1} step={0.05} value={volume} onChange={setVolume} />
+          </div>
+        </div>
+      </Field>
       <Field label="Title">
         <Input className="w-full" value={title} onChange={setTitle} onBlur={() => onPatch({ title })} />
       </Field>

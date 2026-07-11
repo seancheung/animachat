@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useRef, type KeyboardEvent, type ReactNode, type Ref } from "react";
 import Dialog from "@/components/ui/dialog";
 import { cn } from "@/utils/cn";
 
@@ -53,6 +53,57 @@ export function Field({
       <div className="text-xs uppercase tracking-wider text-content-300 mb-1">{label}</div>
       {children}
       {hint && <div className="text-xs text-content-400 mt-1">{hint}</div>}
+    </div>
+  );
+}
+
+/** Message input with a toolbar inside its frame: a borderless textarea over a bottom
+ *  row of (icon) buttons. Mirrors the ui Textarea's look, moving the focus treatment
+ *  to the frame via focus-within so the whole box reads as one input. */
+export function InputBox({
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  disabled,
+  textareaRef,
+  textareaClassName,
+  className,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  /** disables typing only — toolbar buttons manage their own disabled state */
+  disabled?: boolean;
+  textareaRef?: Ref<HTMLTextAreaElement>;
+  textareaClassName?: string;
+  className?: string;
+  /** toolbar content; use a flex-1 spacer to split left/right groups */
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md border border-base-400 bg-base-100 transition-all",
+        "focus-within:border-primary-500 focus-within:ring-3 focus-within:ring-primary-500/10",
+        className
+      )}
+    >
+      <textarea
+        ref={textareaRef}
+        className={cn(
+          "block w-full h-14 resize-none bg-transparent px-3 pt-2 pb-0.5 text-content-100 text-sm outline-none disabled:opacity-40",
+          textareaClassName
+        )}
+        placeholder={placeholder}
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      <div className="flex items-center gap-1 px-1.5 pb-1.5">{children}</div>
     </div>
   );
 }

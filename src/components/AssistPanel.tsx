@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SendHorizontal } from "lucide-react";
+import { InputBox } from "@/components/app";
 import Button from "@/components/ui/button";
-import Textarea from "@/components/ui/textarea";
 import { streamSse } from "@/lib/ui";
 import { MessageText } from "./MessageText";
 
@@ -96,24 +97,25 @@ export function AssistPanel({
           </div>
         ))}
       </div>
-      <div className="flex gap-2 pt-2 items-end">
-        <Textarea
-          className="flex-1 min-w-0 h-14 min-h-14 resize-none"
-          placeholder="Discuss ideas… (Shift+Enter for a new line)"
-          value={input}
-          disabled={busy}
-          onChange={setInput}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        <Button size="sm" className="h-8" onClick={send} disabled={busy || !input.trim()}>
-          {busy ? "…" : "Send"}
+      <InputBox
+        className="mt-2"
+        textareaClassName="h-12"
+        placeholder="Discuss ideas… (Shift+Enter for a new line)"
+        value={input}
+        disabled={busy}
+        onChange={setInput}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            send();
+          }
+        }}
+      >
+        <span className="flex-1" />
+        <Button size="sm" shape="square" title="Send (Enter)" onClick={send} disabled={busy || !input.trim()}>
+          <SendHorizontal />
         </Button>
-      </div>
+      </InputBox>
     </div>
   );
 }
