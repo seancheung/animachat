@@ -571,6 +571,18 @@ function ChatDrawer({
           label={chat.narratorEnabled ? "Enabled" : "Disabled"}
         />
       </Field>
+      {data.characters.length > 1 && (
+        <Field
+          label="Infinite mentions"
+          hint="characters keep passing the turn with @mentions for as long as they like — switching this off stops a running chain after the current reply"
+        >
+          <Switch
+            value={!!chat.overrides?.infiniteMentions}
+            onChange={(v) => onPatch({ overrides: { ...chat.overrides, infiniteMentions: v } })}
+            label={chat.overrides?.infiniteMentions ? "Unlimited" : "Capped"}
+          />
+        </Field>
+      )}
       {Object.keys(data.relationships ?? {}).length > 0 && (
         <Field label="Relationships">
           <div className="space-y-2">

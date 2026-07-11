@@ -114,6 +114,8 @@ export interface ChatOverrides {
   contextBudget?: number;
   verbatimShare?: number;
   chunkThreshold?: number;
+  /** characters may chain @mentions without the per-request turn cap; toggling it off stops a running chain after the current reply */
+  infiniteMentions?: boolean;
 }
 
 /**

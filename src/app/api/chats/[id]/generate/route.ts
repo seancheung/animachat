@@ -51,10 +51,18 @@ interface Speaker {
 const MENTION_RE = /(^|\s)@\S/;
 const ALL_RE = /(^|\s)@all\b/i;
 
-/** Ask the orchestrator model which characters the user's @mentions address. */
-async function resolveMentions(ctx: ChatContext, text: string): Promise<Character[]> {
+/** Hard cap on AI turns per request — characters chaining @mentions can't loop forever
+ *  (lifted while the chat's infinite-mentions override is on). */
+const MAX_TURNS = 8;
+
+/** Ask the orchestrator model which characters a message's @mentions address. */
+async function resolveMentions(
+  ctx: ChatContext,
+  text: string,
+  author?: Character | null
+): Promise<Character[]> {
   const modelRef = resolveModel("orchestrator", ctx.chat);
-  const req = buildMentionResolveRequest(ctx, text);
+  const req = buildMentionResolveRequest(ctx, text, author);
   const raw = await callLlm({
     modelRef,
     system: req.system,
@@ -223,13 +231,26 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
       };
 
       let savedAny = false;
-      for (const speaker of speakers) {
+      const queue: Speaker[] = [...speakers];
+      let turns = 0;
+      let wasInfinite = false;
+      while (queue.length > 0) {
         if (abort.signal.aborted) break;
 
-        // fresh context per turn so later speakers see earlier replies
+        // fresh context per turn so later speakers see earlier replies —
+        // and so the infinite-mentions toggle is re-read live from the chat
         const turnCtx = regenTarget
           ? { ...buildContext(chatId), messages: regenMessages }
           : buildContext(chatId);
+
+        const infinite = !!turnCtx.chat.overrides.infiniteMentions;
+        // kill switch: flipping infinite off mid-chain stops after the reply that just finished
+        if (wasInfinite && !infinite) break;
+        wasInfinite = infinite;
+        if (!infinite && turns >= MAX_TURNS) break;
+
+        const speaker = queue.shift()!;
+        turns++;
 
         let modelRef: ResolvedModel;
         try {
@@ -335,6 +356,24 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           send({ type: "done", message: null, options: null, stage: null });
         }
         if (failed) break;
+
+        // characters can pass the turn by @mentioning each other (never themselves);
+        // the MAX_TURNS cap and no back-to-back repeats keep it finite
+        if (!regenTarget && speaker.role === "character" && content && turnCtx.characters.length > 1) {
+          let chained: Character[] = [];
+          if (ALL_RE.test(content)) {
+            chained = turnCtx.characters.filter((c) => c.id !== speaker.character!.id);
+          } else if (MENTION_RE.test(content)) {
+            chained = (await resolveMentions(turnCtx, content, speaker.character).catch(() => [])).filter(
+              (c) => c.id !== speaker.character!.id
+            );
+          }
+          for (const c of chained) {
+            if (!infinite && turns + queue.length >= MAX_TURNS) break;
+            if (queue[queue.length - 1]?.character?.id === c.id) continue;
+            queue.push({ role: "character", character: c });
+          }
+        }
       }
 
       if (savedAny) {

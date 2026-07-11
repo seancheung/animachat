@@ -339,6 +339,9 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
       `Speak and act ONLY as ${character.name}. Never write the user's actions, dialogue or decisions.\n` +
+      (others.length
+        ? `You may hand the conversation to another character by addressing them as @Name in your reply — they will respond next. Do it only when the scene calls for it.\n`
+        : "") +
       `Begin your reply with an emotion tag <emo>name</emo> — pick the emotion that best matches the message from: ${emotions}. ` +
       `The tag is descriptive metadata about your message, NOT a constraint: write whatever emotion the moment truly calls for, then label it. After the tag, write only prose.`,
   ]
@@ -406,13 +409,19 @@ export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel)
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho responds next?` }] };
 }
 
-/** Resolve @mentions in a user message to character ids (partial names & nicknames allowed). */
-export function buildMentionResolveRequest(ctx: ChatContext, text: string): BuiltRequest {
+/** Resolve @mentions in a message to character ids (partial names & nicknames allowed). */
+export function buildMentionResolveRequest(
+  ctx: ChatContext,
+  text: string,
+  author?: Character | null
+): BuiltRequest {
   const candidates = ctx.characters.map((c) => `"${c.id}" = ${c.name}`).join("\n");
   const system =
-    `You route a group roleplay chat. The user's message addresses one or more characters with @mentions — ` +
+    `You route a group roleplay chat. A message addresses one or more characters with @mentions — ` +
     `partial names and nicknames count, as long as it is clear who is meant.\n` +
     `Characters:\n${candidates}\n` +
+    (ctx.persona ? `"${ctx.persona.name}" is the user, not a character — ignore mentions of the user.\n` : "") +
+    (author ? `The message was written by ${author.name} — ignore mentions of ${author.name} themselves.\n` : "") +
     `Respond with ONLY a JSON object listing who should reply, in reply order: {"speakers": ["<character id>", ...]}. ` +
     `Omit mentions that match no character. If no mention clearly matches anyone, respond {"speakers": []}.`;
   return { system, messages: [{ role: "user", content: `Message:\n${text}\n\nWho is addressed?` }] };
