@@ -141,7 +141,7 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
       </Field>
       <Field
         label="Chat style"
-        hint="colors the VN stage & floating chat panel while this place is active — governed by the scene/location styling switch in Settings"
+        hint="colors the VN stage & floating chat panel while this place is active — governed by the scene/location styling switch in Settings; bubble text auto-contrasts with the bubble color when unset"
       >
         <div className="space-y-2">
         <Checkbox
@@ -153,7 +153,8 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
           <ColorSwatch label="Stage bg" value={style.background} onChange={(v) => setStyle({ background: v })} />
           <ColorSwatch label="Panel" value={style.panelTint} onChange={(v) => setStyle({ panelTint: v })} />
           <ColorSwatch label="Bubbles" value={style.messageTint} onChange={(v) => setStyle({ messageTint: v })} />
-          <ColorSwatch label="Text" value={style.textColor} onChange={(v) => setStyle({ textColor: v })} />
+          <ColorSwatch label="Bubble text" value={style.textColor} onChange={(v) => setStyle({ textColor: v })} />
+          <ColorSwatch label="Panel text" value={style.panelTextColor} onChange={(v) => setStyle({ panelTextColor: v })} />
           <ColorSwatch label="Accent" value={style.accent} onChange={(v) => setStyle({ accent: v })} />
           <div className="flex items-center gap-2 text-sm">
             <span className="text-content-300">Panel opacity</span>

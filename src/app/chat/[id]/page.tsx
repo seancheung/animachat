@@ -40,6 +40,7 @@ import Progress from "@/components/ui/progress";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
+import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { POV_LABELS, type Character, type Message, type Pov, type Settings } from "@/lib/types";
@@ -204,49 +205,15 @@ export default function ChatPage() {
 
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
-  // active scene/location coloring (location fields win) — gated by the global switch
+  // active scene/location coloring (location fields win) — gated by the global switch.
+  // Per-surface token derivation lives in lib/stageStyle.ts.
   const stageStyle = settings?.stageStyleEnabled !== false ? data.stage?.stageStyle : null;
-  // shared overrides — the UI inside the panel resolves through theme tokens, so we re-derive
-  // the ladder from the style's colors: bubbles/inputs (base-100), badges/borders (base-400),
-  // hover (base-300), muted text (content-200..400), accent hover shades (primary-400/600)
   const styleVars: React.CSSProperties | undefined = stageStyle
-    ? ({
-        ...(stageStyle.accent
-          ? {
-              "--color-primary-500": stageStyle.accent,
-              "--color-primary-400": `color-mix(in srgb, ${stageStyle.accent} 80%, white)`,
-              "--color-primary-600": `color-mix(in srgb, ${stageStyle.accent} 80%, black)`,
-            }
-          : {}),
-        ...(stageStyle.messageTint
-          ? {
-              "--color-base-100": stageStyle.messageTint,
-              "--color-base-300": `color-mix(in srgb, ${stageStyle.messageTint} 85%, ${stageStyle.textColor ?? "var(--color-content-100)"})`,
-              "--color-base-400": `color-mix(in srgb, ${stageStyle.messageTint} 72%, ${stageStyle.textColor ?? "var(--color-content-100)"})`,
-            }
-          : {}),
-        ...(stageStyle.textColor
-          ? {
-              color: stageStyle.textColor,
-              "--color-content-100": stageStyle.textColor,
-              "--color-content-200": `color-mix(in srgb, ${stageStyle.textColor} 85%, transparent)`,
-              "--color-content-300": `color-mix(in srgb, ${stageStyle.textColor} 65%, transparent)`,
-              "--color-content-400": `color-mix(in srgb, ${stageStyle.textColor} 45%, transparent)`,
-            }
-          : {}),
-      } as React.CSSProperties)
+    ? (stageStyleVars(stageStyle) as React.CSSProperties)
     : undefined;
+  const panelBg = stageStyle ? stagePanelBackground(stageStyle) : null;
   const panelInline: React.CSSProperties | undefined = stageStyle
-    ? {
-        ...(stageStyle.panelTint || stageStyle.panelOpacity != null
-          ? {
-              backgroundColor: `color-mix(in srgb, ${stageStyle.panelTint ?? "var(--color-base-200)"} ${Math.round(
-                (stageStyle.panelOpacity ?? 0.45) * 100
-              )}%, transparent)`,
-            }
-          : {}),
-        ...styleVars,
-      }
+    ? { ...(panelBg ? { backgroundColor: panelBg } : {}), ...styleVars }
     : undefined;
 
   const lastNonMarker = [...messages].reverse().find((m) => m.role !== "marker");
@@ -339,7 +306,7 @@ export default function ChatPage() {
           {streaming.role === "narrator" ? "Narrator" : characters.find((c) => c.id === streaming.characterId)?.name}
           {streaming.emotion && <Badge variant="secondary" rounded>{streaming.emotion}</Badge>}
         </div>
-        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "bg-base-100/85")}>
+        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "msg-bubble")}>
           <MessageText text={streaming.text} streaming />
         </div>
       </div>
@@ -551,7 +518,7 @@ function VnOverlay({
         style={styleVars}
         onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
-        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
+        <div className="msg-bubble msg-bubble-solid rounded-lg border border-base-400 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
           {speakerName && <div className="text-primary-500 text-sm font-semibold mb-1">{speakerName}</div>}
           <div className="text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={!!streaming && atEnd} />

@@ -6,9 +6,9 @@ import { getSettings } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 const STAGE_STYLE_DOC =
-  `"stageStyle": {"background": "#hex", "panelTint": "#hex", "panelOpacity": 0.1-1, "messageTint": "#hex", "textColor": "#hex", "accent": "#hex"} or null ` +
-  `(optional chat-UI coloring while this place is active: stage backdrop, chat panel tint & opacity, message bubbles, text, accent — ` +
-  `match the place's mood, keep textColor readable against messageTint and panelTint; every field optional; ` +
+  `"stageStyle": {"background": "#hex", "panelTint": "#hex", "panelOpacity": 0.1-1, "messageTint": "#hex", "textColor": "#hex", "panelTextColor": "#hex", "accent": "#hex"} or null ` +
+  `(optional chat-UI coloring while this place is active: stage backdrop, chat panel tint & opacity, message bubbles, message text, panel text/icons, accent — ` +
+  `match the place's mood, keep textColor readable against messageTint and panelTextColor readable against panelTint; every field optional; ` +
   `styles are OFF unless "enabled": true — include "enabled": true when the user wants the style applied)`;
 
 const FIELD_DOCS: Record<string, string> = {

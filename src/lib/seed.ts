@@ -71,7 +71,7 @@ export function seedPresets() {
       "An old-growth forest on the hills above town, where the temple road ends and deer trails take over. Moss swallows every footstep, sunlight falls in green shafts through the canopy, and the locals say the trees pass rumors along their roots — hence the name. Charcoal burners and herb-gatherers work its edges; nobody sensible camps past the standing stones.",
     imagePrompt:
       "16:9 background art, ancient mossy forest interior, towering trees, green light shafts through dense canopy, ferns and standing stones, fireflies, tranquil and slightly mysterious, warm painterly anime style, visual novel background, no people",
-    stageStyle: { enabled: true, background: "#0e1a12", panelTint: "#142619", panelOpacity: 0.5, messageTint: "#1d3325", textColor: "#dcedde", accent: "#7cc98a" },
+    stageStyle: { enabled: true, background: "#0e1a12", panelTint: "#142619", panelOpacity: 0.5, messageTint: "#1d3325", textColor: "#dcedde", panelTextColor: "#c4dcc9", accent: "#7cc98a" },
   });
 
   const scene1 = saveScene({

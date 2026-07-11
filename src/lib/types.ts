@@ -67,8 +67,10 @@ export interface StageStyle {
   panelOpacity?: number | null;
   /** message bubble background inside the chat panel (and the fullscreen-VN dialogue box) */
   messageTint?: string | null;
-  /** default text color inside the chat panel */
+  /** message text color inside the bubbles (and the fullscreen-VN dialogue box) */
   textColor?: string | null;
+  /** text & icons on the panel itself — title, character names, action icons, muted text */
+  panelTextColor?: string | null;
   /** accent color inside the chat panel (speaker highlights, primary buttons) */
   accent?: string | null;
 }

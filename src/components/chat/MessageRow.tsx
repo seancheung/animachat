@@ -99,7 +99,7 @@ export function MessageRow({
               ? "bg-primary-500/15"
               : message.role === "narrator"
                 ? "bg-transparent border border-dashed border-base-400 italic"
-                : "bg-base-100/85"
+                : "msg-bubble"
           )}
         >
           {editing ? (
