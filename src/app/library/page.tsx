@@ -17,7 +17,7 @@ import { confirmDialog } from "@/components/confirm";
 import { GuideDialog } from "@/components/GuideDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
-import Tabs from "@/components/ui/tab";
+import SegmentedControl from "@/components/ui/segmented-control";
 import { toast } from "@/components/ui/toast";
 import { api, downloadBlob } from "@/lib/ui";
 
@@ -76,18 +76,18 @@ export default function LibraryPage() {
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-6 space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
-          <Tabs
-            className="flex-1 min-w-fit"
+          <SegmentedControl
+            variant="secondary"
             items={TYPES.map((t) => ({ value: t.key, label: t.label }))}
             value={tab}
-            onChange={(v) => setTab(v as TypeKey)}
+            onChange={setTab}
           />
-          <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()}>
+          <div className="flex-1" />
+          <Button variant="secondary" onClick={() => importRef.current?.click()}>
             <Upload /> Import
           </Button>
           <Button
             variant="secondary"
-            size="sm"
             onClick={() => {
               setExportSel([]);
               setExportOpen(true);
@@ -95,10 +95,10 @@ export default function LibraryPage() {
           >
             <Download /> Export
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setGuideOpen(true)}>
+          <Button variant="secondary" onClick={() => setGuideOpen(true)}>
             <Sparkles /> Guide
           </Button>
-          <Button size="sm" onClick={() => setEditing({})}>
+          <Button onClick={() => setEditing({})}>
             <Plus /> New
           </Button>
         </div>

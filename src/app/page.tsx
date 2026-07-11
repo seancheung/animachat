@@ -134,7 +134,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             onChange={(v) => v && setForm({ ...form, mode: v, storyId: null, sceneId: null, locationId: null })}
           >
             {MODES.map((m) => (
-              <Toggle key={m.key} size="sm" value={m.key} title={m.hint}>
+              <Toggle key={m.key} value={m.key} title={m.hint}>
                 {m.icon} {m.label}
               </Toggle>
             ))}
@@ -230,7 +230,6 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               {lorebooks?.map((l) => (
                 <Toggle
                   key={l.id}
-                  size="sm"
                   value={form.lorebookIds.includes(l.id)}
                   onChange={() => toggleLorebook(l.id)}
                 >
@@ -291,11 +290,11 @@ export default function HomePage() {
 
         {folders.length > 0 && (
           <ToggleGroup className="gap-1.5" value={folder} onChange={(v) => setFolder(v ?? "")}>
-            <Toggle size="sm" value="">
+            <Toggle value="">
               all
             </Toggle>
             {folders.map((f) => (
-              <Toggle key={f} size="sm" value={f}>
+              <Toggle key={f} value={f}>
                 <Folder size={11} /> {f}
               </Toggle>
             ))}

@@ -242,7 +242,7 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-semibold">Providers & models</h1>
-            <Button size="sm" onClick={() => setAddingProvider({ name: "", type: "anthropic", baseUrl: "", apiKey: "" })}>
+            <Button onClick={() => setAddingProvider({ name: "", type: "anthropic", baseUrl: "", apiKey: "" })}>
               <Plus /> Add provider
             </Button>
           </div>
