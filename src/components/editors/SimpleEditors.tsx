@@ -249,8 +249,10 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
           <Select
             className="w-full"
             value={null}
-            onChange={(v) => v && setForm({ ...form, sceneIds: [...sceneIds, v] })}
-            options={scenes?.map((s) => ({ value: s.id, label: s.name })) ?? []}
+            onChange={(v) => v && !sceneIds.includes(v) && setForm({ ...form, sceneIds: [...sceneIds, v] })}
+            options={
+              scenes?.filter((s) => !sceneIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name })) ?? []
+            }
             placeholder="+ add scene…"
           />
         </div>
