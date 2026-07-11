@@ -40,6 +40,8 @@ export type DialogProps = VariantProps<typeof contentVariants> & {
   footer?: React.ReactNode;
   children?: React.ReactNode;
   closable?: boolean;
+  /** false = Esc and clicking the overlay don't dismiss; only the close button does */
+  dismissable?: boolean;
   className?: string;
 };
 
@@ -51,6 +53,7 @@ export default function Dialog({
   footer,
   children,
   closable = true,
+  dismissable = true,
   size,
   className,
 }: DialogProps) {
@@ -63,17 +66,18 @@ export default function Dialog({
   });
 
   const dismiss = useDismiss(context, {
-    escapeKey: closable,
+    escapeKey: closable && dismissable,
     // a press inside another floating portal (e.g. a confirm dialog stacked
     // on top of this one) must not dismiss this overlay
-    outsidePress: closable
-      ? (event) => {
-          const portal = (event.target as Element | null)?.closest?.(
-            "[data-floating-ui-portal]",
-          );
-          return !portal || portal.contains(refs.floating.current);
-        }
-      : false,
+    outsidePress:
+      closable && dismissable
+        ? (event) => {
+            const portal = (event.target as Element | null)?.closest?.(
+              "[data-floating-ui-portal]",
+            );
+            return !portal || portal.contains(refs.floating.current);
+          }
+        : false,
   });
   const role = useRole(context);
 

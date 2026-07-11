@@ -11,12 +11,15 @@ export function Modal({
   title,
   children,
   wide,
+  dismissable,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
   wide?: boolean;
+  /** false = only the close button dismisses (not Esc / clicking the overlay) */
+  dismissable?: boolean;
 }) {
   // call sites render children as `{state && <Editor/>}`, which becomes falsy
   // the moment the modal closes — keep the last real children through the
@@ -28,6 +31,7 @@ export function Modal({
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title={title}
+      dismissable={dismissable}
       className={wide ? "max-w-5xl" : undefined}
     >
       {open ? children : lastChildren.current}

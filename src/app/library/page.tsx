@@ -150,7 +150,7 @@ export default function LibraryPage() {
         }
       />
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? `Edit ${editing.name}` : `New ${tab}`} wide>
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? `Edit ${editing.name}` : `New ${tab}`} wide dismissable={false}>
         {editing && (
           <Editor
             initial={editing}
