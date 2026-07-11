@@ -27,6 +27,7 @@ import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import Toggle, { ToggleGroup } from "@/components/ui/toggle";
+import Tooltip from "@/components/ui/tooltip";
 import { api, assetUrl } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { POV_LABELS, type ChatMode } from "@/lib/types";
@@ -155,9 +156,14 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             }
           >
             {MODES.map((m) => (
-              <Toggle key={m.key} value={m.key} title={m.hint}>
-                {m.icon} {m.label}
-              </Toggle>
+              // span target: Toggle spreads props onto its sr-only checkbox, which can't anchor a tooltip
+              <Tooltip key={m.key} content={m.hint}>
+                <span className="inline-flex">
+                  <Toggle value={m.key}>
+                    {m.icon} {m.label}
+                  </Toggle>
+                </span>
+              </Tooltip>
             ))}
           </ToggleGroup>
           <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>

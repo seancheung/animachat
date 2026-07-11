@@ -2,6 +2,7 @@
 
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import Tooltip from "@/components/ui/tooltip";
 import { cn } from "@/utils/cn";
 
 const variants = cva(
@@ -80,13 +81,18 @@ export default function Button({
   size,
   shape,
   asChild,
+  title,
   ...props
 }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
-  return (
+  const button = (
     <Comp
+      aria-label={title}
       className={cn(variants({ className, variant, size, shape }))}
       {...props}
     />
   );
+  // app divergence from upstream: `title` renders as a proper Tooltip instead of
+  // the native browser hint (and doubles as the aria-label unless one is given)
+  return title ? <Tooltip content={title}>{button}</Tooltip> : button;
 }

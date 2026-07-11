@@ -13,6 +13,7 @@ import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import Tooltip from "@/components/ui/tooltip";
 import { api } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story } from "@/lib/types";
@@ -108,13 +109,14 @@ function ColorSwatch({
   return (
     <div className="flex items-center gap-1 text-sm">
       <span className="text-content-300">{label}</span>
-      <input
-        type="color"
-        value={value ?? "#888888"}
-        onChange={(e) => onChange(e.target.value)}
-        title={value ?? "not set"}
-        className={"h-8 w-10 rounded-md border border-base-400 bg-transparent cursor-pointer" + (value ? "" : " opacity-35")}
-      />
+      <Tooltip content={value ?? "not set"}>
+        <input
+          type="color"
+          value={value ?? "#888888"}
+          onChange={(e) => onChange(e.target.value)}
+          className={"h-8 w-10 rounded-md border border-base-400 bg-transparent cursor-pointer" + (value ? "" : " opacity-35")}
+        />
+      </Tooltip>
       {value != null && (
         <Button variant="ghost" size="sm" shape="square" title="Clear" onClick={() => onChange(null)}><X /></Button>
       )}

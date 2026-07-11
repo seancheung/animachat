@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import Tooltip from "@/components/ui/tooltip";
 import { assetUrl, uploadFile } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 
@@ -46,6 +47,7 @@ export function AssetInput({
       {label && (
         <div className="text-xs uppercase tracking-wider text-content-300">{label}</div>
       )}
+      <Tooltip content={value ? `Click to replace ${kind}` : `Click to upload ${kind}`}>
       <div
         className={cn(
           "relative border border-dashed border-base-400 rounded-md overflow-hidden bg-base-200 group",
@@ -53,7 +55,6 @@ export function AssetInput({
           kind === "image" ? "flex items-center justify-center" : "p-2"
         )}
         style={kind === "image" ? { aspectRatio: `${ratio ?? 1}` } : undefined}
-        title={value ? `Click to replace ${kind}` : `Click to upload ${kind}`}
         onClick={() => !busy && fileRef.current?.click()}
       >
         {kind === "image" ? (
@@ -90,6 +91,7 @@ export function AssetInput({
           </Button>
         )}
       </div>
+      </Tooltip>
       <input
         ref={fileRef}
         type="file"
