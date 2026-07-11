@@ -6,8 +6,6 @@ import {
   Download,
   LibraryBig,
   Mountain,
-  Square,
-  SquareCheck,
   Trash2,
   UserRound,
   VenetianMask,
@@ -23,8 +21,6 @@ import { cn } from "@/utils/cn";
 
 export interface LibraryCardProps {
   item: any;
-  selectMode: boolean;
-  selected: boolean;
   onOpen: () => void;
   onExport: () => void;
   onDelete: () => void;
@@ -32,8 +28,6 @@ export interface LibraryCardProps {
 
 function CardShell({
   item,
-  selectMode,
-  selected,
   onOpen,
   onExport,
   onDelete,
@@ -49,17 +43,9 @@ function CardShell({
 }) {
   return (
     <div
-      className={cn(
-        "panel overflow-hidden cursor-pointer hover:border-primary-500 transition-colors relative",
-        selectMode && selected && "border-primary-500"
-      )}
+      className="panel overflow-hidden cursor-pointer hover:border-primary-500 transition-colors relative"
       onClick={onOpen}
     >
-      {selectMode && (
-        <div className="absolute top-2 left-2 z-10 text-primary-500">
-          {selected ? <SquareCheck size={18} /> : <Square size={18} />}
-        </div>
-      )}
       <div
         className={cn(
           "w-full flex items-center justify-center text-content-300 bg-base-200 overflow-hidden",

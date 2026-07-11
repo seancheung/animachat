@@ -14,6 +14,7 @@ import {
 import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
+import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
 import Tabs from "@/components/ui/tab";
 import { toast } from "@/components/ui/toast";
@@ -44,8 +45,8 @@ const EDITORS: Record<TypeKey, any> = {
 export default function LibraryPage() {
   const [tab, setTab] = useState<TypeKey>("character");
   const [editing, setEditing] = useState<any | null>(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
 
   const type = TYPES.find((t) => t.key === tab)!;
@@ -63,13 +64,6 @@ export default function LibraryPage() {
     await downloadBlob(res, "animachat-bundle.zip");
   }
 
-  function toggleSelected(id: string) {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelected(next);
-  }
-
   async function deleteItem(item: any) {
     if (!(await confirmDialog({ title: `Delete ${tab}`, message: `Delete "${item.name}"?`, confirmLabel: "Delete", danger: true }))) return;
     await api.del(`${type.endpoint}/${item.id}`);
@@ -84,33 +78,21 @@ export default function LibraryPage() {
             className="flex-1 min-w-fit"
             items={TYPES.map((t) => ({ value: t.key, label: t.label }))}
             value={tab}
-            onChange={(v) => {
-              setTab(v as TypeKey);
-              setSelected(new Set());
-              setSelectMode(false);
-            }}
+            onChange={(v) => setTab(v as TypeKey)}
           />
           <Button variant="secondary" size="sm" onClick={() => importRef.current?.click()}>
             <Upload /> Import
           </Button>
-          {selectMode ? (
-            <>
-              <Button
-                size="sm"
-                disabled={!selected.size}
-                onClick={() => exportItems([...selected].map((id) => ({ type: tab, id })))}
-              >
-                <Download /> Export {selected.size} selected
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setSelectMode(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button variant="secondary" size="sm" onClick={() => setSelectMode(true)}>
-              Select…
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setExportSel([]);
+              setExportOpen(true);
+            }}
+          >
+            <Download /> Export
+          </Button>
           <Button size="sm" onClick={() => setEditing({})}>
             <Plus /> New
           </Button>
@@ -128,15 +110,38 @@ export default function LibraryPage() {
             <Card
               key={item.id}
               item={item}
-              selectMode={selectMode}
-              selected={selected.has(item.id)}
-              onOpen={() => (selectMode ? toggleSelected(item.id) : setEditing(item))}
+              onOpen={() => setEditing(item)}
               onExport={() => exportItems([{ type: tab, id: item.id }])}
               onDelete={() => deleteItem(item)}
             />
           ))}
         </div>
       </div>
+
+      <LibraryPicker
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export library items"
+        hint="Check items across any types — everything is bundled into a single zip with its assets."
+        selection={exportSel}
+        onChange={setExportSel}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setExportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!exportSel.length}
+              onClick={async () => {
+                await exportItems(exportSel.map(({ type, id }) => ({ type, id })));
+                setExportOpen(false);
+              }}
+            >
+              <Download /> Export {exportSel.length || ""} item{exportSel.length === 1 ? "" : "s"}
+            </Button>
+          </>
+        }
+      />
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? `Edit ${editing.name}` : `New ${tab}`} wide>
         {editing && (
