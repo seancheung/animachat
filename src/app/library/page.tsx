@@ -78,11 +78,11 @@ export default function LibraryPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <SegmentedControl
             variant="secondary"
+            className="flex-1 mr-8"
             items={TYPES.map((t) => ({ value: t.key, label: t.label }))}
             value={tab}
             onChange={setTab}
           />
-          <div className="flex-1" />
           <Button variant="secondary" onClick={() => importRef.current?.click()}>
             <Upload /> Import
           </Button>

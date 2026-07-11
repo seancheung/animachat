@@ -22,7 +22,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 
 All world-building entities are reusable across chats.
 
-**Image aspect ratios:** character sprites **2:3**, character avatars **1:1**, location/scene artwork **16:9**. Upload UI offers a crop tool targeting the ratio; images kept at other ratios are displayed with cover-fit.
+**Image aspect ratios:** character sprites **2:3**, character avatars **1:1**, location/scene artwork **16:9**. Uploads are stored as-is; images at other ratios are displayed with cover-fit. The upload tile itself is clickable (click to upload/replace, hover reveals a remove button).
 
 ### Character
 - Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), **description** (personality, background, mannerisms, anything else), greeting, example dialogue.

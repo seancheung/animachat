@@ -74,29 +74,6 @@ export async function uploadFile(file: File | Blob, name = "file"): Promise<stri
   return data.id as string;
 }
 
-/** Center-crop an image file to the given aspect ratio (w/h) using a canvas. */
-export async function cropToRatio(file: File, ratio: number): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
-  const { width: w, height: h } = bitmap;
-  const current = w / h;
-  let cw = w;
-  let ch = h;
-  if (current > ratio) cw = Math.round(h * ratio);
-  else ch = Math.round(w / ratio);
-  const canvas = document.createElement("canvas");
-  canvas.width = cw;
-  canvas.height = ch;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(bitmap, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, cw, ch);
-  return new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("crop failed"))),
-      file.type === "image/jpeg" ? "image/jpeg" : "image/png",
-      0.92
-    )
-  );
-}
-
 export function download(url: string) {
   const a = document.createElement("a");
   a.href = url;
