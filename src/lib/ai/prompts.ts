@@ -3,6 +3,7 @@ import { substitutePlaceholders } from "./placeholders";
 import {
   getChat,
   getCharacter,
+  getCharRelationship,
   getLocation,
   getLorebook,
   getPersona,
@@ -17,6 +18,7 @@ import {
 import type {
   Chat,
   Character,
+  CharRelationship,
   Location,
   Lorebook,
   Message,
@@ -308,8 +310,18 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
   const lore = triggeredLore(ctx, window);
   const facts = listFacts(character.id, 50);
   const rel =
-    ctx.persona && character.trackRelationship ? getRelationship(character.id, ctx.persona.id) : null;
+    ctx.persona && ctx.settings.userRelationshipsEnabled && character.trackRelationship
+      ? getRelationship(character.id, ctx.persona.id)
+      : null;
   const others = ctx.characters.filter((c) => c.id !== character.id);
+  // this character's view of the other characters present (global switch + both sides' tracking)
+  const charRels =
+    ctx.settings.charRelationshipsEnabled && character.trackRelationship
+      ? others
+        .filter((o) => o.trackRelationship)
+        .map((o) => ({ other: o, rel: getCharRelationship(character.id, o.id) }))
+        .filter((x): x is { other: Character; rel: CharRelationship } => !!x.rel)
+    : [];
 
   const emotions = [
     ...EMOTIONS,
@@ -327,8 +339,16 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
       : "",
     worldBlock(ctx),
     personaBlock(ctx),
-    rel
-      ? `RELATIONSHIP with ${ctx.persona?.name}: affinity ${rel.affinity}/100.${rel.notes ? ` ${rel.notes}` : ""}`
+    rel || charRels.length
+      ? `RELATIONSHIPS (${character.name}'s own view):\n` +
+        [
+          rel ? `- with ${ctx.persona?.name}: affinity ${rel.affinity}/100.${rel.notes ? ` ${rel.notes}` : ""}` : "",
+          ...charRels.map(
+            ({ other, rel: r }) => `- with ${other.name}: affinity ${r.affinity}/100.${r.notes ? ` ${r.notes}` : ""}`
+          ),
+        ]
+          .filter(Boolean)
+          .join("\n")
       : "",
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts

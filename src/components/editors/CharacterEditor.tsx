@@ -18,17 +18,22 @@ const PLACEHOLDER_HINT =
   "placeholders work here: [char_name], [char2_name], [user_name], [loc_name], [scene_name], [story_name]";
 
 function RelationshipsCard({ characterId }: { characterId: string }) {
-  const { data, mutate } = useSWR<
-    { personaId: string; personaName: string; affinity: number; notes: string }[]
-  >(`/api/characters/${characterId}/relationships`, api.get);
-  if (!data?.length) return <div className="text-xs text-content-400">no relationship data yet</div>;
+  const { data, mutate } = useSWR<{
+    personas: { personaId: string; personaName: string; affinity: number; notes: string }[];
+    characters: { otherId: string; otherName: string; affinity: number; notes: string }[];
+  }>(`/api/characters/${characterId}/relationships`, api.get);
+  const rows = [
+    ...(data?.personas ?? []).map((r) => ({ key: `p-${r.personaId}`, name: r.personaName, ...r })),
+    ...(data?.characters ?? []).map((r) => ({ key: `c-${r.otherId}`, name: r.otherName, ...r })),
+  ];
+  if (!rows.length) return <div className="text-xs text-content-400">no relationship data yet</div>;
   return (
     <div className="space-y-2">
-      {data.map((r) => (
-        <div key={r.personaId} className="panel p-2.5">
+      {rows.map((r) => (
+        <div key={r.key} className="panel p-2.5">
           <div className="flex justify-between text-sm">
             <span className="inline-flex items-center gap-1">
-              <Heart size={12} className="text-primary-400" /> with {r.personaName}
+              <Heart size={12} className="text-primary-400" /> with {r.name}
             </span>
             <span className="text-content-300">affinity {r.affinity}</span>
           </div>
@@ -40,7 +45,7 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
         variant="danger"
         size="sm"
         onClick={async () => {
-          if (!(await confirmDialog({ title: "Reset relationships", message: "Reset this character's relationship data with all personas?", confirmLabel: "Reset", danger: true }))) return;
+          if (!(await confirmDialog({ title: "Reset relationships", message: "Reset this character's relationship data with all personas and characters?", confirmLabel: "Reset", danger: true }))) return;
           await api.del(`/api/characters/${characterId}/relationships`);
           mutate();
         }}

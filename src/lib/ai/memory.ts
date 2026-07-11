@@ -2,7 +2,9 @@ import { callLlm, estimateTokens, extractJson, resolveModel } from "./client";
 import { activeContent, buildContext, speakerName, verbatimWindow, type ChatContext } from "./prompts";
 import {
   addFact,
+  getCharRelationship,
   getRelationship,
+  putCharRelationship,
   putRelationship,
   putSummary,
 } from "@/lib/store";
@@ -13,7 +15,7 @@ const inFlight = new Set<string>();
 interface MemoryOutput {
   summary?: string;
   facts?: { character?: string; fact?: string }[];
-  relationships?: { character?: string; affinityDelta?: number; note?: string }[];
+  relationships?: { character?: string; towards?: string; affinityDelta?: number; note?: string }[];
 }
 
 function chunkTranscript(ctx: ChatContext, chunk: Message[]): string {
@@ -64,15 +66,15 @@ export async function runMemoryPass(chatId: string, force = false): Promise<void
     if (!force && chunkTokens < ctx.chunkThreshold) return;
 
     const characters = ctx.characters.map((c) => c.name).join(", ");
+    const userName = ctx.persona?.name ?? "the user";
     const system =
       `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
       `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
       `{"summary": "updated rolling summary, chronological, <= 400 words, keep every plot-critical fact",\n` +
       ` "facts": [{"character": "name", "fact": "a durable fact this character learned/experienced, worth remembering across sessions"}],\n` +
-      ` "relationships": [{"character": "name", "affinityDelta": -10..10, "note": "one-line current state of the character's relationship with ${
-        ctx.persona?.name ?? "the user"
-      }"}]}\n` +
-      `Characters: ${characters}. Extract at most 5 facts; only genuinely durable ones. Write the summary in ${ctx.language}.`;
+      ` "relationships": [{"character": "name", "towards": "who the feeling is about — '${userName}' or another character's name", "affinityDelta": -10..10, "note": "one-line current state of that relationship"}]}\n` +
+      `Characters: ${characters}. The user is ${userName}. Report a relationships entry only when it meaningfully shifted. ` +
+      `Extract at most 5 facts; only genuinely durable ones. Write the summary in ${ctx.language}.`;
     const user =
       `EXISTING SUMMARY:\n${ctx.summaryText || "(none yet)"}\n\nNEW MESSAGES TO FOLD IN:\n` +
       chunkTranscript(ctx, chunk);
@@ -95,10 +97,23 @@ export async function runMemoryPass(chatId: string, force = false): Promise<void
       const c = f.character && byName.get(f.character.toLowerCase());
       if (c && f.fact) addFact(c.id, chatId, f.fact);
     }
-    if (ctx.persona) {
-      for (const r of out.relationships ?? []) {
-        const c = r.character && byName.get(r.character.toLowerCase());
-        if (!c || !c.trackRelationship) continue;
+    for (const r of out.relationships ?? []) {
+      const c = r.character && byName.get(r.character.toLowerCase());
+      if (!c || !c.trackRelationship) continue;
+      const towards = (r.towards ?? "").trim().toLowerCase();
+      const target = towards ? byName.get(towards) : undefined;
+      if (target) {
+        // character → character (global switch + both sides' tracking must be on)
+        if (!ctx.settings.charRelationshipsEnabled) continue;
+        if (target.id === c.id || !target.trackRelationship) continue;
+        const cur = getCharRelationship(c.id, target.id);
+        const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
+        putCharRelationship(c.id, target.id, affinity, r.note ?? cur?.notes ?? "");
+      } else if (
+        ctx.persona &&
+        ctx.settings.userRelationshipsEnabled &&
+        (!towards || towards === "user" || towards === ctx.persona.name.toLowerCase())
+      ) {
         const cur = getRelationship(c.id, ctx.persona.id);
         const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
         putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");

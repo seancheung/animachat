@@ -160,6 +160,15 @@ CREATE TABLE IF NOT EXISTS relationships (
   updated_at INTEGER NOT NULL,
   UNIQUE (character_id, persona_id)
 );
+CREATE TABLE IF NOT EXISTS char_relationships (
+  id TEXT PRIMARY KEY,
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  other_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  affinity INTEGER NOT NULL DEFAULT 0,
+  notes TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  UNIQUE (character_id, other_id)
+);
 CREATE TABLE IF NOT EXISTS usage_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,

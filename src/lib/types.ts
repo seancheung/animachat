@@ -191,6 +191,16 @@ export interface Relationship {
   updatedAt: number;
 }
 
+/** A character's (directed) view of another character. */
+export interface CharRelationship {
+  id: string;
+  characterId: string;
+  otherId: string;
+  affinity: number; // -100..100
+  notes: string;
+  updatedAt: number;
+}
+
 export interface Fact {
   id: string;
   characterId: string;
@@ -230,6 +240,10 @@ export interface Settings {
   typingSfxEnabled: boolean;
   /** backdrop blur behind the floating chat panel */
   chatPanelBlur: boolean;
+  /** track user(persona)↔character affinity; off = no updates, no prompt injection */
+  userRelationshipsEnabled: boolean;
+  /** track affinity between characters (group chats); off = no updates, no prompt injection */
+  charRelationshipsEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -243,6 +257,8 @@ export const DEFAULT_SETTINGS: Settings = {
   outputReserve: 2000,
   typingSfxEnabled: true,
   chatPanelBlur: true,
+  userRelationshipsEnabled: true,
+  charRelationshipsEnabled: true,
 };
 
 export const EMOTIONS = [

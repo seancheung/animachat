@@ -583,20 +583,33 @@ function ChatDrawer({
           />
         </Field>
       )}
-      {Object.keys(data.relationships ?? {}).length > 0 && (
+      {(Object.keys(data.relationships ?? {}).length > 0 ||
+        Object.values(data.charRelationships ?? {}).some((l: any) => l.length)) && (
         <Field label="Relationships">
           <div className="space-y-2">
             {data.characters.map((c: Character) => {
-              const r = data.relationships[c.id];
-              if (!r) return null;
+              const r = data.relationships?.[c.id];
+              const toChars: any[] = data.charRelationships?.[c.id] ?? [];
+              if (!r && !toChars.length) return null;
               return (
-                <div key={c.id} className="panel p-2.5">
-                  <div className="flex justify-between text-sm">
-                    <span>{c.name}</span>
-                    <span className="text-content-300">affinity {r.affinity}</span>
-                  </div>
-                  <Progress className="mt-1.5" value={(r.affinity + 100) / 2} />
-                  {r.notes && <div className="text-xs text-content-300 mt-1">{r.notes}</div>}
+                <div key={c.id} className="panel p-2.5 space-y-1.5">
+                  {r && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span>{c.name}</span>
+                        <span className="text-content-300">affinity {r.affinity}</span>
+                      </div>
+                      <Progress value={(r.affinity + 100) / 2} />
+                      {r.notes && <div className="text-xs text-content-300">{r.notes}</div>}
+                    </>
+                  )}
+                  {!r && <div className="text-sm">{c.name}</div>}
+                  {toChars.map((cr) => (
+                    <div key={cr.otherId} className="text-xs text-content-300">
+                      → {cr.otherName}: {cr.affinity}
+                      {cr.notes ? ` — ${cr.notes}` : ""}
+                    </div>
+                  ))}
                 </div>
               );
             })}

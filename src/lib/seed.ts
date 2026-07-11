@@ -4,6 +4,7 @@ import {
   listPersonas,
   listScenes,
   listStories,
+  putCharRelationship,
   saveCharacter,
   saveLocation,
   saveLorebook,
@@ -107,7 +108,7 @@ export function seedPresets() {
     ],
   });
 
-  // give the two starters a hint of shared history
-  void mira;
-  void kael;
+  // the two starters share some history
+  putCharRelationship(mira.id, kael.id, 20, "Trusts him more than she'd ever admit; he still owes her for a burn salve.");
+  putCharRelationship(kael.id, mira.id, 25, "Quietly protective of her; she reminds him of someone he once failed.");
 }

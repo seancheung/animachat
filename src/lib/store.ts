@@ -2,6 +2,7 @@ import { getDb, now, uid } from "./db";
 import type {
   Chat,
   Character,
+  CharRelationship,
   Checkpoint,
   Fact,
   Lorebook,
@@ -830,6 +831,47 @@ export function putRelationship(characterId: string, personaId: string, affinity
        ON CONFLICT(character_id, persona_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`
     )
     .run(uid(), characterId, personaId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now());
+}
+
+/* ---- character ↔ character (directed: each side has their own view) ---- */
+
+const charRelationshipFromRow = (r: Row): CharRelationship => ({
+  id: r.id,
+  characterId: r.character_id,
+  otherId: r.other_id,
+  affinity: r.affinity,
+  notes: r.notes,
+  updatedAt: r.updated_at,
+});
+
+export function getCharRelationship(characterId: string, otherId: string): CharRelationship | null {
+  const r = getDb()
+    .prepare("SELECT * FROM char_relationships WHERE character_id=? AND other_id=?")
+    .get(characterId, otherId) as Row | undefined;
+  return r ? charRelationshipFromRow(r) : null;
+}
+
+export function listCharRelationships(characterId: string): CharRelationship[] {
+  return (
+    getDb().prepare("SELECT * FROM char_relationships WHERE character_id=?").all(characterId) as Row[]
+  ).map(charRelationshipFromRow);
+}
+
+/** Reset: forget a character's views of others AND others' views of them. */
+export function deleteCharRelationships(characterId: string) {
+  getDb()
+    .prepare("DELETE FROM char_relationships WHERE character_id=? OR other_id=?")
+    .run(characterId, characterId);
+}
+
+export function putCharRelationship(characterId: string, otherId: string, affinity: number, notes: string) {
+  if (characterId === otherId) return;
+  getDb()
+    .prepare(
+      `INSERT INTO char_relationships (id, character_id, other_id, affinity, notes, updated_at) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(character_id, other_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`
+    )
+    .run(uid(), characterId, otherId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now());
 }
 
 /* ---------------- usage ---------------- */

@@ -8,6 +8,7 @@ import {
   getRelationship,
   getStory,
   getScene,
+  listCharRelationships,
   listCheckpoints,
   listMessages,
   saveChat,
@@ -37,6 +38,15 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
             .filter(([, r]) => r)
         )
       : {},
+    // each chat character's view of the other chat characters
+    charRelationships: Object.fromEntries(
+      chat.characterIds.map((cid) => [
+        cid,
+        listCharRelationships(cid)
+          .filter((r) => chat.characterIds.includes(r.otherId))
+          .map((r) => ({ ...r, otherName: getCharacter(r.otherId)?.name ?? "?" })),
+      ])
+    ),
   });
 });
 

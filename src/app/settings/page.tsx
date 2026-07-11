@@ -302,6 +302,22 @@ export default function SettingsPage() {
                 label={settings.chatPanelBlur ? "Enabled" : "Disabled"}
               />
             </Field>
+            <Field label="User relationships" hint="track affinity between you (persona) and characters — off: no updates, no prompt injection">
+              <Switch
+                className="h-8"
+                value={settings.userRelationshipsEnabled}
+                onChange={(v) => patchSettings({ userRelationshipsEnabled: v })}
+                label={settings.userRelationshipsEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Character relationships" hint="track affinity between characters in group chats — off: no updates, no prompt injection">
+              <Switch
+                className="h-8"
+                value={settings.charRelationshipsEnabled}
+                onChange={(v) => patchSettings({ charRelationshipsEnabled: v })}
+                label={settings.charRelationshipsEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
           </div>
         </section>
 
