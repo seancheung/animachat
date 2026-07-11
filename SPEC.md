@@ -182,6 +182,7 @@ Parser rules:
 
 - Chat-style co-writing side panel in every editor (character/story/scene/location).
 - Conversational side streams as prose; the assistant fills/updates form fields via tool calls as the discussion progresses.
+- **Reference attachments:** a picker in the input toolbar attaches library items (characters, personas, locations, scenes, stories, lorebooks) to the conversation; their sheets are sent as read-only background context with every message, so new content can build on the existing cast and world (e.g. a scene written for specific characters). Items that no longer exist are skipped silently.
 - Follows the global language setting.
 
 ## Language

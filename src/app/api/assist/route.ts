@@ -1,7 +1,15 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { normalizeSelfTags } from "@/lib/ai/placeholders";
-import { getSettings } from "@/lib/store";
+import {
+  getCharacter,
+  getLocation,
+  getLorebook,
+  getPersona,
+  getScene,
+  getSettings,
+  getStory,
+} from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +48,47 @@ interface AssistBody {
   entityType: keyof typeof FIELD_DOCS;
   fields: Record<string, unknown>;
   messages: { role: "user" | "assistant"; content: string }[];
+  /** library items attached by the user as background context */
+  references?: { type: string; id: string }[];
+}
+
+/** Serialize an attached library item for the system prompt; null if it no longer exists. */
+function referenceText(ref: { type: string; id: string }): string | null {
+  switch (ref.type) {
+    case "character": {
+      const c = getCharacter(ref.id);
+      if (!c) return null;
+      return `CHARACTER "${c.name}"\n${c.description}${c.exampleDialogue ? `\nExample dialogue:\n${c.exampleDialogue}` : ""}`;
+    }
+    case "persona": {
+      const p = getPersona(ref.id);
+      return p && `PERSONA "${p.name}" (an identity the user plays)\n${p.description}`;
+    }
+    case "location": {
+      const l = getLocation(ref.id);
+      return l && `LOCATION "${l.name}"\n${l.description}`;
+    }
+    case "scene": {
+      const s = getScene(ref.id);
+      if (!s) return null;
+      const loc = s.locationId ? getLocation(s.locationId) : null;
+      return `SCENE "${s.name}"${loc ? ` (at location "${loc.name}")` : ""}\n${s.setup}`;
+    }
+    case "story": {
+      const st = getStory(ref.id);
+      if (!st) return null;
+      const scenes = st.sceneIds.map((sid) => getScene(sid)?.name).filter(Boolean);
+      return `STORY "${st.name}"\n${st.description}${scenes.length ? `\nScenes in order: ${scenes.join(" → ")}` : ""}`;
+    }
+    case "lorebook": {
+      const lb = getLorebook(ref.id);
+      if (!lb) return null;
+      return `LOREBOOK "${lb.name}"${lb.description ? ` — ${lb.description}` : ""}\n${lb.entries
+        .map((e) => `- ${e.title}: ${e.content}`)
+        .join("\n")}`;
+    }
+  }
+  return null;
 }
 
 const OPEN = "<fields>";
@@ -57,11 +106,15 @@ export const POST = handler(async (req: Request) => {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
   const settings = getSettings();
+  const refTexts = (body.references ?? []).map(referenceText).filter(Boolean) as string[];
 
   const system =
     `You are a creative co-writing assistant inside the editor of a visual-novel roleplay app. ` +
     `You are helping the user create/refine a ${body.entityType}. Discuss ideas conversationally in ${settings.language}, ask at most one question at a time, and be concrete.\n\n` +
     `CURRENT FORM STATE:\n${JSON.stringify(body.fields, null, 2)}\n\n` +
+    (refTexts.length
+      ? `REFERENCE MATERIAL — library items the user attached for context. Use them to make this ${body.entityType} fit that cast and world (read-only background — don't copy them into the fields verbatim unless asked):\n\n${refTexts.join("\n\n")}\n\n`
+      : "") +
     `FIELDS YOU MAY SET:\n${FIELD_DOCS[body.entityType]}\n\n` +
     `Text fields support placeholder tags replaced with live chat values: [user_name] (the user's persona), ` +
     `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
