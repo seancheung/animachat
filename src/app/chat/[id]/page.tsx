@@ -12,6 +12,8 @@ import {
   GitFork,
   MapPin,
   Maximize,
+  PanelRightClose,
+  PanelRightOpen,
   Rewind,
   ScrollText,
   Settings2,
@@ -68,6 +70,7 @@ export default function ChatPage() {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [vnMode, setVnMode] = useState(false);
+  const [panelHidden, setPanelHidden] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -203,13 +206,35 @@ export default function ChatPage() {
 
   // active scene/location coloring (location fields win) — gated by the global switch
   const stageStyle = settings?.stageStyleEnabled !== false ? data.stage?.stageStyle : null;
-  // shared overrides: bubbles resolve through --color-base-100, accents through --color-primary-500
+  // shared overrides — the UI inside the panel resolves through theme tokens, so we re-derive
+  // the ladder from the style's colors: bubbles/inputs (base-100), badges/borders (base-400),
+  // hover (base-300), muted text (content-200..400), accent hover shades (primary-400/600)
   const styleVars: React.CSSProperties | undefined = stageStyle
-    ? {
-        ...(stageStyle.accent ? { "--color-primary-500": stageStyle.accent } : {}),
-        ...(stageStyle.messageTint ? { "--color-base-100": stageStyle.messageTint } : {}),
-        ...(stageStyle.textColor ? { color: stageStyle.textColor } : {}),
-      }
+    ? ({
+        ...(stageStyle.accent
+          ? {
+              "--color-primary-500": stageStyle.accent,
+              "--color-primary-400": `color-mix(in srgb, ${stageStyle.accent} 80%, white)`,
+              "--color-primary-600": `color-mix(in srgb, ${stageStyle.accent} 80%, black)`,
+            }
+          : {}),
+        ...(stageStyle.messageTint
+          ? {
+              "--color-base-100": stageStyle.messageTint,
+              "--color-base-300": `color-mix(in srgb, ${stageStyle.messageTint} 85%, ${stageStyle.textColor ?? "var(--color-content-100)"})`,
+              "--color-base-400": `color-mix(in srgb, ${stageStyle.messageTint} 72%, ${stageStyle.textColor ?? "var(--color-content-100)"})`,
+            }
+          : {}),
+        ...(stageStyle.textColor
+          ? {
+              color: stageStyle.textColor,
+              "--color-content-100": stageStyle.textColor,
+              "--color-content-200": `color-mix(in srgb, ${stageStyle.textColor} 85%, transparent)`,
+              "--color-content-300": `color-mix(in srgb, ${stageStyle.textColor} 65%, transparent)`,
+              "--color-content-400": `color-mix(in srgb, ${stageStyle.textColor} 45%, transparent)`,
+            }
+          : {}),
+      } as React.CSSProperties)
     : undefined;
   const panelInline: React.CSSProperties | undefined = stageStyle
     ? {
@@ -335,7 +360,21 @@ export default function ChatPage() {
         />
       </div>
 
+      {/* panel hidden — floating button on the stage brings it back */}
+      {panelHidden && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="absolute top-3 right-3 z-10 shadow-lg"
+          title="Show chat panel"
+          onClick={() => setPanelHidden(false)}
+        >
+          <PanelRightOpen /> Chat{busy ? "…" : ""}
+        </Button>
+      )}
+
       {/* chat panel — floats over the stage on the right, translucent */}
+      {!panelHidden && (
       <div
         className={cn(
           "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col bg-base-200/45 sm:border-l border-base-400/60",
@@ -350,6 +389,7 @@ export default function ChatPage() {
         {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
         <span className="flex-1" />
         {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
+        <Button variant="ghost" size="sm" shape="square" title="Hide chat panel" onClick={() => setPanelHidden(true)}><PanelRightClose /></Button>
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
@@ -393,6 +433,7 @@ export default function ChatPage() {
 
       <div className="px-4 py-3 border-t border-base-400/60">{inputBar}</div>
       </div>
+      )}
 
       {/* -------- fullscreen VN mode -------- */}
       {vnMode && (
@@ -507,9 +548,10 @@ function VnOverlay({
       </div>
       <div
         className="mx-auto w-full max-w-3xl px-6 pb-5 -mt-28 relative z-10 cursor-pointer select-none"
+        style={styleVars}
         onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
-        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl" style={styleVars}>
+        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
           {speakerName && <div className="text-primary-500 text-sm font-semibold mb-1">{speakerName}</div>}
           <div className="text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={!!streaming && atEnd} />
