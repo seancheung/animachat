@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Asterisk,
   Bookmark,
+  ChevronDown,
   ChevronRight,
   Clapperboard,
   Download,
@@ -520,36 +521,68 @@ function VnOverlay({
 }: any) {
   const messages: Message[] = data.messages.filter((m: Message) => m.role !== "marker");
   const [idx, setIdx] = useState(messages.length - 1);
+  // paragraph page within the shown message — long messages advance VN-style,
+  // paragraph by paragraph (display-only; the message itself stays whole)
+  const [page, setPage] = useState(0);
   const atEnd = idx >= messages.length - 1;
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
 
   const [boxHidden, setBoxHidden] = useState(false);
 
+  const v = shown?.variants[shown.activeVariant];
+  const isStreamingShown = !!streaming && atEnd;
+  const fullText: string = isStreamingShown ? streaming.text : v?.content ?? "";
+  const split = fullText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const pages = split.length ? split : [fullText];
+  const pageIdx = Math.min(page, pages.length - 1);
+  const hasMorePages = !isStreamingShown && pageIdx < pages.length - 1;
+  // a streaming reply shows live in full; otherwise the current paragraph page
+  const displayText = isStreamingShown ? fullText : pages[pageIdx] ?? "";
+
+  // after a reply streamed in the user has already read it — land on its last
+  // page instead of making them click through again; plain navigation starts at 0
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    wasStreaming.current = !!streaming;
+  }, [streaming]);
   useEffect(() => {
     setIdx(messages.length - 1);
+    setPage(wasStreaming.current ? Number.MAX_SAFE_INTEGER : 0);
   }, [messages.length]);
+
+  const advance = () => {
+    if (isStreamingShown) return;
+    if (pageIdx < pages.length - 1) setPage(pageIdx + 1);
+    else if (!atEnd) {
+      setIdx((i: number) => Math.min(i + 1, messages.length - 1));
+      setPage(0);
+    }
+  };
+  // latest-ref so the window listener binds once but always sees fresh page state
+  const advanceRef = useRef(advance);
+  useEffect(() => {
+    advanceRef.current = advance;
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onExit();
       if ((e.key === " " || e.key === "Enter") && document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
         e.preventDefault();
-        setIdx((i: number) => Math.min(i + 1, messages.length - 1));
+        advanceRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [messages.length, onExit]);
+  }, [onExit]);
 
-  const v = shown?.variants[shown.activeVariant];
-  const displayText = streaming && atEnd ? streaming.text : v?.content ?? "";
-
-  // the box is height-capped and scrolls internally — keep the tail of a
-  // long or streaming message in view
+  // the box is height-capped and scrolls internally — follow the tail while
+  // streaming, start a freshly turned page at its top
   const textRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    textRef.current?.scrollTo({ top: textRef.current.scrollHeight });
-  }, [displayText]);
+    const el = textRef.current;
+    el?.scrollTo({ top: isStreamingShown ? el.scrollHeight : 0 });
+  }, [displayText, isStreamingShown]);
   const speakerName =
     streaming && atEnd
       ? streaming.role === "narrator"
@@ -590,15 +623,18 @@ function VnOverlay({
           !boxHidden && "cursor-pointer select-none"
         )}
         style={styleVars}
-        onClick={boxHidden ? undefined : () => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
+        onClick={boxHidden ? undefined : advance}
       >
         {!boxHidden && (
-          <div className="msg-bubble vn-dialog flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
+          <div className="msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
             {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
             <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
-              <MessageText text={displayText} streaming={!!streaming && atEnd} />
+              <MessageText text={displayText} streaming={isStreamingShown} />
             </div>
-            {atEnd && !busy && v?.options && (
+            {hasMorePages && (
+              <ChevronDown className="absolute right-3 bottom-2 size-4 animate-bounce text-content-300" />
+            )}
+            {atEnd && !hasMorePages && !busy && v?.options && (
               <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
                 {v.options.map((o: string, i: number) => (
                   <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
@@ -609,7 +645,7 @@ function VnOverlay({
             )}
           </div>
         )}
-        {atEnd && (
+        {atEnd && !hasMorePages && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
             <InputBox
               textareaClassName="h-10"
