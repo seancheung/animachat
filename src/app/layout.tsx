@@ -51,10 +51,10 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="h-full flex flex-col overflow-hidden">
-        {/* apply the stored theme before paint; light is the default */}
+        {/* apply the stored theme before paint; auto (follow the system) is the default */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{document.documentElement.dataset.theme=localStorage.getItem("animachat-theme")==="dark"?"dark":"light"}catch(e){document.documentElement.dataset.theme="light"}`,
+            __html: `try{var m=localStorage.getItem("animachat-theme");if(m!=="dark"&&m!=="light"){m=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=m}catch(e){document.documentElement.dataset.theme="light"}`,
           }}
         />
         <Nav />
