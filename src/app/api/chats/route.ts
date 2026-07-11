@@ -93,6 +93,7 @@ export const POST = handler(async (req: Request) => {
         characterId: cid,
         content: substitutePlaceholders(c.greeting, {
           characterNames,
+          selfName: c.name,
           userName: persona?.name,
           locationName: startLocation?.name,
           sceneName: startScene?.name,

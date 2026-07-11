@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildCharacterRequest, type ChatContext } from "./prompts";
+import { substitutePlaceholders } from "./placeholders";
 import type { Character, Chat, Message, MessageRole } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
@@ -141,6 +142,18 @@ describe("buildCharacterRequest", () => {
     const req = buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).toContain("EXAMPLE OF HOW Mira SPEAKS");
     expect(buildCharacterRequest(ctx, kael, modelRef).system).not.toContain("EXAMPLE OF HOW");
+  });
+
+  it("binds [char_name] in a sheet to that sheet's character, not the chat's first character", () => {
+    const kael = makeCharacter("c2", "Kael");
+    kael.description = "[char_name] of Varr, knight-errant.";
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira, kael]);
+    ctx.sub = (text, selfName) =>
+      substitutePlaceholders(text, { characterNames: ["Mira", "Kael"], selfName });
+    const req = buildCharacterRequest(ctx, kael, modelRef);
+    expect(req.system).toContain("Kael of Varr");
+    // and in Mira's prompt, Kael's sheet in OTHER CHARACTERS still resolves to Kael
+    expect(buildCharacterRequest(ctx, mira, modelRef).system).toContain("Kael of Varr");
   });
 
   it("always instructs against reciting the character sheet", () => {

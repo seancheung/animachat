@@ -104,8 +104,9 @@ export interface ChatContext {
   contextBudget: (model: ResolvedModel) => number;
   verbatimShare: number;
   chunkThreshold: number;
-  /** substitute [char_name]-style placeholder tags with this chat's values */
-  sub: (text: string) => string;
+  /** substitute [char_name]-style placeholder tags with this chat's values;
+   *  pass selfName when substituting a character's own sheet so [char_name] means them */
+  sub: (text: string, selfName?: string) => string;
 }
 
 export function buildContext(chatId: string): ChatContext {
@@ -135,9 +136,10 @@ export function buildContext(chatId: string): ChatContext {
     messages,
     summaryText: summary.content,
     summaryCovered: summary.coveredPosition,
-    sub: (text: string) =>
+    sub: (text: string, selfName?: string) =>
       substitutePlaceholders(text, {
         characterNames: characters.map((c) => c.name),
+        selfName,
         userName: persona?.name,
         locationName: location?.name,
         sceneName: scene?.name,
@@ -333,17 +335,17 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
 
   const emotions = [
     ...EMOTIONS,
-    ...character.customExpressions.map((e) => `${e.name} (${ctx.sub(e.description)})`),
+    ...character.customExpressions.map((e) => `${e.name} (${ctx.sub(e.description, character.name)})`),
   ].join(", ");
 
   const system = [
     `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
-    `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description)}`,
+    `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description, character.name)}`,
     character.exampleDialogue && ownReplies < EXAMPLE_DIALOGUE_FADE
-      ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue)}`
+      ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue, character.name)}`
       : "",
     others.length
-      ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${ctx.sub(c.description).slice(0, 200)}`).join("; ")}`
+      ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`
       : "",
     worldBlock(ctx),
     personaBlock(ctx),
@@ -397,7 +399,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
 
   const system = [
     `You are the NARRATOR of an ongoing roleplay. You describe scenery, atmosphere, events and transitions; you move the plot forward. You never speak or decide for the characters or the user.`,
-    `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${ctx.sub(c.description).slice(0, 200)}`).join("; ")}`,
+    `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`,
     worldBlock(ctx),
     personaBlock(ctx),
     nextSceneInfo,

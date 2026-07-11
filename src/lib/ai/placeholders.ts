@@ -2,8 +2,10 @@
  * Placeholder tags usable in character/persona/location/scene/story/lorebook sheets.
  * Replaced with actual chat values at injection time (prompt assembly, greeting insertion):
  *
- *   [char_name]              first character's name
- *   [charN_name]             Nth character's name (1-based; char1_name == char_name)
+ *   [char_name]              in a character's own sheet (description, greeting, example
+ *                            dialogue, custom expressions): that character's name;
+ *                            elsewhere: the chat's first character
+ *   [charN_name]             Nth character's name (1-based, chat order)
  *   [user_name] / [persona_name]  the active persona's name
  *   [loc_name]               active location name
  *   [scene_name]             active scene name
@@ -14,6 +16,8 @@
 
 export interface PlaceholderValues {
   characterNames: string[];
+  /** binds [char_name] to the character whose sheet is being substituted */
+  selfName?: string | null;
   userName?: string | null;
   locationName?: string | null;
   sceneName?: string | null;
@@ -35,6 +39,7 @@ export function substitutePlaceholders(text: string, v: PlaceholderValues): stri
     (_m, tag: string, n?: string) => {
       const t = tag.toLowerCase();
       if (t.startsWith("char")) {
+        if (!n && v.selfName) return v.selfName;
         const idx = n ? Number(n) - 1 : 0;
         return v.characterNames[idx] ?? FALLBACKS.char;
       }

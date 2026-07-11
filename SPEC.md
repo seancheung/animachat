@@ -73,7 +73,7 @@ All world-building entities are reusable across chats.
 
 Sheets (character/persona/location/scene/story/lorebook text fields) may contain placeholder tags, replaced with actual chat values at injection time (prompt assembly and greeting insertion):
 
-- `[char_name]` — first character's name; `[charN_name]` — Nth character (1-based; `[char1_name]` = `[char_name]`)
+- `[char_name]` — inside a character's own sheet fields (description, greeting, example dialogue, custom expression descriptions): that character's name; elsewhere: the chat's first character. `[charN_name]` — Nth character (1-based, chat order); `[char1_name]` is always positional.
 - `[user_name]` / `[persona_name]` — active persona's name
 - `[loc_name]`, `[scene_name]`, `[story_name]` — active location/scene/story names
 - Case-insensitive. Unresolvable tags get a neutral fallback ("another character", "the current place", …) so the AI never sees broken brackets. Unknown bracketed text is left as-is.

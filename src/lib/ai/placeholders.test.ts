@@ -20,6 +20,18 @@ describe("substitutePlaceholders", () => {
     expect(substitutePlaceholders("[char1_name] and [char2_name]", values)).toBe("Mira and Kael");
   });
 
+  it("binds [char_name] to selfName when substituting a character's own sheet", () => {
+    expect(substitutePlaceholders("[char_name] polishes his sword", { ...values, selfName: "Kael" })).toBe(
+      "Kael polishes his sword"
+    );
+    // indexed tags stay positional even with a self binding
+    expect(substitutePlaceholders("[char1_name] and [char2_name]", { ...values, selfName: "Kael" })).toBe(
+      "Mira and Kael"
+    );
+    // without a self binding, [char_name] falls back to the first character
+    expect(substitutePlaceholders("[char_name]", values)).toBe("Mira");
+  });
+
   it("treats persona_name as an alias of user_name", () => {
     expect(substitutePlaceholders("[persona_name]", values)).toBe("Traveler");
   });
