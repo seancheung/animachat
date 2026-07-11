@@ -11,7 +11,6 @@ import Checkbox from "@/components/ui/checkbox";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import Select from "@/components/ui/select";
-import Slider from "@/components/ui/slider";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/ui";
@@ -157,16 +156,6 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
           <ColorSwatch label="Panel text" value={style.panelFg} onChange={(v) => setStyle({ panelFg: v })} />
           <ColorSwatch label="Accent" value={style.accent} onChange={(v) => setStyle({ accent: v })} />
           <ColorSwatch label="Accent text" value={style.accentFg} onChange={(v) => setStyle({ accentFg: v })} />
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-content-300">Panel opacity</span>
-            <div className="w-28 flex items-center">
-              <Slider min={0.1} max={1} step={0.05} value={style.panelOpacity ?? 0.45} onChange={(v) => setStyle({ panelOpacity: v })} />
-            </div>
-            <span className="text-content-300 w-9">{Math.round((style.panelOpacity ?? 0.45) * 100)}%</span>
-            {style.panelOpacity != null && (
-              <Button variant="ghost" size="sm" shape="square" title="Clear" onClick={() => setStyle({ panelOpacity: null })}><X /></Button>
-            )}
-          </div>
         </div>
         </div>
       </Field>

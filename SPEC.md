@@ -42,7 +42,7 @@ All world-building entities are reusable across chats.
 ### Location
 - Reusable place description.
 - Optional **artwork** (chat background, **16:9**), optional **BGM**, optional **ambient SFX loop** (rain, tavern chatter…) mixed under the BGM.
-- Optional **chat style** — a palette of Bg/Fg surface pairs applied while the place is active: `stageBg` (VN backdrop), `panelBg`+`panelFg`+`panelOpacity` (the chat panel & its controls — badges, borders, inputs derive from this pair), `messageBg`+`messageFg` (message bubbles), `accent`+`accentFg` (buttons & highlights). Every omitted Fg auto-contrasts with its Bg. Has its own **enable checkbox, off by default** — colors apply only when explicitly enabled; a non-enabled location style contributes nothing (falling back to the scene's, per precedence). Governed overall by the global "scene & location styling" switch.
+- Optional **chat style** — a palette of Bg/Fg surface pairs applied while the place is active: `stageBg` (VN backdrop), `panelBg`+`panelFg` (the chat panel & its controls — badges, borders, inputs derive from this pair), `messageBg`+`messageFg` (message bubbles), `accent`+`accentFg` (buttons & highlights). Every omitted Fg auto-contrasts with its Bg. Styles are colors only — surface opacity is a system setting, never part of a style. Has its own **enable checkbox, off by default** — colors apply only when explicitly enabled; a non-enabled location style contributes nothing (falling back to the scene's, per precedence). Governed overall by the global "scene & location styling" switch.
 - **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
 
 ### Scene
@@ -131,14 +131,14 @@ Optional per chat (most useful with a story/scene attached).
 
 ## Visual-novel presentation
 
-- **Layout:** the default chat view is a full-bleed VN stage (sprites centered) with the chat panel **floating over it on the right** as a translucent sidebar; its backdrop blur is a global setting (default on). On narrow screens the panel spans the full width. The panel can be **hidden** from its header to enjoy the unobstructed stage; a floating button at the stage's top-right corner restores it (generation keeps streaming while hidden, and the button hints at ongoing activity).
+- **Layout:** the default chat view is a full-bleed VN stage (sprites centered) with the chat panel **floating over it on the right** as a translucent sidebar; its backdrop blur (default on) and its background opacity (default 30%, shared with the VN dialogue box) are global settings. On narrow screens the panel spans the full width. The panel can be **hidden** from its header to enjoy the unobstructed stage; a floating button at the stage's top-right corner restores it (generation keeps streaming while hidden, and the button hints at ongoing activity).
 - **Scene/location styling:** when the global "scene & location styling" switch is on (default on), the active scene/location's chat style colors the view. Location fields win over scene fields, per field. Off = the app's default look everywhere. The palette follows one rule — **each text color belongs to exactly one background family**, and every family's text auto-contrasts when not explicitly set:
 
 | Family | Backgrounds | Text |
 |---|---|---|
 | Stage | `stageBg` — replaces the default gradient when there's no artwork, underlays it while loading (normal & fullscreen VN) | — (no text sits on the stage) |
-| Panel | the panel itself (`panelBg` @ `panelOpacity`); derived shades: inputs & secondary buttons (92%), hover (82%), badges/avatar chips/borders (68%); narrator & user bubbles are translucent and sit on the panel | `panelFg` (auto-contrast with `panelBg` when unset); muted steps at 85/65/45% alpha for names, badge labels, hints |
-| Bubbles | character bubbles (85%) & the fullscreen-VN dialogue box (94%), from `messageBg` | `messageFg` (auto-contrast with `messageBg` when unset); `*actions*` at 70% alpha |
+| Panel | the panel itself (`panelBg` @ the global chat-panel-opacity setting); derived shades: inputs & secondary buttons (92%), hover (82%), badges/avatar chips/borders (68%); narrator & user bubbles are translucent and sit on the panel | `panelFg` (auto-contrast with `panelBg` when unset); muted steps at 85/65/45% alpha for names, badge labels, hints |
+| Bubbles | character bubbles: `messageBg`, solid; the fullscreen-VN dialogue box: `messageBg` @ the global chat-panel-opacity setting | `messageFg` (auto-contrast with `messageBg` when unset); `*actions*` at 70% alpha |
 | Accent | primary buttons, slider thumb, focus rings — `accent` plus derived hover/active shades | `accentFg` (auto-contrast with the accent when unset) |
 
   Error surfaces (alerts, the Stop button) always keep theme colors so failure states stay recognizable. The accent also appears as decorative text (avatar initials, the streaming caret, VN speaker names) on panel/bubble surfaces — where the style makes the accent unreadable there (WCAG contrast < 3), it automatically falls back to that family's own text color.

@@ -56,7 +56,8 @@ export interface Persona {
 
 /** Per-location/scene palette for the chat UI; applied while the place is active
  *  when the global stageStyleEnabled switch is on. Organized as Bg/Fg surface pairs —
- *  each Fg is the text on its matching Bg (auto-contrast when omitted). All optional. */
+ *  each Fg is the text on its matching Bg (auto-contrast when omitted). All optional.
+ *  Colors only — opacity (panel, bubbles) is a system setting, never part of a style. */
 export interface StageStyle {
   /** true = apply the colors in chat; absent/false = configured but off (the default) */
   enabled?: boolean | null;
@@ -66,8 +67,6 @@ export interface StageStyle {
   panelBg?: string | null;
   /** floating chat panel & its controls: text & icons (title, names, buttons, muted steps) */
   panelFg?: string | null;
-  /** floating chat panel background opacity, 0..1 (default matches the app's ~0.45) */
-  panelOpacity?: number | null;
   /** message bubbles (and the fullscreen-VN dialogue box): background */
   messageBg?: string | null;
   /** message bubbles (and the fullscreen-VN dialogue box): text */
@@ -266,6 +265,8 @@ export interface Settings {
   typingSfxEnabled: boolean;
   /** backdrop blur behind the floating chat panel */
   chatPanelBlur: boolean;
+  /** background opacity of the floating chat panel & the VN dialogue box, 0..1 */
+  chatPanelOpacity: number;
   /** let the active scene/location color the VN stage & chat panel (their stageStyle) */
   stageStyleEnabled: boolean;
   /** track user(persona)↔character affinity; off = no updates, no prompt injection */
@@ -285,6 +286,7 @@ export const DEFAULT_SETTINGS: Settings = {
   outputReserve: 2000,
   typingSfxEnabled: true,
   chatPanelBlur: true,
+  chatPanelOpacity: 0.3,
   stageStyleEnabled: true,
   userRelationshipsEnabled: true,
   charRelationshipsEnabled: true,

@@ -14,8 +14,8 @@ import {
 export const dynamic = "force-dynamic";
 
 const STAGE_STYLE_DOC =
-  `"stageStyle": {"enabled": true, "stageBg": "#hex", "panelBg": "#hex", "panelFg": "#hex", "panelOpacity": 0.1-1, "messageBg": "#hex", "messageFg": "#hex", "accent": "#hex", "accentFg": "#hex"} or null ` +
-  `(optional chat-UI palette while this place is active, organized as Bg/Fg SURFACE PAIRS — each Fg is the text ON its own Bg and must contrast with that Bg, never judge it against another surface: ` +
+  `"stageStyle": {"enabled": true, "stageBg": "#hex", "panelBg": "#hex", "panelFg": "#hex", "messageBg": "#hex", "messageFg": "#hex", "accent": "#hex", "accentFg": "#hex"} or null ` +
+  `(optional chat-UI palette while this place is active — colors only, opacity is a user setting — organized as Bg/Fg SURFACE PAIRS — each Fg is the text ON its own Bg and must contrast with that Bg, never judge it against another surface: ` +
   `panelBg+panelFg = the floating chat panel and its controls (inputs, buttons, badges, borders all derive from this pair); ` +
   `messageBg+messageFg = the message bubbles; accent+accentFg = primary buttons & highlights; ` +
   `stageBg = the VN stage backdrop behind the sprites, no text ever sits on it. ` +

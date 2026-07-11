@@ -49,11 +49,11 @@ function accentOn(accent: string, bg: string, familyText: string | null): string
   return ratio >= 3 ? accent : familyText;
 }
 
-/** The floating panel's own background (panelBg at panelOpacity), or null when the style doesn't set it. */
-export function stagePanelBackground(style: StageStyle): string | null {
-  if (!style.panelBg && style.panelOpacity == null) return null;
-  const pct = Math.round((style.panelOpacity ?? 0.45) * 100);
-  return `color-mix(in srgb, ${style.panelBg ?? "var(--color-base-200)"} ${pct}%, transparent)`;
+/** The floating panel's background: its tint (style's panelBg or the theme surface)
+ *  at the system panel-opacity setting. Styles supply color only, never opacity. */
+export function stagePanelBackground(panelBg: string | null | undefined, opacity: number): string {
+  const pct = Math.round(opacity * 100);
+  return `color-mix(in srgb, ${panelBg ?? "var(--color-base-200)"} ${pct}%, transparent)`;
 }
 
 /**
@@ -62,9 +62,10 @@ export function stagePanelBackground(style: StageStyle): string | null {
  *
  *  - panel (panelBg + panelFg): chrome text ladder (content-100..400) and the
  *    input/button/badge/border surfaces (base-100/300/400) all derive from the PANEL pair
- *  - bubbles (messageBg + messageFg): --bubble-bg(/-solid) and --bubble-text(/-muted),
- *    consumed only by .msg-bubble surfaces (character bubbles, VN dialogue box);
- *    messageFg auto-contrasts with messageBg when unset
+ *  - bubbles (messageBg + messageFg): --bubble-color and --bubble-text(/-muted),
+ *    consumed only by .msg-bubble surfaces (character bubbles, VN dialogue box) —
+ *    bubbles render the tint solid; the VN dialogue box mixes it with the
+ *    chat-panel-opacity system setting; messageFg auto-contrasts when unset
  *  - chips (badges, avatar circles, borders) reuse the panel pair: lifted from
  *    panelBg when set, otherwise translucent tints of panelFg
  *  - accent (+ accentFg): the primary ladder (500 plus hover/active shades) and its text
@@ -104,8 +105,7 @@ export function stageStyleVars(style: StageStyle): Record<string, string> {
   }
 
   if (style.messageBg) {
-    vars["--bubble-bg"] = `color-mix(in srgb, ${style.messageBg} 85%, transparent)`;
-    vars["--bubble-bg-solid"] = `color-mix(in srgb, ${style.messageBg} 94%, transparent)`;
+    vars["--bubble-color"] = style.messageBg;
   }
   const bubbleText = style.messageFg ?? (style.messageBg ? readableOn(style.messageBg) : null);
   if (bubbleText) {

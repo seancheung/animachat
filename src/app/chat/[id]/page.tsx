@@ -13,6 +13,8 @@ import {
   GitFork,
   MapPin,
   Maximize,
+  MessageSquare,
+  MessageSquareOff,
   PanelRightClose,
   PanelRightOpen,
   Rewind,
@@ -207,15 +209,20 @@ export default function ChatPage() {
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
   // active scene/location coloring (location fields win) — gated by the global switch.
-  // Per-surface token derivation lives in lib/stageStyle.ts.
+  // Per-surface token derivation lives in lib/stageStyle.ts. Styles supply colors only;
+  // panel & bubble opacity are system settings.
   const stageStyle = settings?.stageStyleEnabled !== false ? data.stage?.stageStyle : null;
   const styleVars: React.CSSProperties | undefined = stageStyle
     ? (stageStyleVars(stageStyle) as React.CSSProperties)
     : undefined;
-  const panelBg = stageStyle ? stagePanelBackground(stageStyle) : null;
-  const panelInline: React.CSSProperties | undefined = stageStyle
-    ? { ...(panelBg ? { backgroundColor: panelBg } : {}), ...styleVars }
-    : undefined;
+  const chatOpacity = settings?.chatPanelOpacity ?? 0.3;
+  const panelInline: React.CSSProperties = {
+    backgroundColor: stagePanelBackground(stageStyle?.panelBg, chatOpacity),
+    ...(styleVars ?? {}),
+  };
+  const chatOpacityVar = {
+    "--chat-opacity": `${Math.round(chatOpacity * 100)}%`,
+  } as React.CSSProperties;
 
   const lastNonMarker = [...messages].reverse().find((m) => m.role !== "marker");
   const wrapAction = () => {
@@ -299,7 +306,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="h-full relative">
+    <div className="h-full relative" style={chatOpacityVar}>
       {/* full-bleed VN stage, sprites centered */}
       <div className="absolute inset-0">
         <VNStage
@@ -329,7 +336,7 @@ export default function ChatPage() {
       {!panelHidden && (
       <div
         className={cn(
-          "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col bg-base-200/45 sm:border-l border-base-400/60",
+          "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col sm:border-l border-base-400/60",
           settings?.chatPanelBlur !== false && "backdrop-blur-md"
         )}
         style={panelInline}
@@ -464,6 +471,8 @@ function VnOverlay({
   const atEnd = idx >= messages.length - 1;
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
 
+  const [boxHidden, setBoxHidden] = useState(false);
+
   useEffect(() => {
     setIdx(messages.length - 1);
   }, [messages.length]);
@@ -497,7 +506,17 @@ function VnOverlay({
     <div className="fixed inset-0 z-40 bg-black flex flex-col">
       <div className="flex-1 relative min-h-0">
         <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
-        <Button variant="secondary" size="sm" className="absolute top-3 right-3" onClick={onExit}><X /> Esc</Button>
+        <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="circle"
+          className="absolute top-3 right-12 opacity-15 hover:opacity-100 transition-opacity"
+          title={boxHidden ? "Show dialogue box" : "Hide dialogue box"}
+          onClick={() => setBoxHidden(!boxHidden)}
+        >
+          {boxHidden ? <MessageSquareOff /> : <MessageSquare />}
+        </Button>
         {!atEnd && (
           <Badge variant="secondary" rounded className="absolute top-3 left-3">
             history {idx + 1}/{messages.length} — click to advance
@@ -505,25 +524,30 @@ function VnOverlay({
         )}
       </div>
       <div
-        className="mx-auto w-full max-w-3xl px-6 pb-5 -mt-28 relative z-10 cursor-pointer select-none"
+        className={cn(
+          "mx-auto w-full max-w-3xl px-6 pb-5 relative z-10",
+          !boxHidden && "-mt-28 cursor-pointer select-none"
+        )}
         style={styleVars}
-        onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
+        onClick={boxHidden ? undefined : () => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
-        <div className="msg-bubble msg-bubble-solid rounded-lg border border-base-400 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
-          {speakerName && <div className="vn-speaker text-sm font-semibold mb-1">{speakerName}</div>}
-          <div className="text-[1.02rem] leading-relaxed">
-            <MessageText text={displayText} streaming={!!streaming && atEnd} />
-          </div>
-          {atEnd && !busy && v?.options && (
-            <div className="flex flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
-              {v.options.map((o: string, i: number) => (
-                <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
-                  <ChevronRight /> {o}
-                </Button>
-              ))}
+        {!boxHidden && (
+          <div className="msg-bubble vn-dialog rounded-lg border border-base-400 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
+            {speakerName && <div className="vn-speaker text-sm font-semibold mb-1">{speakerName}</div>}
+            <div className="text-[1.02rem] leading-relaxed">
+              <MessageText text={displayText} streaming={!!streaming && atEnd} />
             </div>
-          )}
-        </div>
+            {atEnd && !busy && v?.options && (
+              <div className="flex flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
+                {v.options.map((o: string, i: number) => (
+                  <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
+                    <ChevronRight /> {o}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {atEnd && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
             <InputBox

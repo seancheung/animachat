@@ -25,16 +25,22 @@ body {
   color: var(--color-content-100);
 }
 
-/* chat bubbles (character speech; .msg-bubble-solid = the fullscreen-VN dialogue box).
-   Background/text overridable per scene/location via --bubble-* variables; without them
-   the app's default bubble look applies. Narrator/user bubbles sit on the panel surface
-   and deliberately follow the panel text instead. */
+/* chat bubbles (character speech & the fullscreen-VN dialogue box).
+   Tint overridable per scene/location via --bubble-color; bubbles are solid.
+   The VN dialogue box (.vn-dialog) mixes the same tint with the chat-panel
+   opacity system setting (--chat-opacity, set by the chat page) — styles never
+   control opacity. Narrator/user bubbles sit on the panel surface and
+   deliberately follow the panel text instead. */
 .msg-bubble {
-  background-color: var(--bubble-bg, color-mix(in srgb, var(--color-base-100) 85%, transparent));
+  background-color: var(--bubble-color, var(--color-base-100));
   color: var(--bubble-text, currentColor);
 }
-.msg-bubble-solid {
-  background-color: var(--bubble-bg-solid, color-mix(in srgb, var(--color-base-100) 92%, transparent));
+.vn-dialog {
+  background-color: color-mix(
+    in srgb,
+    var(--bubble-color, var(--color-base-100)) var(--chat-opacity, 30%),
+    transparent
+  );
 }
 .msg-bubble .msg-quote {
   color: var(--bubble-text, var(--color-content-100));

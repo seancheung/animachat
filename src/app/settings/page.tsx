@@ -12,6 +12,7 @@ import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import InputPassword from "@/components/ui/input-password";
 import Select from "@/components/ui/select";
+import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -19,6 +20,20 @@ import { api, downloadBlob } from "@/lib/ui";
 import { AI_TASKS, POV_LABELS, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+/** Opacity slider with % readout; commits on release so dragging doesn't spam PUTs. */
+function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  const commit = () => v !== value && onCommit(v);
+  return (
+    <div className="flex items-center gap-2 h-8">
+      <div className="flex-1 flex items-center">
+        <Slider min={0.1} max={1} step={0.05} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
+      </div>
+      <span className="text-sm text-content-300 w-9 text-right">{Math.round(v * 100)}%</span>
+    </div>
+  );
+}
 
 const TASK_LABELS: Record<string, string> = {
   chat: "Chat generation",
@@ -273,8 +288,8 @@ export default function SettingsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Defaults</h2>
-          <div className="panel p-4 grid md:grid-cols-3 gap-3">
+          <h2 className="text-lg font-semibold">Roleplay</h2>
+          <div className="panel p-4 grid md:grid-cols-2 gap-3">
             <Field label="AI language" hint="what characters & narrator write in">
               <Input className="w-full" value={settings.language} onChange={(v) => patchSettings({ language: v })} />
             </Field>
@@ -284,30 +299,6 @@ export default function SettingsPage() {
                 value={settings.pov}
                 onChange={(v) => patchSettings({ pov: v as Pov })}
                 options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
-              />
-            </Field>
-            <Field label="Typing sound">
-              <Switch
-                className="h-8"
-                value={settings.typingSfxEnabled}
-                onChange={(v) => patchSettings({ typingSfxEnabled: v })}
-                label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
-              />
-            </Field>
-            <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel">
-              <Switch
-                className="h-8"
-                value={settings.chatPanelBlur}
-                onChange={(v) => patchSettings({ chatPanelBlur: v })}
-                label={settings.chatPanelBlur ? "Enabled" : "Disabled"}
-              />
-            </Field>
-            <Field label="Scene & location styling" hint="let the active scene/location color the VN stage and chat panel (set per location/scene in the Library)">
-              <Switch
-                className="h-8"
-                value={settings.stageStyleEnabled}
-                onChange={(v) => patchSettings({ stageStyleEnabled: v })}
-                label={settings.stageStyleEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
             <Field label="User relationships" hint="track affinity between you (persona) and characters — off: no updates, no prompt injection">
@@ -324,6 +315,42 @@ export default function SettingsPage() {
                 value={settings.charRelationshipsEnabled}
                 onChange={(v) => patchSettings({ charRelationshipsEnabled: v })}
                 label={settings.charRelationshipsEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Interface</h2>
+          <div className="panel p-4 grid md:grid-cols-2 gap-3">
+            <Field label="Typing sound">
+              <Switch
+                className="h-8"
+                value={settings.typingSfxEnabled}
+                onChange={(v) => patchSettings({ typingSfxEnabled: v })}
+                label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel">
+              <Switch
+                className="h-8"
+                value={settings.chatPanelBlur}
+                onChange={(v) => patchSettings({ chatPanelBlur: v })}
+                label={settings.chatPanelBlur ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Chat panel opacity" hint="background opacity of the floating chat panel & the VN dialogue box">
+              <OpacitySlider
+                value={settings.chatPanelOpacity}
+                onCommit={(v) => patchSettings({ chatPanelOpacity: v })}
+              />
+            </Field>
+            <Field label="Scene & location styling" hint="let the active scene/location color the VN stage and chat panel (set per location/scene in the Library)">
+              <Switch
+                className="h-8"
+                value={settings.stageStyleEnabled}
+                onChange={(v) => patchSettings({ stageStyleEnabled: v })}
+                label={settings.stageStyleEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
           </div>

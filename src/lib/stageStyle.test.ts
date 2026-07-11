@@ -50,9 +50,9 @@ describe("stageStyleVars", () => {
     expect(v["--color-base-100"]).toContain("#3A2E28");
     expect(v["--color-base-400"]).toContain("#3A2E28");
     expect(v["--color-base-100"]).not.toContain("#E8DCC8");
-    // the bubble tint only feeds the bubble surfaces
-    expect(v["--bubble-bg"]).toContain("#E8DCC8");
-    expect(v["--bubble-bg-solid"]).toContain("#E8DCC8");
+    // the bubble tint only feeds the bubble surfaces — as a solid color; the CSS
+    // mixes it with the message-opacity system setting
+    expect(v["--bubble-color"]).toBe("#E8DCC8");
   });
 
   it("without a panel tint, chips/borders derive as translucent tints of the panel text", () => {
@@ -96,14 +96,15 @@ describe("decorative accent fallbacks", () => {
 });
 
 describe("stagePanelBackground", () => {
-  it("mixes the tint at the given opacity", () => {
-    expect(stagePanelBackground({ panelBg: "#3A2E28", panelOpacity: 0.85 })).toBe(
+  it("mixes the style's tint at the system opacity", () => {
+    expect(stagePanelBackground("#3A2E28", 0.85)).toBe(
       "color-mix(in srgb, #3A2E28 85%, transparent)"
     );
   });
 
-  it("uses the theme surface when only opacity is set, and null when neither is", () => {
-    expect(stagePanelBackground({ panelOpacity: 0.6 })).toContain("var(--color-base-200)");
-    expect(stagePanelBackground({})).toBeNull();
+  it("falls back to the theme surface when the style sets no panel tint", () => {
+    expect(stagePanelBackground(null, 0.6)).toBe(
+      "color-mix(in srgb, var(--color-base-200) 60%, transparent)"
+    );
   });
 });
