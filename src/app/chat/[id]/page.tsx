@@ -241,6 +241,23 @@ export default function ChatPage() {
   } as React.CSSProperties;
 
   const lastNonMarker = [...messages].reverse().find((m) => m.role !== "marker");
+
+  // scene & location context — lives on the stage (top-left chip); on narrow screens,
+  // where the panel covers the stage, it falls back to a strip under the panel header
+  const stageBadges = (data.stage?.scene || data.stage?.location) && (
+    <>
+      {data.stage?.scene && (
+        <Badge variant="secondary" rounded className="max-w-56 overflow-hidden">
+          <Clapperboard size={11} /> <span className="truncate">{data.stage.scene.name}</span>
+        </Badge>
+      )}
+      {data.stage?.location && (
+        <Badge variant="secondary" rounded className="max-w-56 overflow-hidden">
+          <MapPin size={11} /> <span className="truncate">{data.stage.location.name}</span>
+        </Badge>
+      )}
+    </>
+  );
   const wrapAction = () => {
     const el = inputRef.current;
     if (!el) return;
@@ -335,6 +352,17 @@ export default function ChatPage() {
         />
       </div>
 
+      {/* stage context chip — remounts (and fades in) on scene/location change */}
+      {stageBadges && (
+        <div
+          key={`${data.stage?.sceneId ?? ""}:${data.stage?.locationId ?? ""}`}
+          className="absolute top-3 left-3 z-10 hidden sm:flex items-center gap-1.5 fade-in"
+          style={styleVars}
+        >
+          {stageBadges}
+        </div>
+      )}
+
       {/* panel hidden — floating button on the stage brings it back */}
       {panelHidden && (
         <Button
@@ -360,8 +388,6 @@ export default function ChatPage() {
       <div className="px-4 py-1.5 border-b border-base-400/60 flex items-center gap-2 text-sm">
         <Button variant="ghost" size="sm" shape="square" onClick={() => router.push("/")}><ArrowLeft /></Button>
         <span className="font-medium truncate">{chat.title}</span>
-        {data.stage?.scene && <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>}
-        {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
         {data.ended && <Badge rounded>The End</Badge>}
         <span className="flex-1" />
         {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
@@ -369,6 +395,13 @@ export default function ChatPage() {
         <Button variant="ghost" size="sm" shape="square" title="Chat settings" onClick={() => setDrawer(true)}><Settings2 /></Button>
         <Button variant="ghost" size="sm" shape="square" title="Hide chat panel" onClick={() => setPanelHidden(true)}><PanelRightClose /></Button>
       </div>
+
+      {/* narrow screens: the panel covers the stage, so the stage chip moves in here */}
+      {stageBadges && (
+        <div className="sm:hidden px-4 py-1.5 border-b border-base-400/60 flex items-center gap-1.5">
+          {stageBadges}
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
         {messages.map((m) => (
