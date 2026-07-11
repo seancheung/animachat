@@ -6,9 +6,12 @@ import { getSettings } from "@/lib/store";
 export const dynamic = "force-dynamic";
 
 const STAGE_STYLE_DOC =
-  `"stageStyle": {"background": "#hex", "panelTint": "#hex", "panelOpacity": 0.1-1, "messageTint": "#hex", "textColor": "#hex", "panelTextColor": "#hex", "accent": "#hex"} or null ` +
-  `(optional chat-UI coloring while this place is active: stage backdrop, chat panel tint & opacity, message bubbles, message text, panel text/icons, accent — ` +
-  `match the place's mood, keep textColor readable against messageTint and panelTextColor readable against panelTint; every field optional; ` +
+  `"stageStyle": {"enabled": true, "stageBg": "#hex", "panelBg": "#hex", "panelFg": "#hex", "panelOpacity": 0.1-1, "messageBg": "#hex", "messageFg": "#hex", "accent": "#hex", "accentFg": "#hex"} or null ` +
+  `(optional chat-UI palette while this place is active, organized as Bg/Fg SURFACE PAIRS — each Fg is the text ON its own Bg and must contrast with that Bg, never judge it against another surface: ` +
+  `panelBg+panelFg = the floating chat panel and its controls (inputs, buttons, badges, borders all derive from this pair); ` +
+  `messageBg+messageFg = the message bubbles; accent+accentFg = primary buttons & highlights; ` +
+  `stageBg = the VN stage backdrop behind the sprites, no text ever sits on it. ` +
+  `Every field optional — an omitted Fg auto-contrasts with its Bg. Match the place's mood; ` +
   `styles are OFF unless "enabled": true — include "enabled": true when the user wants the style applied)`;
 
 const FIELD_DOCS: Record<string, string> = {

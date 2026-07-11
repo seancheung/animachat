@@ -322,7 +322,7 @@ export default function ChatPage() {
           emotions={emotions}
           speakingId={speakingId}
           backgroundUrl={assetUrl(data.stage?.artworkAsset)}
-          backgroundColor={stageStyle?.background}
+          backgroundColor={stageStyle?.stageBg}
           tall
         />
       </div>
@@ -387,7 +387,7 @@ export default function ChatPage() {
         ))}
         {pendingUser && (
           <div className="flex flex-row-reverse gap-3 fade-in opacity-70">
-            <div className="w-9 h-9 rounded-full shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1 text-primary-500 font-semibold">
+            <div className="chip-initial w-9 h-9 rounded-full shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1 font-semibold">
               {personaName.slice(0, 1).toUpperCase()}
             </div>
             <div className="max-w-[78%] rounded-lg px-3.5 py-2.5 bg-primary-500/15 text-[0.925rem]">
@@ -406,7 +406,7 @@ export default function ChatPage() {
       {vnMode && (
         <VnOverlay
           data={data}
-          backgroundColor={stageStyle?.background}
+          backgroundColor={stageStyle?.stageBg}
           styleVars={styleVars}
           characters={characters}
           emotions={emotions}
@@ -519,7 +519,7 @@ function VnOverlay({
         onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
         <div className="msg-bubble msg-bubble-solid rounded-lg border border-base-400 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
-          {speakerName && <div className="text-primary-500 text-sm font-semibold mb-1">{speakerName}</div>}
+          {speakerName && <div className="vn-speaker text-sm font-semibold mb-1">{speakerName}</div>}
           <div className="text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={!!streaming && atEnd} />
           </div>

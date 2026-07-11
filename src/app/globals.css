@@ -43,6 +43,18 @@ body {
   color: var(--bubble-text-muted, var(--color-content-300));
 }
 
+/* decorative accent text: falls back to the backing family's text color when the stage
+   style computed the accent as unreadable there (vars from lib/stageStyle.ts) */
+.vn-speaker {
+  color: var(--accent-on-bubble, var(--color-primary-500));
+}
+.chip-initial {
+  color: var(--accent-on-chip, var(--color-primary-500));
+}
+.msg-bubble .caret::after {
+  color: var(--accent-on-bubble, var(--color-primary-500));
+}
+
 /* VN stage */
 @keyframes breathe {
   0%,

@@ -82,7 +82,7 @@ export function MessageRow({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={assetUrl(char.avatarAsset)!} alt="" className="w-full h-full object-cover" />
         ) : (
-          <span className="text-primary-500 font-semibold">{name.slice(0, 1).toUpperCase()}</span>
+          <span className="chip-initial font-semibold">{name.slice(0, 1).toUpperCase()}</span>
         )}
       </div>
 

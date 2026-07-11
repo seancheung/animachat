@@ -150,12 +150,13 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
           label="Apply this style in chat (off by default)"
         />
         <div className={cn("flex items-center gap-4 flex-wrap", style.enabled !== true && "opacity-40 pointer-events-none")}>
-          <ColorSwatch label="Stage bg" value={style.background} onChange={(v) => setStyle({ background: v })} />
-          <ColorSwatch label="Panel" value={style.panelTint} onChange={(v) => setStyle({ panelTint: v })} />
-          <ColorSwatch label="Bubbles" value={style.messageTint} onChange={(v) => setStyle({ messageTint: v })} />
-          <ColorSwatch label="Bubble text" value={style.textColor} onChange={(v) => setStyle({ textColor: v })} />
-          <ColorSwatch label="Panel text" value={style.panelTextColor} onChange={(v) => setStyle({ panelTextColor: v })} />
+          <ColorSwatch label="Stage bg" value={style.stageBg} onChange={(v) => setStyle({ stageBg: v })} />
+          <ColorSwatch label="Panel" value={style.panelBg} onChange={(v) => setStyle({ panelBg: v })} />
+          <ColorSwatch label="Bubbles" value={style.messageBg} onChange={(v) => setStyle({ messageBg: v })} />
+          <ColorSwatch label="Bubble text" value={style.messageFg} onChange={(v) => setStyle({ messageFg: v })} />
+          <ColorSwatch label="Panel text" value={style.panelFg} onChange={(v) => setStyle({ panelFg: v })} />
           <ColorSwatch label="Accent" value={style.accent} onChange={(v) => setStyle({ accent: v })} />
+          <ColorSwatch label="Accent text" value={style.accentFg} onChange={(v) => setStyle({ accentFg: v })} />
           <div className="flex items-center gap-2 text-sm">
             <span className="text-content-300">Panel opacity</span>
             <div className="w-28 flex items-center">

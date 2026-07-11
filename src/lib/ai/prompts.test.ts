@@ -124,23 +124,23 @@ function exchange(characterId: string, ownReplies: number): { role: MessageRole;
 
 describe("resolveStageAssets stage style", () => {
   it("merges per-field with location fields winning, and strips the enabled flag", () => {
-    const loc = saveLocation({ name: "L1", stageStyle: { enabled: true, panelTint: "#111111", accent: "#aaaaaa" } });
-    const scn = saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelTint: "#222222", background: "#000000" } });
+    const loc = saveLocation({ name: "L1", stageStyle: { enabled: true, panelBg: "#111111", accent: "#aaaaaa" } });
+    const scn = saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222", stageBg: "#000000" } });
     const st = resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle;
-    expect(st).toMatchObject({ panelTint: "#111111", accent: "#aaaaaa", background: "#000000" });
+    expect(st).toMatchObject({ panelBg: "#111111", accent: "#aaaaaa", stageBg: "#000000" });
     expect(st).not.toHaveProperty("enabled");
   });
 
   it("styles are opt-in: a style without enabled: true contributes nothing", () => {
-    const loc = saveLocation({ name: "L2", stageStyle: { panelTint: "#111111" } });
-    const scn = saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelTint: "#222222" } });
-    expect(resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle?.panelTint).toBe("#222222");
+    const loc = saveLocation({ name: "L2", stageStyle: { panelBg: "#111111" } });
+    const scn = saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222" } });
+    expect(resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle?.panelBg).toBe("#222222");
   });
 
   it("returns null when the only style is not enabled", () => {
-    const off = saveLocation({ name: "L3", stageStyle: { panelTint: "#111111", enabled: false } });
+    const off = saveLocation({ name: "L3", stageStyle: { panelBg: "#111111", enabled: false } });
     expect(resolveStageAssets({ sceneId: null, locationId: off.id }).stageStyle).toBeNull();
-    const absent = saveLocation({ name: "L4", stageStyle: { panelTint: "#111111" } });
+    const absent = saveLocation({ name: "L4", stageStyle: { panelBg: "#111111" } });
     expect(resolveStageAssets({ sceneId: null, locationId: absent.id }).stageStyle).toBeNull();
   });
 });

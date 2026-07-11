@@ -54,25 +54,28 @@ export interface Persona {
   updatedAt: number;
 }
 
-/** Per-location/scene coloring for the chat UI; applied while the place is active
- *  when the global stageStyleEnabled switch is on. All fields optional. */
+/** Per-location/scene palette for the chat UI; applied while the place is active
+ *  when the global stageStyleEnabled switch is on. Organized as Bg/Fg surface pairs —
+ *  each Fg is the text on its matching Bg (auto-contrast when omitted). All optional. */
 export interface StageStyle {
   /** true = apply the colors in chat; absent/false = configured but off (the default) */
   enabled?: boolean | null;
-  /** stage background color — shown when there's no artwork, and under it while it loads */
-  background?: string | null;
-  /** floating chat panel background color */
-  panelTint?: string | null;
+  /** VN stage backdrop — shown when there's no artwork, and under it while it loads; no text sits on it */
+  stageBg?: string | null;
+  /** floating chat panel & its controls: background */
+  panelBg?: string | null;
+  /** floating chat panel & its controls: text & icons (title, names, buttons, muted steps) */
+  panelFg?: string | null;
   /** floating chat panel background opacity, 0..1 (default matches the app's ~0.45) */
   panelOpacity?: number | null;
-  /** message bubble background inside the chat panel (and the fullscreen-VN dialogue box) */
-  messageTint?: string | null;
-  /** message text color inside the bubbles (and the fullscreen-VN dialogue box) */
-  textColor?: string | null;
-  /** text & icons on the panel itself — title, character names, action icons, muted text */
-  panelTextColor?: string | null;
-  /** accent color inside the chat panel (speaker highlights, primary buttons) */
+  /** message bubbles (and the fullscreen-VN dialogue box): background */
+  messageBg?: string | null;
+  /** message bubbles (and the fullscreen-VN dialogue box): text */
+  messageFg?: string | null;
+  /** accent surfaces (primary buttons, slider, focus rings, decorative highlights) */
   accent?: string | null;
+  /** text on accent surfaces (e.g. the Send button label) */
+  accentFg?: string | null;
 }
 
 export interface Location {
