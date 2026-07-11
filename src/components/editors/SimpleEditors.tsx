@@ -27,6 +27,7 @@ export function EditorShell({
   saving,
   children,
   assist = true,
+  mapAssistFields,
 }: {
   entityType: string;
   form: any;
@@ -35,6 +36,8 @@ export function EditorShell({
   saving: boolean;
   children: React.ReactNode;
   assist?: boolean;
+  /** translate AI-written fields (e.g. name-based links) into form shape before merging */
+  mapAssistFields?: (partial: any) => any;
 }) {
   return (
     <div className={assist ? "grid grid-cols-[1fr_320px] gap-4 h-[70vh]" : ""}>
@@ -50,7 +53,7 @@ export function EditorShell({
         <AssistPanel
           entityType={entityType}
           fields={form}
-          onFields={(partial) => setForm({ ...form, ...partial })}
+          onFields={(partial) => setForm({ ...form, ...(mapAssistFields ? mapAssistFields(partial) : partial) })}
         />
       )}
     </div>
@@ -208,42 +211,168 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
 export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onSaved: () => void }) {
   const { form, setForm, save, saving } = useEditor(initial, "/api/stories", onSaved);
   const { data: scenes } = useSWR<Scene[]>("/api/scenes", api.get);
-  const sceneIds: string[] = form.sceneIds ?? [];
-  const move = (i: number, d: number) => {
-    const next = [...sceneIds];
+  const { data: characters } = useSWR<any[]>("/api/characters", api.get);
+  const { data: lorebooks } = useSWR<Lorebook[]>("/api/lorebooks", api.get);
+  const cast: string[] = form.characterIds ?? [];
+  const storyScenes: { sceneId: string; cast: string[] }[] = form.scenes ?? [];
+  const lorebookIds: string[] = form.lorebookIds ?? [];
+  const charName = (cid: string) => characters?.find((c) => c.id === cid)?.name ?? "?";
+
+  const moveCast = (i: number, d: number) => {
+    const next = [...cast];
     const j = i + d;
     if (j < 0 || j >= next.length) return;
     [next[i], next[j]] = [next[j], next[i]];
-    setForm({ ...form, sceneIds: next });
+    setForm({ ...form, characterIds: next });
   };
+  const removeCast = (cid: string) =>
+    setForm({
+      ...form,
+      characterIds: cast.filter((x) => x !== cid),
+      // a removed roster member also leaves every scene cast
+      scenes: storyScenes.map((s) => ({ ...s, cast: s.cast.filter((x) => x !== cid) })),
+    });
+  const moveScene = (i: number, d: number) => {
+    const next = [...storyScenes];
+    const j = i + d;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    setForm({ ...form, scenes: next });
+  };
+  const setSceneCast = (i: number, cid: string, present: boolean) => {
+    const next = [...storyScenes];
+    next[i] = {
+      ...next[i],
+      cast: present ? [...next[i].cast, cid] : next[i].cast.filter((x) => x !== cid),
+    };
+    setForm({ ...form, scenes: next });
+  };
+
+  // the co-writer links cast/scenes/lorebooks by NAME — resolve against the library (fail-soft)
+  const mapAssistFields = (partial: any) => {
+    const byName = (list: any[] | undefined, n: unknown) =>
+      list?.find((x) => x.name.trim().toLowerCase() === String(n ?? "").trim().toLowerCase())?.id;
+    const out: any = { ...partial };
+    if (Array.isArray(partial.castNames)) {
+      out.characterIds = partial.castNames.map((n: unknown) => byName(characters, n)).filter(Boolean);
+      delete out.castNames;
+    }
+    if (Array.isArray(partial.scenes)) {
+      const roster: string[] = out.characterIds ?? cast;
+      out.scenes = partial.scenes
+        .map((e: any) => {
+          if (e?.sceneId) return { sceneId: e.sceneId, cast: e.cast ?? [] }; // already id-shaped
+          const sceneId = byName(scenes, e?.sceneName);
+          if (!sceneId) return null;
+          const who = (Array.isArray(e?.castNames) ? e.castNames : [])
+            .map((n: unknown) => byName(characters, n))
+            .filter((cid: string | undefined): cid is string => !!cid && roster.includes(cid));
+          return { sceneId, cast: who };
+        })
+        .filter(Boolean);
+    }
+    if (Array.isArray(partial.lorebookNames)) {
+      out.lorebookIds = partial.lorebookNames.map((n: unknown) => byName(lorebooks, n)).filter(Boolean);
+      delete out.lorebookNames;
+    }
+    return out;
+  };
+
   return (
-    <EditorShell entityType="story" form={form} setForm={setForm} onSave={save} saving={saving}>
+    <EditorShell
+      entityType="story"
+      form={form}
+      setForm={setForm}
+      onSave={save}
+      saving={saving}
+      mapAssistFields={mapAssistFields}
+    >
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
       <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot; placeholders like [char_name], [user_name] work here">
         <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
-      <Field label="Scenes (in order)">
+      <Field label="Cast (in order)" hint="the story's characters — order drives [charN_name]; a playthrough can play as any of them">
         <div className="space-y-1">
-          {sceneIds.map((sid, i) => (
-            <div key={`${sid}-${i}`} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1.5 text-sm">
+          {cast.map((cid, i) => (
+            <div key={cid} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1.5 text-sm">
               <span className="text-content-300">{i + 1}.</span>
-              <span className="flex-1">{scenes?.find((s) => s.id === sid)?.name ?? "?"}</span>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => move(i, -1)}><ArrowUp /></Button>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => move(i, 1)}><ArrowDown /></Button>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, sceneIds: sceneIds.filter((_, k) => k !== i) })}><X /></Button>
+              <span className="flex-1">{charName(cid)}</span>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => moveCast(i, -1)}><ArrowUp /></Button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => moveCast(i, 1)}><ArrowDown /></Button>
+              <Button variant="ghost" size="sm" shape="square" onClick={() => removeCast(cid)}><X /></Button>
             </div>
           ))}
           <Select
             className="w-full"
             value={null}
-            onChange={(v) => v && !sceneIds.includes(v) && setForm({ ...form, sceneIds: [...sceneIds, v] })}
+            onChange={(v) => v && !cast.includes(v) && setForm({ ...form, characterIds: [...cast, v] })}
             options={
-              scenes?.filter((s) => !sceneIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name })) ?? []
+              characters?.filter((c) => !cast.includes(c.id)).map((c) => ({ value: c.id, label: c.name })) ?? []
+            }
+            placeholder="+ add cast member…"
+          />
+        </div>
+      </Field>
+      <Field label="Scenes (in order)" hint="each scene lists who is on stage when it opens; the narrator can bring others in mid-scene">
+        <div className="space-y-1">
+          {storyScenes.map((entry, i) => (
+            <div key={`${entry.sceneId}-${i}`} className="bg-base-200 rounded-md px-3 py-1.5 text-sm space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-content-300">{i + 1}.</span>
+                <span className="flex-1">{scenes?.find((s) => s.id === entry.sceneId)?.name ?? "?"}</span>
+                <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, -1)}><ArrowUp /></Button>
+                <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, 1)}><ArrowDown /></Button>
+                <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, scenes: storyScenes.filter((_, k) => k !== i) })}><X /></Button>
+              </div>
+              {cast.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 pl-5">
+                  {cast.map((cid) => (
+                    <Checkbox
+                      key={cid}
+                      value={entry.cast.includes(cid)}
+                      onChange={(v) => setSceneCast(i, cid, v)}
+                      label={charName(cid)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          <Select
+            className="w-full"
+            value={null}
+            onChange={(v) =>
+              v &&
+              !storyScenes.some((s) => s.sceneId === v) &&
+              setForm({ ...form, scenes: [...storyScenes, { sceneId: v, cast: [...cast] }] })
+            }
+            options={
+              scenes
+                ?.filter((s) => !storyScenes.some((e) => e.sceneId === s.id))
+                .map((s) => ({ value: s.id, label: s.name })) ?? []
             }
             placeholder="+ add scene…"
           />
+        </div>
+      </Field>
+      <Field label="Lorebooks" hint="attached to every playthrough of this story">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {lorebooks?.map((l) => (
+            <Checkbox
+              key={l.id}
+              value={lorebookIds.includes(l.id)}
+              onChange={(v) =>
+                setForm({
+                  ...form,
+                  lorebookIds: v ? [...lorebookIds, l.id] : lorebookIds.filter((x) => x !== l.id),
+                })
+              }
+              label={l.name}
+            />
+          ))}
+          {lorebooks?.length === 0 && <span className="text-xs text-content-400">none yet</span>}
         </div>
       </Field>
     </EditorShell>

@@ -32,11 +32,34 @@ import { POV_LABELS, type ChatMode } from "@/lib/types";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const MODES: { key: ChatMode; label: string; icon: React.ReactNode; hint: string }[] = [
-  { key: "casual", label: "Casual", icon: <Coffee size={14} />, hint: "no story, scene or location" },
-  { key: "story", label: "Story", icon: <BookOpen size={14} />, hint: "follow a story; switch between its scenes" },
-  { key: "scene", label: "Scene", icon: <Clapperboard size={14} />, hint: "one fixed scene" },
-  { key: "location", label: "Location", icon: <MapPin size={14} />, hint: "one fixed location" },
+  {
+    key: "casual",
+    label: "Casual",
+    icon: <Coffee size={14} />,
+    hint: "free-form chat, no setting — characters optional when the narrator runs the show",
+  },
+  {
+    key: "immersive",
+    label: "Immersive",
+    icon: <MapPin size={14} />,
+    hint: "one fixed scene or location",
+  },
+  {
+    key: "story",
+    label: "Playthrough",
+    icon: <BookOpen size={14} />,
+    hint: "play through a story — its cast and scenes, directed by the narrator",
+  },
 ];
+
+const MODE_ICONS: Record<string, React.ReactNode> = {
+  casual: <Coffee size={14} />,
+  immersive: <MapPin size={14} />,
+  story: <BookOpen size={14} />,
+  // legacy modes (pre-playthrough data)
+  scene: <Clapperboard size={14} />,
+  location: <MapPin size={14} />,
+};
 
 function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -50,12 +73,13 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     mode: "casual",
     characterIds: [],
     personaId: null,
+    personaCharacterId: null,
     storyId: null,
     sceneId: null,
     locationId: null,
     lorebookIds: [],
     narratorEnabled: false,
-    greetings: true,
+    greetings: false,
     modelId: null,
     language: "",
     pov: "",
@@ -73,65 +97,48 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     const cur: string[] = form.lorebookIds;
     setForm({ ...form, lorebookIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
   };
+
   const story = stories?.find((s) => s.id === form.storyId);
-  const storyScenes: any[] = story
-    ? story.sceneIds.map((sid: string) => scenes?.find((s) => s.id === sid)).filter(Boolean)
+  const storyCast: any[] = story
+    ? story.characterIds.map((cid: string) => characters?.find((c) => c.id === cid)).filter(Boolean)
     : [];
+  const storyScenes: any[] = story
+    ? story.scenes.map((e: any) => scenes?.find((s) => s.id === e.sceneId)).filter(Boolean)
+    : [];
+
+  const settingOptions = [
+    ...(scenes?.map((s) => ({ value: `scene:${s.id}`, label: `${s.name} — scene` })) ?? []),
+    ...(locations?.map((l) => ({ value: `location:${l.id}`, label: `${l.name} — location` })) ?? []),
+  ].sort((a, b) => a.label.localeCompare(b.label));
+
+  const narrator = form.mode === "story" ? true : form.narratorEnabled;
   const modeValid =
-    form.mode === "casual" ||
-    (form.mode === "story" && form.storyId) ||
-    (form.mode === "scene" && form.sceneId) ||
-    (form.mode === "location" && form.locationId);
+    form.mode === "story"
+      ? !!form.storyId
+      : (form.mode === "casual" || form.sceneId || form.locationId) &&
+        (form.characterIds.length > 0 || narrator);
+  // greetings fit exactly one shape: a casual 1:1 with the narrator off
+  const greetingsAvailable = form.mode === "casual" && form.characterIds.length === 1 && !narrator;
 
   return (
     <Modal open={open} onClose={onClose} title="New chat" wide>
       <div className="space-y-4">
-        <Field
-          label="Characters"
-          hint="pick one or more in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
-        >
-          <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-            {characters?.map((c) => {
-              const idx = form.characterIds.indexOf(c.id);
-              return (
-                <button
-                  key={c.id}
-                  className={cn(
-                    "panel overflow-hidden text-left transition-colors relative cursor-pointer",
-                    idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
-                  )}
-                  onClick={() => toggleCharacter(c.id)}
-                >
-                  {idx !== -1 && (
-                    <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
-                      {idx + 1}
-                    </span>
-                  )}
-                  {c.avatarAsset || c.sprites?.neutral ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={assetUrl(c.avatarAsset ?? c.sprites?.neutral)!}
-                      alt=""
-                      className={cn("w-full aspect-square object-cover", !c.avatarAsset && "object-top")}
-                    />
-                  ) : (
-                    <div className="w-full aspect-square flex items-center justify-center text-content-300 bg-base-200"><VenetianMask size={28} /></div>
-                  )}
-                  <div className="text-xs p-1.5 truncate">{c.name}</div>
-                </button>
-              );
-            })}
-            {characters?.length === 0 && (
-              <div className="col-span-full text-sm text-content-300">No characters yet — create one in the Library first.</div>
-            )}
-          </div>
-        </Field>
-
         <Field label="Chat mode">
           <ToggleGroup
             className="gap-1.5"
             value={form.mode}
-            onChange={(v) => v && setForm({ ...form, mode: v, storyId: null, sceneId: null, locationId: null })}
+            onChange={(v) =>
+              v &&
+              setForm({
+                ...form,
+                mode: v,
+                storyId: null,
+                sceneId: null,
+                locationId: null,
+                personaCharacterId: null,
+                characterIds: v === "story" ? [] : form.characterIds,
+              })
+            }
           >
             {MODES.map((m) => (
               <Toggle key={m.key} value={m.key} title={m.hint}>
@@ -142,16 +149,90 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
         </Field>
 
+        {form.mode !== "story" && (
+          <Field
+            label={form.mode === "casual" ? "Characters" : "Characters (required)"}
+            hint="pick in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
+          >
+            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+              {characters?.map((c) => {
+                const idx = form.characterIds.indexOf(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    className={cn(
+                      "panel overflow-hidden text-left transition-colors relative cursor-pointer",
+                      idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
+                    )}
+                    onClick={() => toggleCharacter(c.id)}
+                  >
+                    {idx !== -1 && (
+                      <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
+                        {idx + 1}
+                      </span>
+                    )}
+                    {c.avatarAsset || c.sprites?.neutral ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={assetUrl(c.avatarAsset ?? c.sprites?.neutral)!}
+                        alt=""
+                        className={cn("w-full aspect-square object-cover", !c.avatarAsset && "object-top")}
+                      />
+                    ) : (
+                      <div className="w-full aspect-square flex items-center justify-center text-content-300 bg-base-200">
+                        <VenetianMask size={28} />
+                      </div>
+                    )}
+                    <div className="text-xs p-1.5 truncate">{c.name}</div>
+                  </button>
+                );
+              })}
+              {characters?.length === 0 && (
+                <div className="col-span-full text-sm text-content-300">
+                  No characters yet — create one in the Library first.
+                </div>
+              )}
+            </div>
+          </Field>
+        )}
+
         <div className="grid md:grid-cols-3 gap-3">
           {form.mode === "story" && (
             <>
-              <Field label="Story (required)">
+              <Field label="Story (required)" hint="cast, scenes & lorebooks come from it — snapshotted at creation">
                 <Select
                   className="w-full"
                   value={form.storyId}
-                  onChange={(v) => setForm({ ...form, storyId: v, sceneId: null })}
+                  onChange={(v) => setForm({ ...form, storyId: v, sceneId: null, personaCharacterId: null })}
                   options={stories?.map((s) => ({ value: s.id, label: s.name })) ?? []}
                   placeholder="choose…"
+                />
+              </Field>
+              <Field label="Play as" hint="a cast member, or one of your personas">
+                <Select
+                  className="w-full"
+                  value={
+                    form.personaCharacterId
+                      ? `char:${form.personaCharacterId}`
+                      : form.personaId
+                        ? `persona:${form.personaId}`
+                        : null
+                  }
+                  onChange={(v) => {
+                    const [kind, pid] = (v as string).split(":");
+                    setForm({
+                      ...form,
+                      personaCharacterId: kind === "char" ? pid : null,
+                      personaId: kind === "persona" ? pid : null,
+                    });
+                  }}
+                  options={[
+                    ...storyCast.map((c) => ({ value: `char:${c.id}`, label: `${c.name} — cast member` })),
+                    ...(personas?.map((p) => ({ value: `persona:${p.id}`, label: `${p.name} — persona` })) ?? []),
+                  ]}
+                  placeholder="(spectator)"
+                  clearable
+                  onClear={() => setForm({ ...form, personaCharacterId: null, personaId: null })}
                 />
               </Field>
               {storyScenes.length > 0 && (
@@ -169,44 +250,45 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               )}
             </>
           )}
-          {form.mode === "scene" && (
-            <Field label="Scene (required)" hint="fixed for the whole chat">
+          {form.mode === "immersive" && (
+            <Field label="Setting (required)" hint="fixed for the whole chat">
               <Select
                 className="w-full"
-                value={form.sceneId}
-                onChange={(v) => setForm({ ...form, sceneId: v })}
-                options={scenes?.map((s) => ({ value: s.id, label: s.name })) ?? []}
-                placeholder="choose…"
+                value={
+                  form.sceneId ? `scene:${form.sceneId}` : form.locationId ? `location:${form.locationId}` : null
+                }
+                onChange={(v) => {
+                  const [kind, id] = (v as string).split(":");
+                  setForm({ ...form, sceneId: kind === "scene" ? id : null, locationId: kind === "location" ? id : null });
+                }}
+                options={settingOptions}
+                placeholder="choose a scene or location…"
               />
             </Field>
           )}
-          {form.mode === "location" && (
-            <Field label="Location (required)" hint="fixed for the whole chat">
+          {form.mode !== "story" && (
+            <Field label="Your persona">
               <Select
                 className="w-full"
-                value={form.locationId}
-                onChange={(v) => setForm({ ...form, locationId: v })}
-                options={locations?.map((l) => ({ value: l.id, label: l.name })) ?? []}
-                placeholder="choose…"
+                value={form.personaId}
+                onChange={(v) => setForm({ ...form, personaId: v })}
+                options={personas?.map((p) => ({ value: p.id, label: p.name })) ?? []}
+                placeholder="(none)"
+                clearable
+                onClear={() => setForm({ ...form, personaId: null })}
               />
             </Field>
           )}
-          <Field label="Your persona">
-            <Select
-              className="w-full"
-              value={form.personaId}
-              onChange={(v) => setForm({ ...form, personaId: v })}
-              options={personas?.map((p) => ({ value: p.id, label: p.name })) ?? []}
-              placeholder="(none)"
-              clearable
-              onClear={() => setForm({ ...form, personaId: null })}
-            />
-          </Field>
-          <Field label="Model">
+          <Field label="Model" hint="the one setting that stays editable later">
             <ModelPicker value={form.modelId} onChange={(v) => setForm({ ...form, modelId: v })} />
           </Field>
           <Field label="Language override">
-            <Input className="w-full" placeholder="(global default)" value={form.language} onChange={(v) => setForm({ ...form, language: v })} />
+            <Input
+              className="w-full"
+              placeholder="(global default)"
+              value={form.language}
+              onChange={(v) => setForm({ ...form, language: v })}
+            />
           </Field>
           <Field label="POV override">
             <Select
@@ -219,33 +301,56 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               onClear={() => setForm({ ...form, pov: "" })}
             />
           </Field>
-          <Field label="Narrator" hint="narration & suggested actions">
-            <Switch value={form.narratorEnabled} onChange={(v) => setForm({ ...form, narratorEnabled: v })} label={form.narratorEnabled ? "Enabled" : "Disabled"} className="h-8" />
+          <Field
+            label="Narrator"
+            hint={form.mode === "story" ? "always on — the narrator directs playthroughs" : "narration, suggested actions — speaks first"}
+          >
+            {form.mode === "story" ? (
+              <div className="h-8 flex items-center text-sm text-content-300">
+                <ScrollText size={14} className="mr-1.5" /> Enabled
+              </div>
+            ) : (
+              <Switch
+                value={form.narratorEnabled}
+                onChange={(v) => setForm({ ...form, narratorEnabled: v })}
+                label={form.narratorEnabled ? "Enabled" : "Disabled"}
+                className="h-8"
+              />
+            )}
           </Field>
-          <Field label="Greetings" hint="disable to speak first yourself">
-            <Switch value={form.greetings} onChange={(v) => setForm({ ...form, greetings: v })} label={form.greetings ? "Characters open the chat" : "You speak first"} className="h-8" />
-          </Field>
-          <Field label="Lorebooks">
-            <div className="flex flex-wrap gap-1.5">
-              {lorebooks?.map((l) => (
-                <Toggle
-                  key={l.id}
-                  value={form.lorebookIds.includes(l.id)}
-                  onChange={() => toggleLorebook(l.id)}
-                >
-                  {l.name}
-                </Toggle>
-              ))}
-              {lorebooks?.length === 0 && <span className="text-xs text-content-400">none</span>}
-            </div>
-          </Field>
+          {greetingsAvailable && (
+            <Field label="Greeting" hint="the character opens with their greeting message">
+              <Switch
+                value={form.greetings}
+                onChange={(v) => setForm({ ...form, greetings: v })}
+                label={form.greetings ? "Character speaks first" : "You speak first"}
+                className="h-8"
+              />
+            </Field>
+          )}
+          {form.mode !== "story" && (
+            <Field label="Lorebooks">
+              <div className="flex flex-wrap gap-1.5">
+                {lorebooks?.map((l) => (
+                  <Toggle key={l.id} value={form.lorebookIds.includes(l.id)} onChange={() => toggleLorebook(l.id)}>
+                    {l.name}
+                  </Toggle>
+                ))}
+                {lorebooks?.length === 0 && <span className="text-xs text-content-400">none</span>}
+              </div>
+            </Field>
+          )}
         </div>
         <Button
-          disabled={busy || !modeValid || (!form.characterIds.length && !form.narratorEnabled)}
+          disabled={busy || !modeValid}
           onClick={async () => {
             setBusy(true);
             try {
-              const chat = await api.post("/api/chats", form);
+              const chat = await api.post("/api/chats", {
+                ...form,
+                narratorEnabled: narrator,
+                greetings: greetingsAvailable && form.greetings,
+              });
               router.push(`/chat/${chat.id}`);
             } catch (e: any) {
               toast.error(e.message);
@@ -253,7 +358,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             }
           }}
         >
-          {busy ? "Creating…" : "Start chat"}
+          {busy ? "Creating…" : form.mode === "story" ? "Start playthrough" : "Start chat"}
         </Button>
       </div>
     </Modal>
@@ -270,7 +375,6 @@ export default function HomePage() {
 
   const folders = useMemo(() => [...new Set((chats ?? []).map((c) => c.folder).filter(Boolean))].sort(), [chats]);
   const visible = (chats ?? []).filter((c) => !folder || c.folder === folder);
-  const modeIcon = (m: string) => MODES.find((x) => x.key === m)?.icon ?? null;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -324,8 +428,14 @@ export default function HomePage() {
               <div key={c.id} className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group" onClick={() => router.push(`/chat/${c.id}`)}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-medium truncate flex items-center gap-2">
-                    <span className="text-content-300">{modeIcon(c.mode)}</span>
+                    <span className="text-content-300">{MODE_ICONS[c.mode] ?? null}</span>
                     {c.title}
+                    {c.mode === "story" && c.storyName && (
+                      <Badge variant="secondary" rounded>
+                        Playthrough — {c.storyName}
+                      </Badge>
+                    )}
+                    {c.ended && <Badge rounded>The End</Badge>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {c.tags?.map((t: string) => <Badge key={t} variant="secondary" rounded>{t}</Badge>)}

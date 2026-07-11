@@ -68,8 +68,13 @@ export default function LibraryPage() {
 
   async function deleteItem(item: any) {
     if (!(await confirmDialog({ title: `Delete ${tab}`, message: `Delete "${item.name}"?`, confirmLabel: "Delete", danger: true }))) return;
-    await api.del(`${type.endpoint}/${item.id}`);
-    mutate();
+    try {
+      await api.del(`${type.endpoint}/${item.id}`);
+      mutate();
+    } catch (e) {
+      // referenced items are protected server-side (409 names what still uses them)
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
   }
 
   return (

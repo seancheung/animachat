@@ -2,6 +2,7 @@ import { callLlm, estimateTokens, extractJson, resolveModel } from "./client";
 import { activeContent, buildContext, speakerName, verbatimWindow, type ChatContext } from "./prompts";
 import {
   addFact,
+  getCharacter,
   getCharRelationship,
   getRelationship,
   putCharRelationship,
@@ -92,31 +93,44 @@ export async function runMemoryPass(chatId: string, force = false): Promise<void
 
     putSummary(chatId, out.summary, chunk[chunk.length - 1].position);
 
+    // facts & relationships live in the library (across chats) — playthrough snapshot
+    // characters that were since deleted from the library are skipped fail-soft
+    const inLibrary = (id: string) => !!getCharacter(id);
     const byName = new Map(ctx.characters.map((c) => [c.name.toLowerCase(), c]));
+    if (ctx.playedCharacter) byName.set(ctx.playedCharacter.name.toLowerCase(), ctx.playedCharacter);
     for (const f of out.facts ?? []) {
       const c = f.character && byName.get(f.character.toLowerCase());
-      if (c && f.fact) addFact(c.id, chatId, f.fact);
+      if (c && f.fact && inLibrary(c.id)) addFact(c.id, chatId, f.fact);
     }
     for (const r of out.relationships ?? []) {
       const c = r.character && byName.get(r.character.toLowerCase());
-      if (!c || !c.trackRelationship) continue;
+      if (!c || !c.trackRelationship || !inLibrary(c.id)) continue;
       const towards = (r.towards ?? "").trim().toLowerCase();
       const target = towards ? byName.get(towards) : undefined;
-      if (target) {
+      const playedTarget = target && target.id === ctx.playedCharacter?.id;
+      if (target && !playedTarget) {
         // character → character (global switch + both sides' tracking must be on)
         if (!ctx.settings.charRelationshipsEnabled) continue;
-        if (target.id === c.id || !target.trackRelationship) continue;
+        if (target.id === c.id || !target.trackRelationship || !inLibrary(target.id)) continue;
         const cur = getCharRelationship(c.id, target.id);
         const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
         putCharRelationship(c.id, target.id, affinity, r.note ?? cur?.notes ?? "");
       } else if (
         ctx.persona &&
         ctx.settings.userRelationshipsEnabled &&
-        (!towards || towards === "user" || towards === ctx.persona.name.toLowerCase())
+        (playedTarget || !towards || towards === "user" || towards === ctx.persona.name.toLowerCase())
       ) {
-        const cur = getRelationship(c.id, ctx.persona.id);
-        const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
-        putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");
+        if (ctx.playedCharacter) {
+          // playing a cast member: the "user relationship" is character↔character
+          if (!inLibrary(ctx.playedCharacter.id)) continue;
+          const cur = getCharRelationship(c.id, ctx.playedCharacter.id);
+          const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
+          putCharRelationship(c.id, ctx.playedCharacter.id, affinity, r.note ?? cur?.notes ?? "");
+        } else {
+          const cur = getRelationship(c.id, ctx.persona.id);
+          const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
+          putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");
+        }
       }
     }
   } finally {

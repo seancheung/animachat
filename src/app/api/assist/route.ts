@@ -38,7 +38,11 @@ const FIELD_DOCS: Record<string, string> = {
     `"name": string; "setup": string (the situation: what is happening, stakes, how it starts); ` +
     `"imagePrompt": string (text-to-image prompt for the background artwork of this scene — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
-  story: `"name": string; "description": string (premise and arc of the story)`,
+  story:
+    `"name": string; "description": string (premise and arc of the story); ` +
+    `"castNames": ["ordered", "character", "names"] (the story's cast — characters in the library or this batch, linked by name on save; order matters); ` +
+    `"scenes": [{"sceneName": string, "castNames": ["who", "opens", "the scene"]}] (ordered scene sequence — each castNames is the subset of the story cast on stage when that scene opens; linked by name on save); ` +
+    `"lorebookNames": ["lorebook", "names"] (optional — attached to every playthrough of the story)`,
   lorebook:
     `"name": string; "description": string; ` +
     `"entries": [{"id": "keep existing id or omit for new", "title": string, "keywords": ["trigger", "words"], "content": string, "scanDepth": 8}]`,
@@ -52,7 +56,7 @@ FIELD_DOCS.library =
   `- persona: ${FIELD_DOCS.persona}\n` +
   `- location: ${FIELD_DOCS.location}\n` +
   `- scene: ${FIELD_DOCS.scene}; "locationName": string (optional — the name of a location among these items or in the library, linked on save)\n` +
-  `- story: ${FIELD_DOCS.story}; "sceneNames": ["ordered", "scene", "names"] (optional — scenes among these items or in the library, linked on save)\n` +
+  `- story: ${FIELD_DOCS.story}\n` +
   `- lorebook: ${FIELD_DOCS.lorebook}`;
 
 interface AssistBody {
@@ -93,8 +97,20 @@ function referenceText(ref: { type: string; id: string }): string | null {
     case "story": {
       const st = getStory(ref.id);
       if (!st) return null;
-      const scenes = st.sceneIds.map((sid) => getScene(sid)?.name).filter(Boolean);
-      return `STORY "${st.name}"\n${st.description}${scenes.length ? `\nScenes in order: ${scenes.join(" → ")}` : ""}`;
+      const cast = st.characterIds.map((cid) => getCharacter(cid)?.name).filter(Boolean);
+      const scenes = st.scenes
+        .map((e) => {
+          const s = getScene(e.sceneId);
+          if (!s) return null;
+          const who = e.cast.map((cid) => getCharacter(cid)?.name).filter(Boolean);
+          return `${s.name}${who.length ? ` (on stage: ${who.join(", ")})` : ""}`;
+        })
+        .filter(Boolean);
+      return (
+        `STORY "${st.name}"\n${st.description}` +
+        (cast.length ? `\nCast in order: ${cast.join(", ")}` : "") +
+        (scenes.length ? `\nScenes in order: ${scenes.join(" → ")}` : "")
+      );
     }
     case "lorebook": {
       const lb = getLorebook(ref.id);

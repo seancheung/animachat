@@ -4,6 +4,7 @@ import {
   appendMessage,
   getCharacter,
   getLocation,
+  getLorebook,
   getPersona,
   getScene,
   getStory,
@@ -11,7 +12,7 @@ import {
   listMessages,
   saveChat,
 } from "@/lib/store";
-import type { ChatMode } from "@/lib/types";
+import type { Character, ChatMode, Location, Lorebook, StorySnapshot } from "@/lib/types";
 
 export const GET = handler(() => {
   const chats = listChats().map((c) => {
@@ -19,9 +20,12 @@ export const GET = handler(() => {
     const last = [...msgs].reverse().find((m) => m.role !== "marker");
     return {
       ...c,
+      storySnapshot: undefined, // heavy; the chat page fetches it via /api/chats/[id]
+      storyName: c.storySnapshot?.name ?? null,
+      ended: msgs.some((m) => m.sceneEvent?.theEnd),
       messageCount: msgs.length,
       lastMessage: last ? (last.variants[last.activeVariant]?.content ?? "").slice(0, 120) : "",
-      characterNames: c.characterIds.map((id) => getCharacter(id)?.name ?? "?"),
+      characterNames: c.characterIds.map((id) => getCharacter(id)?.name ?? c.nameSnapshots[id] ?? "?"),
     };
   });
   return ok(chats);
@@ -29,39 +33,94 @@ export const GET = handler(() => {
 
 export const POST = handler(async (req: Request) => {
   const b = await req.json();
-  const mode: ChatMode = ["story", "scene", "location", "casual"].includes(b.mode) ? b.mode : "casual";
+  const mode: ChatMode = ["casual", "immersive", "story"].includes(b.mode) ? b.mode : "casual";
 
-  // mode rules: story = story required (+ optional starting scene from it);
-  // scene = one fixed scene; location = one fixed location; casual = none.
   let storyId: string | null = null;
   let sceneId: string | null = null;
   let locationId: string | null = null;
-  if (mode === "story") {
+  let characterIds: string[] = Array.isArray(b.characterIds) ? b.characterIds : [];
+  let personaId: string | null = b.personaId ?? null;
+  let personaCharacterId: string | null = null;
+  let lorebookIds: string[] = Array.isArray(b.lorebookIds) ? b.lorebookIds : [];
+  let narratorEnabled = !!b.narratorEnabled;
+  let storySnapshot: StorySnapshot | null = null;
+
+  if (mode === "casual") {
+    // characters optional when the narrator carries the chat (solo / text-adventure)
+    if (!characterIds.length && !narratorEnabled)
+      return bad("A casual chat needs at least one character, or the narrator enabled");
+  } else if (mode === "immersive") {
+    if (b.sceneId && getScene(b.sceneId)) sceneId = b.sceneId;
+    else if (b.locationId && getLocation(b.locationId)) locationId = b.locationId;
+    else return bad("An immersive chat requires a scene or a location");
+    if (!characterIds.length && !narratorEnabled)
+      return bad("An immersive chat needs at least one character, or the narrator enabled");
+  } else {
+    // story mode = a playthrough: freeze the whole story bundle into a snapshot
     const story = b.storyId ? getStory(b.storyId) : null;
-    if (!story) return bad("Story mode requires a story");
+    if (!story) return bad("A playthrough requires a story");
     storyId = story.id;
+    narratorEnabled = true; // the narrator directs playthroughs — always on
+
+    const characters = story.characterIds
+      .map(getCharacter)
+      .filter((c): c is Character => !!c);
+    const scenes = story.scenes.flatMap(({ sceneId: sid, cast }) => {
+      const scene = getScene(sid);
+      return scene ? [{ scene, cast: cast.filter((id) => story.characterIds.includes(id)) }] : [];
+    });
+    const locations = [
+      ...new Set(scenes.map(({ scene }) => scene.locationId).filter((id): id is string => !!id)),
+    ]
+      .map(getLocation)
+      .filter((l): l is Location => !!l);
+    const lorebooks = story.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l);
+    storySnapshot = {
+      name: story.name,
+      description: story.description,
+      characters,
+      scenes,
+      locations,
+      lorebooks,
+    };
+
+    if (b.personaCharacterId) {
+      if (!characters.some((c) => c.id === b.personaCharacterId))
+        return bad("The played character must be part of the story's cast");
+      personaCharacterId = b.personaCharacterId;
+      personaId = null;
+    }
+    characterIds = characters.map((c) => c.id).filter((id) => id !== personaCharacterId);
+    lorebookIds = story.lorebookIds;
+    // optional starting scene (defaults to the first)
     if (b.sceneId) {
-      if (!story.sceneIds.includes(b.sceneId)) return bad("Starting scene must belong to the story");
+      if (!scenes.some(({ scene }) => scene.id === b.sceneId))
+        return bad("Starting scene must belong to the story");
       sceneId = b.sceneId;
     }
-  } else if (mode === "scene") {
-    if (!b.sceneId || !getScene(b.sceneId)) return bad("Scene mode requires a scene");
-    sceneId = b.sceneId;
-  } else if (mode === "location") {
-    if (!b.locationId || !getLocation(b.locationId)) return bad("Location mode requires a location");
-    locationId = b.locationId;
   }
+
+  // display-name fallback so history stays readable after a library character is deleted
+  const nameSnapshots = Object.fromEntries(
+    [...characterIds, ...(personaCharacterId ? [personaCharacterId] : [])].flatMap((id) => {
+      const name = storySnapshot?.characters.find((c) => c.id === id)?.name ?? getCharacter(id)?.name;
+      return name ? [[id, name]] : [];
+    })
+  );
 
   const chat = saveChat({
     title: b.title || "New chat",
     mode,
-    characterIds: b.characterIds ?? [],
-    personaId: b.personaId ?? null,
+    characterIds,
+    personaId,
+    personaCharacterId,
     storyId,
     sceneId,
     locationId,
-    lorebookIds: b.lorebookIds ?? [],
-    narratorEnabled: !!b.narratorEnabled,
+    storySnapshot,
+    nameSnapshots,
+    lorebookIds,
+    narratorEnabled,
     language: b.language ?? "",
     pov: b.pov ?? "",
     modelId: b.modelId ?? null,
@@ -70,34 +129,20 @@ export const POST = handler(async (req: Request) => {
     tags: b.tags ?? [],
   });
 
-  // greetings can be disabled at creation so the user speaks first (default on)
-  if (b.greetings === false) return ok(chat);
-
-  // initial stage values for greeting placeholder substitution
-  const persona = chat.personaId ? getPersona(chat.personaId) : null;
-  const story = storyId ? getStory(storyId) : null;
-  const startScene = sceneId ? getScene(sceneId) : story?.sceneIds[0] ? getScene(story.sceneIds[0]) : null;
-  const startLocation = locationId
-    ? getLocation(locationId)
-    : startScene?.locationId
-      ? getLocation(startScene.locationId)
-      : null;
-  const characterNames = chat.characterIds.map((id) => getCharacter(id)?.name ?? "?");
-
-  for (const cid of chat.characterIds) {
-    const c = getCharacter(cid);
+  // greeting: opt-in, and only for the one shape it suits — a casual 1:1 without narrator
+  // (everywhere else the narrator opens the chat, triggered by the client)
+  if (mode === "casual" && !narratorEnabled && characterIds.length === 1 && b.greetings === true) {
+    const c = getCharacter(characterIds[0]);
     if (c?.greeting) {
+      const persona = personaId ? getPersona(personaId) : null;
       appendMessage({
         chatId: chat.id,
         role: "character",
-        characterId: cid,
+        characterId: c.id,
         content: substitutePlaceholders(c.greeting, {
-          characterNames,
+          characterNames: [c.name],
           selfName: c.name,
           userName: persona?.name,
-          locationName: startLocation?.name,
-          sceneName: startScene?.name,
-          storyName: story?.name,
         }),
         emotion: "neutral",
       });

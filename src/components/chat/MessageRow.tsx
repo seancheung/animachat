@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clapperboard,
-  MapPin,
   Pencil,
   RefreshCw,
   ScrollText,
@@ -25,6 +24,7 @@ import { EMOTIONS, type Character, type Message } from "@/lib/types";
 export function MessageRow({
   message,
   characters,
+  nameSnapshots,
   personaName,
   isLast,
   busy,
@@ -38,9 +38,12 @@ export function MessageRow({
 }: {
   message: Message;
   characters: Character[];
+  /** characterId -> name at chat creation; display fallback for deleted characters */
+  nameSnapshots?: Record<string, string>;
   personaName: string;
   isLast: boolean;
   busy: boolean;
+  /** stage direction derived from the message's events ("Scene: X · Enter Y · The End") */
   sceneName?: string | null;
   onEdit: (patch: { content?: string; emotion?: string | null }) => Promise<void>;
   onSwipe: (index: number) => Promise<void>;
@@ -54,11 +57,11 @@ export function MessageRow({
   const [draftEmotion, setDraftEmotion] = useState<string>("");
 
   if (message.role === "marker") {
+    // legacy manual switches from pre-playthrough chats — display only
     return (
       <div className="text-center my-2 fade-in">
         <Badge variant="secondary" rounded>
-          {message.sceneEvent?.kind === "scene" ? <Clapperboard size={11} /> : <MapPin size={11} />}{" "}
-          {sceneName ?? "scene change"}
+          <Clapperboard size={11} /> {sceneName ?? "scene change"}
         </Badge>
       </div>
     );
@@ -67,7 +70,12 @@ export function MessageRow({
   const v = message.variants[message.activeVariant];
   if (!v) return null;
   const char = message.role === "character" ? characters.find((c) => c.id === message.characterId) : null;
-  const name = message.role === "user" ? personaName : message.role === "narrator" ? "Narrator" : char?.name ?? "???";
+  const name =
+    message.role === "user"
+      ? personaName
+      : message.role === "narrator"
+        ? "Narrator"
+        : char?.name ?? nameSnapshots?.[message.characterId ?? ""] ?? "???";
   const emotionChoices = [
     ...EMOTIONS,
     ...(char?.customExpressions.map((e) => e.name) ?? []),
@@ -129,6 +137,15 @@ export function MessageRow({
             <MessageText text={v.content} />
           )}
         </div>
+
+        {/* stage direction carried by a narrator message (scene advance, enter/leave, the end) */}
+        {!editing && message.role === "narrator" && sceneName && (
+          <div className="mt-1.5">
+            <Badge variant="secondary" rounded>
+              <Clapperboard size={11} /> {sceneName}
+            </Badge>
+          </div>
+        )}
 
         {/* narrator options on the newest message */}
         {!editing && isLast && !busy && v.options && v.options.length > 0 && (

@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildCharacterRequest, resolveStageAssets, type ChatContext } from "./prompts";
+import { buildCharacterRequest, computeStage, resolveStageAssets, type ChatContext } from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
-import type { Character, Chat, Message, MessageRole } from "@/lib/types";
+import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
 
@@ -47,6 +47,9 @@ const chat: Chat = {
   lorebookIds: [],
   characterIds: ["c1"],
   personaId: null,
+  personaCharacterId: null,
+  storySnapshot: null,
+  nameSnapshots: {},
   modelId: null,
   charModels: {},
   language: "",
@@ -98,11 +101,14 @@ function makeCtx(messages: Message[], characters: Character[]): ChatContext {
     language: "English",
     pov: "user1st",
     characters,
+    present: characters,
     persona: null,
-    story: null,
-    stage: { sceneId: null, locationId: null },
+    playedCharacter: null,
+    snapshot: null,
+    stage: { sceneId: null, locationId: null, present: null, ended: false },
     scene: null,
     location: null,
+    ended: false,
     lorebooks: [],
     messages,
     summaryText: "",
@@ -122,11 +128,18 @@ function exchange(characterId: string, ownReplies: number): { role: MessageRole;
   return out;
 }
 
+const stageOf = (sceneId: string | null, locationId: string | null) => ({
+  sceneId,
+  locationId,
+  present: null,
+  ended: false,
+});
+
 describe("resolveStageAssets stage style", () => {
   it("merges per-field with location fields winning, and strips the enabled flag", () => {
     const loc = saveLocation({ name: "L1", stageStyle: { enabled: true, panelBg: "#111111", accent: "#aaaaaa" } });
     const scn = saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222", stageBg: "#000000" } });
-    const st = resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle;
+    const st = resolveStageAssets(chat, stageOf(scn.id, loc.id)).stageStyle;
     expect(st).toMatchObject({ panelBg: "#111111", accent: "#aaaaaa", stageBg: "#000000" });
     expect(st).not.toHaveProperty("enabled");
   });
@@ -134,14 +147,94 @@ describe("resolveStageAssets stage style", () => {
   it("styles are opt-in: a style without enabled: true contributes nothing", () => {
     const loc = saveLocation({ name: "L2", stageStyle: { panelBg: "#111111" } });
     const scn = saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222" } });
-    expect(resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle?.panelBg).toBe("#222222");
+    expect(resolveStageAssets(chat, stageOf(scn.id, loc.id)).stageStyle?.panelBg).toBe("#222222");
   });
 
   it("returns null when the only style is not enabled", () => {
     const off = saveLocation({ name: "L3", stageStyle: { panelBg: "#111111", enabled: false } });
-    expect(resolveStageAssets({ sceneId: null, locationId: off.id }).stageStyle).toBeNull();
+    expect(resolveStageAssets(chat, stageOf(null, off.id)).stageStyle).toBeNull();
     const absent = saveLocation({ name: "L4", stageStyle: { panelBg: "#111111" } });
-    expect(resolveStageAssets({ sceneId: null, locationId: absent.id }).stageStyle).toBeNull();
+    expect(resolveStageAssets(chat, stageOf(null, absent.id)).stageStyle).toBeNull();
+  });
+});
+
+/* ---------------- playthrough stage derivation ---------------- */
+
+function makeScene(id: string, name: string): Scene {
+  return {
+    id,
+    name,
+    setup: "",
+    imagePrompt: "",
+    locationId: null,
+    artworkAsset: null,
+    bgmAsset: null,
+    ambientAsset: null,
+    stageStyle: null,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+}
+
+describe("computeStage (playthrough presence & ending)", () => {
+  const snapshot: StorySnapshot = {
+    name: "Test story",
+    description: "",
+    characters: [makeCharacter("c1", "Mira"), makeCharacter("c2", "Kael")],
+    scenes: [
+      { scene: makeScene("s1", "Opening"), cast: ["c1"] },
+      { scene: makeScene("s2", "Finale"), cast: ["c1", "c2"] },
+    ],
+    locations: [],
+    lorebooks: [],
+  };
+  const playChat: Chat = {
+    ...chat,
+    mode: "story",
+    characterIds: ["c1", "c2"],
+    storySnapshot: snapshot,
+  };
+  const narratorEvent = (position: number, ev: SceneEvent): Message => ({
+    id: `n${position}`,
+    chatId: playChat.id,
+    position,
+    role: "narrator",
+    characterId: null,
+    variants: [{ content: "…", emotion: null, options: null, createdAt: 0 }],
+    activeVariant: 0,
+    sceneEvent: ev,
+    createdAt: 0,
+  });
+
+  it("opens on the first scene with its cast", () => {
+    const st = computeStage(playChat, []);
+    expect(st.sceneId).toBe("s1");
+    expect(st.present).toEqual(["c1"]);
+    expect(st.ended).toBe(false);
+  });
+
+  it("folds enter/leave events; a scene change resets to the new scene's cast", () => {
+    const msgs = [
+      narratorEvent(0, { enter: ["c2"] }),
+      narratorEvent(1, { leave: ["c1"] }),
+    ];
+    let st = computeStage(playChat, msgs);
+    expect(st.present).toEqual(["c2"]);
+    st = computeStage(playChat, [...msgs, narratorEvent(2, { sceneId: "s2" })]);
+    expect(st.sceneId).toBe("s2");
+    expect(st.present).toEqual(["c1", "c2"]);
+  });
+
+  it("never puts the played character (a non-participant) on stage", () => {
+    const asMira: Chat = { ...playChat, characterIds: ["c2"], personaCharacterId: "c1" };
+    const st = computeStage(asMira, [narratorEvent(0, { sceneId: "s2" })]);
+    expect(st.present).toEqual(["c2"]);
+  });
+
+  it("derives the ended flag, and rewinding before The End un-ends the story", () => {
+    const msgs = [narratorEvent(0, { sceneId: "s2" }), narratorEvent(1, { theEnd: true })];
+    expect(computeStage(playChat, msgs).ended).toBe(true);
+    expect(computeStage(playChat, msgs, 0).ended).toBe(false);
   });
 });
 

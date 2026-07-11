@@ -63,7 +63,8 @@ export function assetIdsOf(type: BundleItemType, data: any): string[] {
   }
 }
 
-/** Build a zip bundle for the given items. Stories pull in their scenes; scenes their locations. */
+/** Build a zip bundle for the given items. Stories pull in their cast, scenes and
+ *  lorebooks; scenes their locations. */
 export async function exportBundle(items: { type: BundleItemType; id: string }[]): Promise<Buffer> {
   const expanded = new Map<string, ManifestItem>();
   const add = (type: BundleItemType, id: string) => {
@@ -72,7 +73,11 @@ export async function exportBundle(items: { type: BundleItemType; id: string }[]
     const data = getters[type](id);
     if (!data) return;
     expanded.set(key, { type, data });
-    if (type === "story") for (const sid of data.sceneIds ?? []) add("scene", sid);
+    if (type === "story") {
+      for (const e of data.scenes ?? []) add("scene", e.sceneId);
+      for (const cid of data.characterIds ?? []) add("character", cid);
+      for (const lid of data.lorebookIds ?? []) add("lorebook", lid);
+    }
     if (type === "scene" && data.locationId) add("location", data.locationId);
   };
   for (const it of items) add(it.type, it.id);
@@ -153,23 +158,34 @@ export async function importBundle(buf: Buffer): Promise<{ imported: Record<stri
     idMap.set(it.data.id, saveScene(fields).id);
     count("scene");
   }
-  for (const it of byType("story")) {
-    const fields = prep("story", it.data) as Partial<Story>;
-    fields.sceneIds = (fields.sceneIds ?? []).map((sid) => idMap.get(sid)).filter(Boolean) as string[];
-    idMap.set(it.data.id, saveStory(fields).id);
-    count("story");
-  }
   for (const it of byType("character")) {
     idMap.set(it.data.id, saveCharacter(prep("character", it.data) as Partial<Character>).id);
     count("character");
   }
-  for (const it of byType("persona")) {
-    idMap.set(it.data.id, savePersona(prep("persona", it.data) as Partial<Persona>).id);
-    count("persona");
-  }
   for (const it of byType("lorebook")) {
     idMap.set(it.data.id, saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>).id);
     count("lorebook");
+  }
+  // stories last — they remap scenes, cast and lorebooks
+  for (const it of byType("story")) {
+    const fields = prep("story", it.data) as Partial<Story>;
+    fields.characterIds = (fields.characterIds ?? [])
+      .map((cid) => idMap.get(cid))
+      .filter(Boolean) as string[];
+    fields.scenes = (fields.scenes ?? []).flatMap((e) => {
+      const sceneId = idMap.get(e.sceneId);
+      if (!sceneId) return [];
+      return [{ sceneId, cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[] }];
+    });
+    fields.lorebookIds = (fields.lorebookIds ?? [])
+      .map((lid) => idMap.get(lid))
+      .filter(Boolean) as string[];
+    idMap.set(it.data.id, saveStory(fields).id);
+    count("story");
+  }
+  for (const it of byType("persona")) {
+    idMap.set(it.data.id, savePersona(prep("persona", it.data) as Partial<Persona>).id);
+    count("persona");
   }
   return { imported };
 }

@@ -64,13 +64,40 @@ describe("TagStreamParser", () => {
       options: ["go left", "go right"],
     });
   });
+
+  it("parses enter/leave with names, stripped from text, across chunk boundaries", () => {
+    const full = "The door swings open. <enter>Kael</enter>He nods. <leave>Mira</leave>";
+    for (const size of [1, 3, 6]) {
+      const events = run(full.match(new RegExp(`.{1,${size}}`, "gs"))!);
+      expect(events.find((e) => e.type === "enter")).toEqual({ type: "enter", name: "Kael" });
+      expect(events.find((e) => e.type === "leave")).toEqual({ type: "leave", name: "Mira" });
+      expect(textOf(events)).toBe("The door swings open. He nods. ");
+    }
+  });
+
+  it("parses the-end with and without self-closing slash", () => {
+    expect(run(["fin <the-end/>"]).some((e) => e.type === "theEnd")).toBe(true);
+    expect(run(["fin <the-end >"]).some((e) => e.type === "theEnd")).toBe(true);
+    expect(textOf(run(["fin <the-end/>"]))).toBe("fin ");
+  });
+
+  it("fails soft on an unclosed enter tag", () => {
+    const events = run(["<enter>Kael never closes and the prose just keeps going on and on..."]);
+    expect(events.some((e) => e.type === "enter")).toBe(false);
+    expect(textOf(events)).toContain("<enter>Kael");
+  });
 });
 
 describe("parseTagged", () => {
   it("extracts everything in one shot", () => {
-    const r = parseTagged('<emo>sad</emo>Some prose.<next-scene/><options><o>A</o></options>');
+    const r = parseTagged(
+      '<emo>sad</emo>Some prose.<enter>Kael</enter><next-scene/><the-end/><options><o>A</o></options>'
+    );
     expect(r.emotion).toBe("sad");
     expect(r.nextScene).toBe(true);
+    expect(r.enter).toEqual(["Kael"]);
+    expect(r.leave).toEqual([]);
+    expect(r.theEnd).toBe(true);
     expect(r.options).toEqual(["A"]);
     expect(r.content).toBe("Some prose.");
   });

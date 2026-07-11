@@ -52,7 +52,13 @@ All world-building entities are reusable across chats.
 - **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced). Chat style resolves the same way, per field.
 
 ### Story
-- An ordered sequence of scenes.
+- A full storyline: description (premise & arc), an ordered **cast** (characters), an ordered sequence of **scenes**, and optional **lorebooks**.
+- **Per-scene cast:** each scene entry lists which cast members are on stage when the scene opens (a subset of the roster). This staging lives on the story→scene relation, not on the reusable scene entity — the same scene can appear in different stories with different casts.
+- Cast order drives `[charN_name]` in playthroughs; the "play as" picker offers the cast.
+
+### Library integrity (deletion protection)
+
+Items referenced by authored structures cannot be deleted; the API refuses (409) and the UI explains what still uses them, by name. The chain: **location ← scene** and **character/scene/location/lorebook ← story**. Stories themselves are always deletable — playthroughs are self-contained snapshots (see Chat) and never block or break. Casual/immersive chat references don't block either: those chats degrade fail-soft (a deleted character's messages keep a snapshotted display name).
 
 ### Lorebook (world info)
 - Reusable, keyword-triggered knowledge entries (people, factions, history, rules of the world).
@@ -62,20 +68,20 @@ All world-building entities are reusable across chats.
 
 ### Chat
 - **Chat modes** (chosen at creation, fixed afterwards):
-  - **Story** — a story is required; optionally pick a starting scene from that story. In chat the user (and narrator) can switch between the story's scenes only; locations cannot be chosen or switched (they follow the scenes).
-  - **Scene** — one scene is required and stays fixed; no scene or location switching.
-  - **Location** — one location is required and stays fixed; no switching.
-  - **Casual** — no story, scene, or location.
-- Participants: one or more characters + one persona. **Character order** is set by the user at creation (drives `[charN_name]` placeholders) and cannot be edited afterwards.
-- Any number of lorebooks can be attached.
-- **Greetings option at creation** (default on): characters open the chat with their greeting messages; disable it to speak first yourself.
-- Per-chat settings: model and narrator on/off are editable after creation; language and POV are fixed at creation and shown read-only in chat settings.
+  - **Casual** — no setting. Pick a persona, one or more characters (in speaking order), optional lorebooks, optional narrator. Characters may be omitted when the narrator is enabled — a narrator-only solo chat plays like a text adventure.
+  - **Immersive** — one fixed **scene or location** (a single "Setting" picker lists both; the picked entity's type is stored). Plus persona, one or more characters, optional lorebooks, optional narrator. Never switches.
+  - **Story (a "Playthrough")** — pick a story; its cast, scenes and lorebooks come with it. **Play as** a cast member or an existing persona (or spectate). The **narrator is required** and directs everything; optionally pick a starting scene (defaults to the first). Characters and lorebooks are not picked — they're the story's.
+- **Playthroughs are self-contained:** creation takes a **snapshot** of the whole story bundle (story sheet, cast character sheets, scene entries with per-scene casts, referenced locations, lorebooks — text embedded, media as content-addressed asset ids). The playthrough never reads the library afterwards: deleting or editing library items (or the story itself) can't touch a running or finished playthrough. Library edits reach new playthroughs only.
+- **Play as a cast member:** the chosen character's snapshot sheet doubles as the persona; the remaining cast are the AI participants. Their affinity with the played character is tracked as character↔character relationship data.
+- All settings are **fixed at creation** — participants, persona, setting/story, lorebooks, narrator, language, POV. The single exception is the **model** (and title/folder/tags/advanced overrides): a cost/infrastructure knob, not fiction state, so it stays editable.
+- **Greeting** exists in exactly one shape: a casual chat with exactly one character and the narrator disabled may open with that character's greeting message (**opt-in, default off**). Everywhere else the opening move belongs to the narrator or the user.
+- **The narrator, when enabled, always speaks first:** an empty chat immediately triggers a narrator turn (scene-setting + suggested actions).
 
 ### Placeholder tags
 
 Sheets (character/persona/location/scene/story/lorebook text fields) may contain placeholder tags, replaced with actual chat values at injection time (prompt assembly and greeting insertion):
 
-- `[char_name]` — inside a character's own sheet fields (description, greeting, example dialogue, custom expression descriptions): that character's name; elsewhere: the chat's first character. `[charN_name]` — Nth character (1-based, chat order); `[char1_name]` is always positional.
+- `[char_name]` — inside a character's own sheet fields (description, greeting, example dialogue, custom expression descriptions): that character's name; elsewhere: the chat's first character. `[charN_name]` — Nth character (1-based, chat order; in a playthrough that's the story's cast order minus the played character); `[char1_name]` is always positional.
 - `[user_name]` / `[persona_name]` — active persona's name
 - `[loc_name]`, `[scene_name]`, `[story_name]` — active location/scene/story names
 - Case-insensitive. Unresolvable tags get a neutral fallback ("another character", "the current place", …) so the AI never sees broken brackets. Unknown bracketed text is left as-is.
@@ -96,11 +102,11 @@ Sheets (character/persona/location/scene/story/lorebook text fields) may contain
   - **Safety valve:** if prompt assembly finds history that genuinely won't fit (huge paste, smaller-context model) before background jobs catch up, it summarizes synchronously that once.
   - **Invalidation:** in-place edits or save-state rewinds touching summarized ranges invalidate the affected coverage and queue re-summarization. Swipes alone trigger nothing.
   - Summarization/extraction calls are tagged `memory` in token tracking.
-- **Group chats:** multiple characters; **auto-orchestrated turn-taking** (an LLM picks the next speaker). The user can address characters directly with **@mentions** in a message — partial names and nicknames work (the orchestrator resolves them), several mentions make each addressed character reply in turn, and `@all` makes every character reply. Unresolvable mentions fall back to normal orchestration. **Characters can do the same:** a character reply that @mentions another character (they're told they may) hands them the next turn — mentions of the author themselves or of the user's persona are ignored, back-to-back repeats are skipped, and a hard cap on AI turns per request keeps chains finite. A per-chat **infinite mentions** toggle (chat settings, off by default) lifts the cap; switching it off mid-chain doesn't interrupt the reply being written, but stops the chain after it finishes.
+- **Group chats:** multiple characters; **auto-orchestrated turn-taking** (an LLM picks the next speaker). In a playthrough, all speaker routing operates on the characters **currently on stage** (see Stage presence under Narrator) — off-stage cast can't speak or be @mentioned, only narrated in. The user can address characters directly with **@mentions** in a message — partial names and nicknames work (the orchestrator resolves them), several mentions make each addressed character reply in turn, and `@all` makes every (present) character reply. Unresolvable mentions fall back to normal orchestration. **Characters can do the same:** a character reply that @mentions another character (they're told they may) hands them the next turn — mentions of the author themselves or of the user's persona are ignored, back-to-back repeats are skipped, and a hard cap on AI turns per request keeps chains finite. A per-chat **infinite mentions** toggle (chat settings, off by default) lifts the cap; switching it off mid-chain doesn't interrupt the reply being written, but stops the chain after it finishes.
 - **Save states & rewind:** bookmark a moment in a chat (VN-style checkpoint); later "load" it, either truncating the chat back to that point or forking a copy from it.
 - **Impersonate:** a button that has the AI draft the *user's* next reply in the active persona's voice; editable before sending.
-- **Relationship/affinity tracking:** per character–persona pair, the AI maintains an evolving relationship state (affinity, trust, notes) that persists across chats and feeds prompts. **Character↔character relationships too:** each character keeps their own directed view (affinity, note) of other characters, updated by the same memory pass and injected into that character's prompt for characters present in the chat. Both kinds are governed by **system settings** (default on; off = no updates, no prompt injection): "user relationships" for persona↔character, "character relationships" for character↔character. Inspectable in the chat settings drawer and in the character editor. Can be **disabled per character** (toggle: no updates, no prompt injection, applies to both kinds) and **reset** (deletes that character's relationship data with all personas and characters).
-- **Organization:** chat tags/folders, auto-generated chat titles, full-text search across all chats.
+- **Relationship/affinity tracking:** per character–persona pair, the AI maintains an evolving relationship state (affinity, trust, notes) that persists across chats and feeds prompts. When the user plays a story cast member, that pair is tracked as a character↔character relationship instead. Facts/relationships live in the library, so a playthrough whose snapshot characters were deleted from the library simply skips those updates. **Character↔character relationships too:** each character keeps their own directed view (affinity, note) of other characters, updated by the same memory pass and injected into that character's prompt for characters present in the chat. Both kinds are governed by **system settings** (default on; off = no updates, no prompt injection): "user relationships" for persona↔character, "character relationships" for character↔character. Inspectable in the chat settings drawer and in the character editor. Can be **disabled per character** (toggle: no updates, no prompt injection, applies to both kinds) and **reset** (deletes that character's relationship data with all personas and characters).
+- **Organization:** chat tags/folders, auto-generated chat titles, full-text search across all chats. Playthroughs are labeled "Playthrough — <story name>" (from the snapshot, so the label outlives the story) with a "The End" badge once completed.
 - Markdown rendering with styled action text.
 
 ### Turn & message workflow
@@ -118,16 +124,17 @@ flowchart TD
 
     Route -- "Narrate button" --> Narr["narrator"]
     Route -- regenerate --> Regen["original message's speaker"]
-    Route -- "text has @all" --> All["every character, chat order"]
+    Route -- "text has @all" --> All["every PRESENT character, chat order"]
     Route -- "text has @mentions" --> Ment["orchestrator resolves mentions →
-    addressed characters, in turn
+    addressed present characters, in turn
     (none match → normal routing)"]
-    Route -- otherwise --> Single{"exactly one character
+    Route -- otherwise --> Single{"exactly one present character
     and narrator disabled?"}
     Single -- yes --> That["that character (no orchestrator call)"]
     Single -- no --> Orch["orchestrator picks the next speaker
-    among characters + narrator — prefers whoever
-    was addressed; narration only when it helps"]
+    among present characters + narrator — prefers whoever
+    was addressed; narration only when it helps
+    (nobody on stage → narrator)"]
 
     Narr --> Q["speaker queue"]
     Regen --> Q
@@ -141,9 +148,11 @@ flowchart TD
     Turn --> Prompt["assemble prompt: system + sheets + world →
     rolling summary + facts → verbatim window"]
     Prompt --> Stream["stream the reply through the tag parser
-    (emotion prefix; narrator: options + next-scene tags)"]
+    (emotion prefix; narrator: options,
+    next-scene, enter/leave, the-end tags)"]
     Stream --> Persist[("save message — regenerate adds
-    a swipe variant; recompute stage")]
+    a swipe variant; recompute stage
+    (scene, presence, ended)")]
     Persist --> Chain{"character reply
     with @mentions?"}
     Chain -- "yes — enqueue them (cap 8 turns unless
@@ -155,7 +164,7 @@ flowchart TD
     auto title (first exchange)"]
 ```
 
-Notes: each queued turn rebuilds the context, so later speakers see earlier replies (and live settings changes like the infinite-mentions toggle); the orchestrator and mention resolution run on the `orchestrator` task model; a Stop press ends the chain after the current reply is saved.
+Notes: each queued turn rebuilds the context, so later speakers see earlier replies (and live settings changes like the infinite-mentions toggle); the orchestrator and mention resolution run on the `orchestrator` task model; a Stop press ends the chain after the current reply is saved. "Present" = the on-stage cast in a playthrough; in casual/immersive chats every participant is always present.
 
 ### Message format (speech & actions)
 
@@ -176,12 +185,14 @@ Character and narrator prompts adapt; narrator's suggested actions are written i
 
 ## Narrator
 
-Optional per chat (most useful with a story/scene attached).
+Optional in casual and immersive chats; **required in playthroughs**, where it is the stage director. When enabled, it always **speaks first** in a new chat.
 
-- **Triggers:** auto — narrates when it would help (scene-setting, transitions, plot advancement); also summonable on demand via a button.
-- **Suggested actions:** after narrating, offers 2–4 in-character choices rendered as buttons; clicking sends as the user's message (pre-formatted in the chat's convention/POV). Free-text input always remains available.
-- **Scene progression:** in story mode, the narrator can advance the story to the next scene (via a structured scene-advance tag in its output); the user can also switch between the story's scenes manually. Other chat modes have no scene/location switching.
-- **Scene state derives from the timeline:** every scene/location change — narrator-driven or manual — is recorded as an event anchored in the message history (metadata on the narrator message, or a marker entry for manual switches). The current scene is computed as the last scene-change event at or before the end of visible history. Rewinds, save-state loads, and forks therefore restore the correct scene (and its background/BGM) automatically; there is no free-floating "current scene" field to go stale. Editing a narrator message shows its scene-advance metadata alongside the text, where it can be kept, changed, or removed.
+- **Triggers:** auto — narrates when it would help (scene-setting, transitions, plot advancement); also summonable on demand via a button (the user's only pacing lever in a playthrough — there is no manual scene control).
+- **Suggested actions:** after narrating, offers 2–4 in-character choices rendered as buttons; clicking sends as the user's message (pre-formatted in the chat's convention/POV). Free-text input always remains available. Suppressed on a concluding message and after the story has ended.
+- **Scene progression (playthroughs):** the narrator alone advances the story to the next scene via `<next-scene/>`. There is no manual switching in any mode.
+- **Stage presence (playthroughs):** a scene opens with its per-scene cast on stage; mid-scene the narrator may bring roster members on with `<enter>Name</enter>` or send them off with `<leave>Name</leave>` (describing it in the narration too). Only present characters speak, are drawn on stage, get prompt sheets, or can be @mentioned; the narrator sees the full roster (on/off stage) so it can stage entrances — including reacting to the user wishing someone were there. The played character is exempt (the user always speaks).
+- **The ending (playthroughs):** when the story reaches its resolution — typically in the final scene, where `<next-scene/>` is unavailable — the narrator concludes it with `<the-end/>`. The playthrough shows a completed "The End" state (badge in the chat list, header, timeline) and the prompt context flips to a free-form **epilogue**: the chat is not locked, characters and narrator still respond knowing the story is over, but no more scene advances, staging, or suggested actions. There is no manual "end story" button; the user can always ask the narrator in-fiction to wrap up.
+- **All stage state derives from the timeline:** scene changes, enter/leave, and the ending are events stored as metadata on narrator messages, folded over visible history (`computeStage`). Rewinds, save-state loads, and forks therefore restore the scene, its background/BGM, who was on stage, and the un-ended state automatically; there is no free-floating stage field to go stale. Forking from before the finale yields an alternate-ending playthrough for free.
 
 ## Visual-novel presentation
 
@@ -196,7 +207,7 @@ Optional per chat (most useful with a story/scene attached).
 | Accent | primary buttons, slider thumb, focus rings — `accent` plus derived hover/active shades | `accentFg` (auto-contrast with the accent when unset) |
 
   Error surfaces (alerts, the Stop button) always keep theme colors so failure states stay recognizable. The accent also appears as decorative text (avatar initials, the streaming caret, VN speaker names) on panel/bubble surfaces — where the style makes the accent unreadable there (WCAG contrast < 3), it automatically falls back to that family's own text color.
-- **Stage:** the speaking character's sprite displayed large. With multiple characters, **all** participants' sprites are on stage; the current speaker is at full brightness, others dimmed.
+- **Stage:** the speaking character's sprite displayed large. With multiple characters, all **present** participants' sprites are on stage (in a playthrough that's the on-stage cast; elsewhere everyone); the current speaker is at full brightness, others dimmed.
 - **Expression selection:** each character message carries an emotion tag chosen by the AI (see AI output structure). Resolution: exact match → `neutral` → placeholder sprite (avatars are never shown on stage). Tags are stored per message, so scrolling history and swiping alternatives replay expressions. The tag is user-correctable when editing a message.
 - **Background:** active scene/location artwork (precedence rules above).
 - **BGM:** active scene/location BGM (same precedence); loops, cross-fades on scene/location change. Volume slider + mute in chat UI (mute also covers typing SFX).
@@ -210,7 +221,7 @@ Optional per chat (most useful with a story/scene attached).
 Chat content is prose; structure rides in small markers parsed out of the stream and stored as message metadata:
 
 - **Character responses:** small prefix marker (e.g. `<emo>smug</emo>`) then pure prose. Parser consumes the marker early in the stream (sprite switches as the character "starts talking"), strips it, streams the rest. Missing/malformed marker → fall back to `neutral`, show full text.
-- **Narrator turns:** narration prose + trailing `<options>…</options>` block (held back, rendered as buttons) + optional scene-advance tag.
+- **Narrator turns:** narration prose + trailing `<options>…</options>` block (held back, rendered as buttons) + optional staging tags (scene advance, enter/leave, the end).
 - **Non-conversational calls** (speaker selection, memory extraction, co-writing form edits): proper structured output (tool calls / JSON schema).
 - **Emotion tagging is decoupled from sprite availability:** the prompt always offers the full standard emotion vocabulary plus the character's custom expressions (with descriptions), and states that the tag is descriptive metadata — not a constraint on the writing. Messages store the character's true emotion even when no matching sprite exists; sprite resolution happens at display time (tag → `neutral` → placeholder), so later-uploaded sprites apply retroactively to old messages.
 
@@ -222,14 +233,17 @@ All inline tags that may appear in AI chat output. The stream parser strips them
 |---|---|---|---|
 | `<emo>name</emo>` | Characters | Prefix (first tokens) | Emotion tag for the message; drives sprite expression. One per message. |
 | `<options><o>text</o>…</options>` | Narrator | Trailing (end of message) | 2–4 suggested user actions, each in an `<o>` element, pre-written in the chat's POV/convention. Held back from display, rendered as buttons. |
-| `<next-scene/>` | Narrator | Trailing | Advance the story to the next scene. Recorded as a scene-change event on the narrator message. |
+| `<next-scene/>` | Narrator | Trailing | Advance the story to the next scene. Recorded as a stage event on the narrator message. |
+| `<enter>Name</enter>` | Narrator | Inline | Bring a roster member on stage mid-scene. Name resolved fail-soft against the cast; recorded as a stage event. |
+| `<leave>Name</leave>` | Narrator | Inline | Send a present character off stage. Same resolution and storage as `<enter>`. |
+| `<the-end/>` | Narrator | Trailing | Conclude the playthrough. Recorded as a stage event; suppresses that message's options. |
 
 Parser rules:
-- Tags are parsed from the stream incrementally: prefix tags are consumed before display begins; trailing tags are held back once an opening `<options>`/`<next-scene` is detected at the tail.
-- **Malformed or unknown tags:** fail soft. A broken `<emo>` → message falls back to `neutral` and full text is shown; a broken `<options>` block → its raw text is dropped or shown as prose, chat continues; never an error state.
+- Tags are parsed from the stream incrementally: prefix tags are consumed before display begins; trailing tags are held back once an opening `<options>`/`<next-scene`/`<the-end` is detected at the tail.
+- **Malformed or unknown tags:** fail soft. A broken `<emo>` → message falls back to `neutral` and full text is shown; a broken `<options>` block → its raw text is dropped or shown as prose; an `<enter>`/`<leave>` name matching nobody is ignored; never an error state.
+- Staging tags (`<next-scene/>`, `<enter>`, `<leave>`, `<the-end/>`) only take effect on narrator messages in a playthrough, and never after the story has ended.
 - Tag names are English regardless of the chat language; only the payload (option text) follows the language setting.
-- Stored metadata (emotion, options, scene event) is user-editable via message editing.
-- Manual scene/location switches create marker entries directly — no tag involved.
+- Stored metadata (emotion, options, stage events) is user-editable via message editing.
 - Future tags must be added to this list and follow the same prefix/trailing + fail-soft rules.
 
 ## AI assist (co-writing)
@@ -238,7 +252,7 @@ Parser rules:
 - Conversational side streams as prose; the assistant fills/updates form fields via tool calls as the discussion progresses.
 - **Reference attachments:** a picker in the input toolbar attaches library items (characters, personas, locations, scenes, stories, lorebooks) to the conversation; their sheets are sent as read-only background context with every message, so new content can build on the existing cast and world (e.g. a scene written for specific characters). Items that no longer exist are skipped silently.
 - **Image prompts** the assistant writes are strictly visual (what a camera sees — no names, personality, backstory or lore) and always in English regardless of the language setting, unless explicitly asked otherwise; they never mention aspect ratio. Character sprite prompts cover physical appearance, outfit, pose and framing/view distance, ending on a solid flat single-color background — never environment or scenery.
-- **Library guide:** a Guide button on the library page opens a batch co-writing dialog — the assistant creates/updates any number of items across all types in one conversation, shown on the left as editable forms (removable per item). Attached `.txt`/`.md` files are sent as source material (truncated past a size cap) so items can be extracted from a novel or notes. Nothing persists until Save, which stores the whole batch — scenes link to locations and stories to their scenes by name, against the batch or the existing library.
+- **Library guide:** a Guide button on the library page opens a batch co-writing dialog — the assistant creates/updates any number of items across all types in one conversation, shown on the left as editable forms (removable per item). Attached `.txt`/`.md` files are sent as source material (truncated past a size cap) so items can be extracted from a novel or notes. Nothing persists until Save, which stores the whole batch in dependency order — scenes link to locations, and stories to their cast, scene sequence (with per-scene casts) and lorebooks, all by name, against the batch or the existing library. The story editor's own assist panel writes the same name-based links, resolved into the form as the assistant fills it.
 - Follows the global language setting.
 
 ## Language
@@ -256,11 +270,11 @@ Parser rules:
 
 - Character, location, scene, story, and lorebook can be exported; multiple items can be combined into a single **bundle**.
 - Bundle = zip with a JSON manifest + all referenced assets (avatars, sprites, artwork, BGM).
-- A story export can optionally pull in its referenced scenes/locations.
-- Import restores everything, with duplicate handling.
-- **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter.
+- A story export pulls in its cast, scenes (with per-scene casts), the scenes' locations, and its lorebooks.
+- Import restores everything, with duplicate handling (references remapped, names deduped).
+- **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter — scene advances become chapter headings, `<the-end/>` a closing "The End".
 - **Full backup/restore:** one-click export of the entire database + all assets as a single archive (distinct from entity bundles); restore from archive.
-- **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files no character, location or scene references (after a confirm showing count & size; unsaved editor uploads count as unused).
+- **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files nothing references (after a confirm showing count & size; unsaved editor uploads count as unused). References counted: characters, locations, scenes — **and playthrough snapshots**, so a finished playthrough keeps its sprites/art/BGM alive even after the library items are deleted.
 
 ## Assets in repo
 

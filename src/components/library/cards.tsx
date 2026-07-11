@@ -159,7 +159,7 @@ export function StoryCard(props: LibraryCardProps) {
   return (
     <CardShell
       {...props}
-      sub={`${item.sceneIds?.length ?? 0} scenes — ${(item.description ?? "").slice(0, 70)}`}
+      sub={`${item.characterIds?.length ?? 0} cast, ${item.scenes?.length ?? 0} scenes — ${(item.description ?? "").slice(0, 70)}`}
       cover={<BookOpen size={32} />}
     />
   );

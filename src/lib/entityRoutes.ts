@@ -17,7 +17,9 @@ export function collectionRoutes<T>(list: () => T[], save: (x: any) => T) {
 export function itemRoutes<T>(
   get: (id: string) => T | null,
   save: (x: any) => T,
-  del: (id: string) => void
+  del: (id: string) => void,
+  /** library integrity: names of items still referencing this one — non-empty blocks deletion (409) */
+  referencedBy?: (id: string) => string[]
 ) {
   return {
     GET: handler(async (_req: Request, { params }: IdParams) => {
@@ -31,7 +33,11 @@ export function itemRoutes<T>(
       return ok(save({ ...body, id }));
     }),
     DELETE: handler(async (_req: Request, { params }: IdParams) => {
-      del((await params).id);
+      const { id } = await params;
+      const refs = referencedBy?.(id) ?? [];
+      if (refs.length)
+        return bad(`Can't delete — used by ${refs.join(", ")}. Remove it there first.`, 409);
+      del(id);
       return ok({ ok: true });
     }),
   };

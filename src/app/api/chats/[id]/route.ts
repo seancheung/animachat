@@ -1,67 +1,62 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
-import { computeStage, resolveStageAssets } from "@/lib/ai/prompts";
+import { buildContext, computeStage, resolveStageAssets } from "@/lib/ai/prompts";
 import {
   deleteChat,
   getChat,
   getCharacter,
-  getPersona,
+  getCharRelationship,
   getRelationship,
-  getStory,
-  getScene,
   listCharRelationships,
   listCheckpoints,
-  listMessages,
   saveChat,
 } from "@/lib/store";
-import type { Character } from "@/lib/types";
 
 export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
   const chat = getChat(id);
   if (!chat) return bad("Chat not found", 404);
-  const messages = listMessages(id);
-  const stage = computeStage(chat, messages);
-  const story = chat.storyId ? getStory(chat.storyId) : null;
+  const ctx = buildContext(id);
+  const stage = ctx.stage;
   return ok({
     chat,
-    messages,
-    stage: { ...stage, ...resolveStageAssets(stage) },
-    characters: chat.characterIds.map(getCharacter).filter((c): c is Character => !!c),
-    persona: chat.personaId ? getPersona(chat.personaId) : null,
-    story,
-    storyScenes: story ? story.sceneIds.map((sid) => getScene(sid)).filter(Boolean) : [],
+    messages: ctx.messages,
+    stage: { ...stage, ...resolveStageAssets(chat, stage) },
+    characters: ctx.characters,
+    persona: ctx.persona,
+    playedCharacter: ctx.playedCharacter,
+    storyName: ctx.snapshot?.name ?? null,
+    storyScenes: ctx.snapshot?.scenes.map(({ scene }) => scene) ?? [],
+    ended: ctx.ended,
     checkpoints: listCheckpoints(id),
-    relationships: chat.personaId
-      ? Object.fromEntries(
-          chat.characterIds
-            .map((cid) => [cid, getRelationship(cid, chat.personaId!)] as const)
-            .filter(([, r]) => r)
-        )
-      : {},
+    // the user side: persona↔character, or the played character's char↔char pairs
+    relationships: Object.fromEntries(
+      chat.characterIds
+        .map((cid) => [
+          cid,
+          chat.personaCharacterId
+            ? getCharRelationship(cid, chat.personaCharacterId)
+            : chat.personaId
+              ? getRelationship(cid, chat.personaId)
+              : null,
+        ] as const)
+        .filter(([, r]) => r)
+    ),
     // each chat character's view of the other chat characters
     charRelationships: Object.fromEntries(
       chat.characterIds.map((cid) => [
         cid,
         listCharRelationships(cid)
           .filter((r) => chat.characterIds.includes(r.otherId))
-          .map((r) => ({ ...r, otherName: getCharacter(r.otherId)?.name ?? "?" })),
+          .map((r) => ({ ...r, otherName: getCharacter(r.otherId)?.name ?? chat.nameSnapshots[r.otherId] ?? "?" })),
       ])
     ),
   });
 });
 
-/** Everything else — mode, characterIds, storyId/sceneId/locationId, language, pov — is fixed at creation. */
-const MUTABLE_CHAT_FIELDS = [
-  "title",
-  "folder",
-  "tags",
-  "modelId",
-  "charModels",
-  "narratorEnabled",
-  "lorebookIds",
-  "personaId",
-  "overrides",
-] as const;
+/** Everything else — mode, characters, persona, story/scene/location, lorebooks,
+ *  narrator, language, pov — is fixed at creation. The model stays editable: it's a
+ *  cost/infrastructure knob, not fiction state. */
+const MUTABLE_CHAT_FIELDS = ["title", "folder", "tags", "modelId", "charModels", "overrides"] as const;
 
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;

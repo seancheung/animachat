@@ -410,7 +410,9 @@ const storyFromRow = (r: Row): Story => ({
   id: r.id,
   name: r.name,
   description: r.description,
-  sceneIds: J.parse(r.scene_ids, []),
+  characterIds: J.parse(r.character_ids, []),
+  scenes: J.parse(r.scenes, []),
+  lorebookIds: J.parse(r.lorebook_ids, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -430,7 +432,9 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     id: existing?.id ?? x.id ?? uid(),
     name: "Untitled story",
     description: "",
-    sceneIds: [],
+    characterIds: [],
+    scenes: [],
+    lorebookIds: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -438,14 +442,17 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
   });
   getDb()
     .prepare(
-      `INSERT INTO stories (id,name,description,scene_ids,created_at,updated_at) VALUES (@id,@name,@description,@scenes,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, scene_ids=@scenes, updated_at=@updated`
+      `INSERT INTO stories (id,name,description,character_ids,scenes,lorebook_ids,created_at,updated_at)
+       VALUES (@id,@name,@description,@chars,@scenes,@lore,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       description: m.description,
-      scenes: J.str(m.sceneIds),
+      chars: J.str(m.characterIds),
+      scenes: J.str(m.scenes),
+      lore: J.str(m.lorebookIds),
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -454,6 +461,31 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
 
 export function deleteStory(id: string) {
   getDb().prepare("DELETE FROM stories WHERE id=?").run(id);
+}
+
+/* ---------------- library integrity ---------------- */
+
+/**
+ * What still references this library item — a non-empty result blocks deletion.
+ * Chain: location ← scene ← story; character/lorebook ← story. Chats never block:
+ * playthroughs are self-contained snapshots, casual/immersive chats degrade fail-soft.
+ */
+export function libraryReferences(
+  type: "character" | "scene" | "location" | "lorebook",
+  id: string
+): string[] {
+  const refs: string[] = [];
+  if (type === "location") {
+    for (const s of listScenes()) if (s.locationId === id) refs.push(`scene "${s.name}"`);
+  }
+  for (const st of listStories()) {
+    const inStory =
+      (type === "character" && st.characterIds.includes(id)) ||
+      (type === "scene" && st.scenes.some((s) => s.sceneId === id)) ||
+      (type === "lorebook" && st.lorebookIds.includes(id));
+    if (inStory) refs.push(`story "${st.name}"`);
+  }
+  return refs;
 }
 
 /* ---------------- lorebooks ---------------- */
@@ -522,6 +554,9 @@ const chatFromRow = (r: Row): Chat => ({
   lorebookIds: J.parse(r.lorebook_ids, []),
   characterIds: J.parse(r.character_ids, []),
   personaId: r.persona_id,
+  personaCharacterId: r.persona_character_id,
+  storySnapshot: J.parse(r.story_snapshot, null),
+  nameSnapshots: J.parse(r.name_snapshots, {}),
   modelId: r.model_id,
   charModels: J.parse(r.char_models, {}),
   language: r.language,
@@ -555,6 +590,9 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
     lorebookIds: [],
     characterIds: [],
     personaId: null,
+    personaCharacterId: null,
+    storySnapshot: null,
+    nameSnapshots: {},
     modelId: null,
     charModels: {},
     language: "",
@@ -568,10 +606,11 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
   });
   getDb()
     .prepare(
-      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,model_id,char_models,language,pov,narrator_enabled,overrides,created_at,updated_at)
-       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@model,@charModels,@language,@pov,@narrator,@overrides,@created,@updated)
+      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,overrides,created_at,updated_at)
+       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@personaChar,@snapshot,@names,@model,@charModels,@language,@pov,@narrator,@overrides,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET title=@title, mode=@mode, folder=@folder, tags=@tags, story_id=@story, scene_id=@scene, location_id=@loc,
-         lorebook_ids=@lore, character_ids=@chars, persona_id=@persona, model_id=@model, char_models=@charModels,
+         lorebook_ids=@lore, character_ids=@chars, persona_id=@persona, persona_character_id=@personaChar, story_snapshot=@snapshot,
+         name_snapshots=@names, model_id=@model, char_models=@charModels,
          language=@language, pov=@pov, narrator_enabled=@narrator, overrides=@overrides, updated_at=@updated`
     )
     .run({
@@ -586,6 +625,9 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
       lore: J.str(m.lorebookIds),
       chars: J.str(m.characterIds),
       persona: m.personaId,
+      personaChar: m.personaCharacterId,
+      snapshot: m.storySnapshot ? J.str(m.storySnapshot) : null,
+      names: J.str(m.nameSnapshots),
       model: m.modelId,
       charModels: J.str(m.charModels),
       language: m.language,

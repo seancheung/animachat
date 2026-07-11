@@ -3,6 +3,8 @@
  *   <emo>name</emo>            (character messages, prefix)
  *   <options><o>..</o>...</options>  (narrator, trailing)
  *   <next-scene/>              (narrator, trailing)
+ *   <enter>name</enter> / <leave>name</leave>  (narrator, inline — stage presence)
+ *   <the-end/>                 (narrator, trailing — playthrough concluded)
  *
  * Everything fails soft: malformed/unclosed tags flush as plain text.
  */
@@ -11,12 +13,16 @@ export type TagEvent =
   | { type: "text"; text: string }
   | { type: "emotion"; name: string }
   | { type: "options"; options: string[] }
-  | { type: "nextScene" };
+  | { type: "nextScene" }
+  | { type: "enter"; name: string }
+  | { type: "leave"; name: string }
+  | { type: "theEnd" };
 
-const OPENERS = ["<emo>", "<options>", "<next-scene"];
+const OPENERS = ["<emo>", "<options>", "<next-scene", "<enter>", "<leave>", "<the-end"];
 const MAX_EMO = 120;
 const MAX_OPTIONS = 4000;
 const MAX_NEXT_SCENE = 40;
+const MAX_NAME = 200;
 
 export class TagStreamParser {
   private buf = "";
@@ -104,12 +110,33 @@ export class TagStreamParser {
       return b.length > MAX_OPTIONS || final ? "not-a-tag" : "hold";
     }
 
+    for (const tag of ["enter", "leave"] as const) {
+      const open = `<${tag}>`;
+      if (b.startsWith(open)) {
+        const closeTag = `</${tag}>`;
+        const close = b.indexOf(closeTag);
+        if (close !== -1) {
+          const name = b.slice(open.length, close).trim();
+          this.buf = b.slice(close + closeTag.length);
+          return name ? { type: tag, name } : "not-a-tag";
+        }
+        return b.length > MAX_NAME || final ? "not-a-tag" : "hold";
+      }
+    }
+
     const nextScene = b.match(/^<next-scene\s*\/?\s*>/);
     if (nextScene) {
       this.buf = b.slice(nextScene[0].length);
       return { type: "nextScene" };
     }
     if (/^<next-scene/.test(b) && b.length <= MAX_NEXT_SCENE && !final) return "hold";
+
+    const theEnd = b.match(/^<the-end\s*\/?\s*>/);
+    if (theEnd) {
+      this.buf = b.slice(theEnd[0].length);
+      return { type: "theEnd" };
+    }
+    if (/^<the-end/.test(b) && b.length <= MAX_NEXT_SCENE && !final) return "hold";
 
     // could this still become a known opener with more input?
     if (!final && OPENERS.some((o) => o.startsWith(b) && b.length < o.length)) return "hold";
@@ -123,6 +150,9 @@ export function parseTagged(text: string): {
   emotion: string | null;
   options: string[] | null;
   nextScene: boolean;
+  enter: string[];
+  leave: string[];
+  theEnd: boolean;
 } {
   const parser = new TagStreamParser();
   const events = [...parser.feed(text), ...parser.end()];
@@ -130,11 +160,17 @@ export function parseTagged(text: string): {
   let emotion: string | null = null;
   let options: string[] | null = null;
   let nextScene = false;
+  const enter: string[] = [];
+  const leave: string[] = [];
+  let theEnd = false;
   for (const ev of events) {
     if (ev.type === "text") content += ev.text;
     else if (ev.type === "emotion") emotion = emotion ?? ev.name;
     else if (ev.type === "options") options = ev.options;
     else if (ev.type === "nextScene") nextScene = true;
+    else if (ev.type === "enter") enter.push(ev.name);
+    else if (ev.type === "leave") leave.push(ev.name);
+    else if (ev.type === "theEnd") theEnd = true;
   }
-  return { content: content.trim(), emotion, options, nextScene };
+  return { content: content.trim(), emotion, options, nextScene, enter, leave, theEnd };
 }

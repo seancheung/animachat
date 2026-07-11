@@ -89,7 +89,9 @@ CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  scene_ids TEXT NOT NULL DEFAULT '[]',
+  character_ids TEXT NOT NULL DEFAULT '[]',
+  scenes TEXT NOT NULL DEFAULT '[]',
+  lorebook_ids TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -113,6 +115,9 @@ CREATE TABLE IF NOT EXISTS chats (
   lorebook_ids TEXT NOT NULL DEFAULT '[]',
   character_ids TEXT NOT NULL DEFAULT '[]',
   persona_id TEXT,
+  persona_character_id TEXT,
+  story_snapshot TEXT,
+  name_snapshots TEXT NOT NULL DEFAULT '{}',
   model_id TEXT,
   char_models TEXT NOT NULL DEFAULT '{}',
   language TEXT NOT NULL DEFAULT '',

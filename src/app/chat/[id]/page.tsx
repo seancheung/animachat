@@ -65,7 +65,6 @@ export default function ChatPage() {
   const { data, mutate } = useSWR<any>(`/api/chats/${id}`, api.get);
   const { data: settings } = useSWR<Settings>("/api/settings", api.get);
   const { data: allScenes } = useSWR<any[]>("/api/scenes", api.get);
-  const { data: allLocations } = useSWR<any[]>("/api/locations", api.get);
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
@@ -77,6 +76,7 @@ export default function ChatPage() {
   const [panelHidden, setPanelHidden] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const openedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const blip = useBlip();
@@ -86,6 +86,12 @@ export default function ChatPage() {
   const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
   const personaName = data?.persona?.name ?? "You";
   const busy = !!streaming || !!pendingUser;
+  // story mode: only the on-stage cast is drawn; casual/immersive show everyone
+  const present: string[] | null = data?.stage?.present ?? null;
+  const stageCharacters: Character[] = useMemo(
+    () => (present ? characters.filter((c) => present.includes(c.id)) : characters),
+    [characters, present]
+  );
 
   useChatAudio({
     bgmUrl: assetUrl(data?.stage?.bgmAsset),
@@ -190,21 +196,31 @@ export default function ChatPage() {
     await mutate();
   };
 
+  // human-readable stage direction for a narrator message's events
+  const charName = (cid: string) =>
+    characters.find((c) => c.id === cid)?.name ?? chat?.nameSnapshots?.[cid] ?? "?";
   const sceneNameFor = (m: Message): string | null => {
-    if (m.sceneEvent?.kind === "scene")
-      return allScenes?.find((s) => s.id === m.sceneEvent?.sceneId)?.name ?? null;
-    if (m.sceneEvent?.kind === "location")
-      return allLocations?.find((l) => l.id === m.sceneEvent?.locationId)?.name ?? null;
-    return null;
+    const ev = m.sceneEvent;
+    if (!ev) return null;
+    const parts: string[] = [];
+    if (ev.sceneId) {
+      const s =
+        data?.storyScenes?.find((x: any) => x.id === ev.sceneId) ??
+        allScenes?.find((x) => x.id === ev.sceneId);
+      parts.push(`Scene: ${s?.name ?? "?"}`);
+    }
+    if (ev.enter?.length) parts.push(`Enter ${ev.enter.map(charName).join(", ")}`);
+    if (ev.leave?.length) parts.push(`Exit ${ev.leave.map(charName).join(", ")}`);
+    if (ev.theEnd) parts.push("The End");
+    return parts.length ? parts.join(" · ") : null;
   };
 
-  async function switchScene(kind: "scene" | "location", targetId: string) {
-    await api.post(`/api/chats/${id}/messages`, {
-      role: "marker",
-      sceneEvent: kind === "scene" ? { kind, sceneId: targetId } : { kind, locationId: targetId },
-    });
-    await mutate();
-  }
+  // the narrator always speaks first — fire its opening turn once the empty chat loads
+  useEffect(() => {
+    if (!data?.chat?.narratorEnabled || messages.length > 0 || busy || openedRef.current) return;
+    openedRef.current = true;
+    void generate({ mode: "narrator" });
+  }, [data, messages.length, busy, generate]);
 
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
@@ -310,7 +326,7 @@ export default function ChatPage() {
       {/* full-bleed VN stage, sprites centered */}
       <div className="absolute inset-0">
         <VNStage
-          characters={characters}
+          characters={stageCharacters}
           emotions={emotions}
           speakingId={speakingId}
           backgroundUrl={assetUrl(data.stage?.artworkAsset)}
@@ -346,6 +362,7 @@ export default function ChatPage() {
         <span className="font-medium truncate">{chat.title}</span>
         {data.stage?.scene && <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>}
         {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
+        {data.ended && <Badge rounded>The End</Badge>}
         <span className="flex-1" />
         {chat.language && <Badge variant="secondary" rounded>{chat.language}</Badge>}
         <Button variant="ghost" size="sm" shape="square" title="Fullscreen VN mode" onClick={() => setVnMode(true)}><Maximize /></Button>
@@ -359,6 +376,7 @@ export default function ChatPage() {
             key={m.id}
             message={m}
             characters={characters}
+            nameSnapshots={chat.nameSnapshots}
             personaName={personaName}
             isLast={m.id === lastNonMarker?.id}
             busy={busy}
@@ -403,6 +421,7 @@ export default function ChatPage() {
           backgroundColor={stageStyle?.stageBg}
           styleVars={styleVars}
           characters={characters}
+          stageCharacters={stageCharacters}
           emotions={emotions}
           speakingId={speakingId}
           streaming={streaming}
@@ -428,7 +447,6 @@ export default function ChatPage() {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
           }}
-          onSwitch={switchScene}
           onCheckpointLoad={async (cpId: string, mode: "truncate" | "fork") => {
             if (mode === "truncate" && !(await confirmDialog({ title: "Rewind chat", message: "Rewind the chat to this save state? Later messages are deleted.", confirmLabel: "Rewind", danger: true }))) return;
             const res = await api.post(`/api/checkpoints/${cpId}`, { mode });
@@ -455,6 +473,7 @@ function VnOverlay({
   backgroundColor,
   styleVars,
   characters,
+  stageCharacters,
   emotions,
   speakingId,
   streaming,
@@ -505,7 +524,7 @@ function VnOverlay({
   return (
     <div className="fixed inset-0 z-40 bg-black flex flex-col">
       <div className="flex-1 relative min-h-0">
-        <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
+        <VNStage characters={stageCharacters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
         <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
         <Button
           variant="secondary"
@@ -586,7 +605,6 @@ function ChatDrawer({
   volume,
   setVolume,
   onPatch,
-  onSwitch,
   onCheckpointLoad,
   onCheckpointDelete,
 }: any) {
@@ -638,12 +656,10 @@ function ChatDrawer({
           </div>
         </Field>
       </div>
-      <Field label="Narrator">
-        <Switch
-          value={chat.narratorEnabled}
-          onChange={(v) => onPatch({ narratorEnabled: v })}
-          label={chat.narratorEnabled ? "Enabled" : "Disabled"}
-        />
+      <Field label="Narrator" hint="fixed at creation">
+        <div className="text-sm text-content-200 h-8 flex items-center gap-1.5">
+          <ScrollText size={14} /> {chat.narratorEnabled ? "Enabled" : "Disabled"}
+        </div>
       </Field>
       {data.characters.length > 1 && (
         <Field
@@ -691,31 +707,44 @@ function ChatDrawer({
         </Field>
       )}
 
-      {chat.mode === "story" && data.story && (
-        <Field label={`Story: ${data.story.name}`} hint="switch scenes — recorded in the timeline, rewinds restore them">
+      {chat.mode === "story" && data.storyName && (
+        <Field
+          label={`Playthrough — ${data.storyName}`}
+          hint="the narrator advances scenes and directs who is on stage; rewinds restore both"
+        >
           <div className="space-y-1">
             {data.storyScenes.map((s: any, i: number) => (
-              <Button
+              <div
                 key={s.id}
-                variant={data.stage?.sceneId === s.id ? "primary" : "secondary"}
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => onSwitch("scene", s.id)}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1 text-sm",
+                  data.stage?.sceneId === s.id ? "bg-primary-500/15 text-content-100" : "text-content-300"
+                )}
               >
-                {i + 1}. {s.name}
-              </Button>
+                <Clapperboard size={12} /> {i + 1}. {s.name}
+                {data.stage?.sceneId === s.id && !data.ended && (
+                  <Badge variant="secondary" rounded className="ml-auto">current</Badge>
+                )}
+              </div>
             ))}
+            {data.ended && <Badge rounded>The End — epilogue</Badge>}
+            {data.stage?.present && (
+              <div className="text-xs text-content-300 pt-1">
+                On stage: {data.characters
+                  .filter((c: Character) => data.stage.present.includes(c.id))
+                  .map((c: Character) => c.name)
+                  .join(", ") || "(nobody)"}
+              </div>
+            )}
           </div>
         </Field>
       )}
-      {chat.mode === "scene" && data.stage?.scene && (
-        <Field label="Scene (fixed)">
-          <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>
-        </Field>
-      )}
-      {chat.mode === "location" && data.stage?.location && (
-        <Field label="Location (fixed)">
-          <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>
+      {chat.mode === "immersive" && (data.stage?.scene || data.stage?.location) && (
+        <Field label="Setting (fixed)">
+          <div className="flex gap-1.5">
+            {data.stage?.scene && <Badge variant="secondary" rounded><Clapperboard size={11} /> {data.stage.scene.name}</Badge>}
+            {data.stage?.location && <Badge variant="secondary" rounded><MapPin size={11} /> {data.stage.location.name}</Badge>}
+          </div>
         </Field>
       )}
       <Field label="Save states">

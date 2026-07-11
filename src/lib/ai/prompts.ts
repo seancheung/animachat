@@ -10,7 +10,6 @@ import {
   getRelationship,
   getScene,
   getSettings,
-  getStory,
   getSummary,
   listFacts,
   listMessages,
@@ -27,7 +26,7 @@ import type {
   Scene,
   Settings,
   StageStyle,
-  Story,
+  StorySnapshot,
 } from "@/lib/types";
 import { EMOTIONS } from "@/lib/types";
 
@@ -36,30 +35,56 @@ import { EMOTIONS } from "@/lib/types";
 export interface StageState {
   sceneId: string | null;
   locationId: string | null;
+  /** story mode: character ids on stage (never includes the played character); null = everyone (casual/immersive) */
+  present: string[] | null;
+  /** story mode: the playthrough has concluded (<the-end/>) */
+  ended: boolean;
 }
 
-/** Walk the timeline accumulating scene-change events; never a free-floating field. */
+/** Playthroughs resolve scenes/locations from their frozen snapshot, never the library. */
+export function chatScene(chat: Chat, id: string | null | undefined): Scene | null {
+  if (!id) return null;
+  return chat.storySnapshot?.scenes.find((s) => s.scene.id === id)?.scene ?? getScene(id);
+}
+
+export function chatLocation(chat: Chat, id: string | null | undefined): Location | null {
+  if (!id) return null;
+  return chat.storySnapshot?.locations.find((l) => l.id === id) ?? getLocation(id);
+}
+
+/** Walk the timeline accumulating stage events; never a free-floating field. */
 export function computeStage(chat: Chat, messages: Message[], uptoPosition?: number): StageState {
-  let sceneId = chat.sceneId;
-  if (!sceneId && chat.storyId) {
-    const story = getStory(chat.storyId);
-    sceneId = story?.sceneIds[0] ?? null;
-  }
-  const scene = sceneId ? getScene(sceneId) : null;
+  const snap = chat.mode === "story" ? chat.storySnapshot : null;
+  const participants = new Set(chat.characterIds);
+  // a scene opens with its snapshot cast (minus the played character = the participants filter)
+  const castOf = (sceneId: string | null): string[] | null => {
+    if (!snap) return null;
+    const entry = snap.scenes.find((s) => s.scene.id === sceneId);
+    return (entry?.cast ?? []).filter((id) => participants.has(id));
+  };
+  const startSceneId = chat.sceneId ?? snap?.scenes[0]?.scene.id ?? null;
   const state: StageState = {
-    sceneId,
-    locationId: chat.locationId ?? scene?.locationId ?? null,
+    sceneId: startSceneId,
+    locationId: chat.locationId ?? chatScene(chat, startSceneId)?.locationId ?? null,
+    present: castOf(startSceneId),
+    ended: false,
   };
   for (const m of messages) {
     if (uptoPosition !== undefined && m.position > uptoPosition) break;
     const ev = m.sceneEvent;
     if (!ev) continue;
-    if (ev.kind === "scene") {
-      state.sceneId = ev.sceneId ?? null;
-      state.locationId = ev.locationId ?? (ev.sceneId ? getScene(ev.sceneId)?.locationId ?? null : null);
-    } else if (ev.kind === "location") {
-      state.locationId = ev.locationId ?? null;
+    if (ev.sceneId) {
+      state.sceneId = ev.sceneId;
+      state.locationId = chatScene(chat, ev.sceneId)?.locationId ?? null;
+      state.present = castOf(ev.sceneId);
     }
+    if (state.present && (ev.enter?.length || ev.leave?.length)) {
+      const cur = new Set(state.present);
+      for (const id of ev.enter ?? []) if (participants.has(id)) cur.add(id);
+      for (const id of ev.leave ?? []) cur.delete(id);
+      state.present = [...cur];
+    }
+    if (ev.theEnd) state.ended = true;
   }
   return state;
 }
@@ -74,9 +99,9 @@ export interface StageAssets {
 }
 
 /** Location assets win when present; otherwise the scene's own. Style fields resolve the same way. */
-export function resolveStageAssets(state: StageState): StageAssets {
-  const scene = state.sceneId ? getScene(state.sceneId) : null;
-  const location = state.locationId ? getLocation(state.locationId) : null;
+export function resolveStageAssets(chat: Chat, state: StageState): StageAssets {
+  const scene = chatScene(chat, state.sceneId);
+  const location = chatLocation(chat, state.locationId);
   // per-field precedence: the location's set fields win, the scene's fill the rest;
   // styles are opt-in — only an explicitly enabled one contributes
   const active = (st: StageStyle | null | undefined) => (st?.enabled === true ? st : null);
@@ -102,12 +127,20 @@ export interface ChatContext {
   settings: Settings;
   language: string;
   pov: Pov;
+  /** all AI participants (playthroughs: roster minus the played character, from the snapshot) */
   characters: Character[];
+  /** participants currently on stage — equals `characters` outside story mode */
+  present: Character[];
   persona: Persona | null;
-  story: Story | null;
+  /** story mode: the roster member the user plays as (their full snapshot sheet) */
+  playedCharacter: Character | null;
+  /** story mode: the frozen story bundle */
+  snapshot: StorySnapshot | null;
   stage: StageState;
   scene: Scene | null;
   location: Location | null;
+  /** story mode: the playthrough has concluded */
+  ended: boolean;
   lorebooks: Lorebook[];
   messages: Message[];
   summaryText: string;
@@ -120,30 +153,55 @@ export interface ChatContext {
   sub: (text: string, selfName?: string) => string;
 }
 
-export function buildContext(chatId: string): ChatContext {
+/** Pass messagesOverride to build the context as of a truncated timeline (regeneration):
+ *  stage state, presence and the ended flag are all derived from the given messages. */
+export function buildContext(chatId: string, messagesOverride?: Message[]): ChatContext {
   const chat = getChat(chatId);
   if (!chat) throw new Error("Chat not found");
   const settings = getSettings();
-  const messages = listMessages(chatId);
+  const messages = messagesOverride ?? listMessages(chatId);
   const stage = computeStage(chat, messages);
   const summary = getSummary(chatId);
-  const characters = chat.characterIds.map(getCharacter).filter((c): c is Character => !!c);
-  const persona = chat.personaId ? getPersona(chat.personaId) : null;
-  const story = chat.storyId ? getStory(chat.storyId) : null;
-  const scene = stage.sceneId ? getScene(stage.sceneId) : null;
-  const location = stage.locationId ? getLocation(stage.locationId) : null;
+  const snapshot = chat.mode === "story" ? chat.storySnapshot : null;
+  const characters = snapshot
+    ? chat.characterIds
+        .map((id) => snapshot.characters.find((c) => c.id === id))
+        .filter((c): c is Character => !!c)
+    : chat.characterIds.map(getCharacter).filter((c): c is Character => !!c);
+  const playedCharacter =
+    (chat.personaCharacterId && snapshot?.characters.find((c) => c.id === chat.personaCharacterId)) || null;
+  // playing a roster member: their sheet doubles as the persona
+  const persona: Persona | null = playedCharacter
+    ? {
+        id: playedCharacter.id,
+        name: playedCharacter.name,
+        description: playedCharacter.description,
+        createdAt: playedCharacter.createdAt,
+        updatedAt: playedCharacter.updatedAt,
+      }
+    : chat.personaId
+      ? getPersona(chat.personaId)
+      : null;
+  const present = stage.present ? characters.filter((c) => stage.present!.includes(c.id)) : characters;
+  const scene = chatScene(chat, stage.sceneId);
+  const location = chatLocation(chat, stage.locationId);
   return {
     chat,
     settings,
     language: chat.language || settings.language,
     pov: (chat.pov || settings.pov) as Pov,
     characters,
+    present,
     persona,
-    story,
+    playedCharacter,
+    snapshot,
     stage,
     scene,
     location,
-    lorebooks: chat.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l),
+    ended: stage.ended,
+    lorebooks: snapshot
+      ? snapshot.lorebooks
+      : chat.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l),
     messages,
     summaryText: summary.content,
     summaryCovered: summary.coveredPosition,
@@ -154,7 +212,7 @@ export function buildContext(chatId: string): ChatContext {
         userName: persona?.name,
         locationName: location?.name,
         sceneName: scene?.name,
-        storyName: story?.name,
+        storyName: snapshot?.name,
       }),
     contextBudget: (model) =>
       chat.overrides.contextBudget ??
@@ -178,21 +236,18 @@ export function speakerName(ctx: ChatContext, m: Message): string {
   if (m.role === "user") return ctx.persona?.name ?? "User";
   if (m.role === "narrator") return "Narrator";
   if (m.role === "character") {
-    return ctx.characters.find((c) => c.id === m.characterId)?.name ?? getCharacter(m.characterId ?? "")?.name ?? "???";
+    return (
+      ctx.characters.find((c) => c.id === m.characterId)?.name ??
+      getCharacter(m.characterId ?? "")?.name ??
+      ctx.chat.nameSnapshots[m.characterId ?? ""] ??
+      "???"
+    );
   }
   return "";
 }
 
 function renderMessageLine(ctx: ChatContext, m: Message): string | null {
-  if (m.role === "marker") {
-    if (!m.sceneEvent) return null;
-    if (m.sceneEvent.kind === "scene") {
-      const s = m.sceneEvent.sceneId ? getScene(m.sceneEvent.sceneId) : null;
-      return ctx.sub(`[The scene changes to: ${s?.name ?? "a new scene"}. ${s?.setup ?? ""}]`);
-    }
-    const l = m.sceneEvent.locationId ? getLocation(m.sceneEvent.locationId) : null;
-    return `[The setting moves to: ${l?.name ?? "a new place"}.]`;
-  }
+  if (m.role === "marker") return null; // legacy role — nothing creates markers anymore
   const content = activeContent(m);
   if (!content) return null;
   return `${speakerName(ctx, m)}: ${content}`;
@@ -250,22 +305,25 @@ function povRules(pov: Pov, personaName: string, selfName: string | null): strin
 
 function worldBlock(ctx: ChatContext): string {
   const parts: string[] = [];
-  if (ctx.story) {
-    const sceneNames = ctx.story.sceneIds.map((id, i) => {
-      const s = getScene(id);
-      const marker = id === ctx.stage.sceneId ? " <- current scene" : "";
-      return `  ${i + 1}. ${s?.name ?? "?"}${marker}`;
+  if (ctx.snapshot) {
+    const sceneNames = ctx.snapshot.scenes.map(({ scene }, i) => {
+      const marker = scene.id === ctx.stage.sceneId ? " <- current scene" : "";
+      return `  ${i + 1}. ${scene.name}${marker}`;
     });
-    parts.push(`STORY: ${ctx.story.name}\n${ctx.story.description}\nScenes:\n${sceneNames.join("\n")}`);
+    parts.push(`STORY: ${ctx.snapshot.name}\n${ctx.snapshot.description}\nScenes:\n${sceneNames.join("\n")}`);
   }
   if (ctx.scene) parts.push(`CURRENT SCENE: ${ctx.scene.name}\n${ctx.scene.setup}`);
   if (ctx.location) parts.push(`LOCATION: ${ctx.location.name}\n${ctx.location.description}`);
+  if (ctx.ended) parts.push(`THE STORY HAS CONCLUDED. What follows is a free-form epilogue.`);
   return ctx.sub(parts.join("\n\n"));
 }
 
 function personaBlock(ctx: ChatContext): string {
   if (!ctx.persona) return "";
-  return `THE USER'S CHARACTER (persona): ${ctx.persona.name}\n${ctx.sub(ctx.persona.description)}`;
+  const label = ctx.playedCharacter
+    ? `THE USER'S CHARACTER (the user plays ${ctx.persona.name}, a member of the story's cast)`
+    : `THE USER'S CHARACTER (persona)`;
+  return `${label}: ${ctx.persona.name}\n${ctx.sub(ctx.persona.description)}`;
 }
 
 function formatRules(ctx: ChatContext, selfName: string | null): string {
@@ -330,11 +388,14 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     (m) => m.role === "character" && m.characterId === character.id
   ).length;
   const facts = listFacts(character.id, 50);
+  // playing a cast member: the "user relationship" is really character↔character
   const rel =
     ctx.persona && ctx.settings.userRelationshipsEnabled && character.trackRelationship
-      ? getRelationship(character.id, ctx.persona.id)
+      ? ctx.playedCharacter
+        ? getCharRelationship(character.id, ctx.playedCharacter.id)
+        : getRelationship(character.id, ctx.persona.id)
       : null;
-  const others = ctx.characters.filter((c) => c.id !== character.id);
+  const others = ctx.present.filter((c) => c.id !== character.id);
   // this character's view of the other characters present (global switch + both sides' tracking)
   const charRels =
     ctx.settings.charRelationshipsEnabled && character.trackRelationship
@@ -399,31 +460,50 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
 export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
+
+  // story mode: where we are in the scene sequence, and who is on/off stage
   let nextSceneInfo = "";
-  if (ctx.story && ctx.stage.sceneId) {
-    const idx = ctx.story.sceneIds.indexOf(ctx.stage.sceneId);
-    if (idx !== -1 && idx < ctx.story.sceneIds.length - 1) {
-      const next = getScene(ctx.story.sceneIds[idx + 1]);
-      if (next) nextSceneInfo = ctx.sub(`NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}`);
+  let finalScene = false;
+  if (ctx.snapshot && ctx.stage.sceneId && !ctx.ended) {
+    const idx = ctx.snapshot.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId);
+    finalScene = idx === ctx.snapshot.scenes.length - 1;
+    if (idx !== -1 && !finalScene) {
+      const next = ctx.snapshot.scenes[idx + 1].scene;
+      nextSceneInfo = ctx.sub(`NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}`);
     }
   }
+  const offStage = ctx.snapshot ? ctx.characters.filter((c) => !ctx.present.some((p) => p.id === c.id)) : [];
+  const castBlock = ctx.snapshot
+    ? `CAST ON STAGE: ${ctx.present.map((c) => c.name).join(", ") || "(nobody)"}` +
+      (offStage.length ? `\nCAST OFF STAGE (can be brought in): ${offStage.map((c) => c.name).join(", ")}` : "")
+    : "";
+
+  const stagingRules =
+    ctx.snapshot && !ctx.ended
+      ? `You direct the stage. To bring a cast member on, append <enter>Name</enter>; to send one off, append <leave>Name</leave> — always also describing the arrival or departure in the narration itself. Only cast members listed above can enter.\n` +
+        (nextSceneInfo
+          ? `If the current scene has clearly run its course, move the story to the next scene: write the transition and append <next-scene/> on its own line.\n`
+          : "") +
+        `When the story reaches its natural resolution${finalScene ? " (this is the FINAL scene — <next-scene/> is not available)" : ""}, conclude it: write the closing narration and append <the-end/> on its own line. A concluding message needs no suggested actions.\n`
+      : "";
 
   const system = [
     `You are the NARRATOR of an ongoing roleplay. You describe scenery, atmosphere, events and transitions; you move the plot forward. You never speak or decide for the characters or the user.`,
     `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`,
+    castBlock,
     worldBlock(ctx),
     personaBlock(ctx),
     nextSceneInfo,
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, null)}\n` +
-      `Write a short narration (2-5 sentences) that helps the plot proceed. Narration is all description — asterisks are optional for you.\n` +
-      (nextSceneInfo
-        ? `If the current scene has clearly run its course and the story should move to the next scene, write the transition and append the tag <next-scene/> on its own line right after the narration.\n`
-        : "") +
-      `Then ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
-      `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
-      `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is.`,
+      (ctx.ended
+        ? `The story has concluded — narrate a gentle epilogue moment (2-4 sentences). No tags of any kind.`
+        : `Write a short narration (2-5 sentences) that helps the plot proceed. Narration is all description — asterisks are optional for you.\n` +
+          stagingRules +
+          `Unless you are concluding the story, ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
+          `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
+          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is.`),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -440,7 +520,7 @@ export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel)
     .map((m) => renderMessageLine(ctx, m) ?? "")
     .filter(Boolean)
     .join("\n");
-  const candidates = ctx.characters.map((c) => `"${c.id}" = ${c.name}`);
+  const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`);
   if (ctx.chat.narratorEnabled) candidates.push(`"narrator" = the scene narrator`);
   const system =
     `You direct a roleplay chat. Given the recent transcript, decide who should respond next.\n` +
@@ -457,7 +537,7 @@ export function buildMentionResolveRequest(
   text: string,
   author?: Character | null
 ): BuiltRequest {
-  const candidates = ctx.characters.map((c) => `"${c.id}" = ${c.name}`).join("\n");
+  const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`).join("\n");
   const system =
     `You route a group roleplay chat. A message addresses one or more characters with @mentions — ` +
     `partial names and nicknames count, as long as it is clear who is meant.\n` +

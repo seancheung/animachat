@@ -88,14 +88,7 @@ export function seedPresets() {
     locationId: tavern.id,
   });
 
-  saveStory({
-    name: "The Alchemist's Debt",
-    description:
-      "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice pulls [user_name] into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
-    sceneIds: [scene1.id, scene2.id],
-  });
-
-  saveLorebook({
+  const lorebook = saveLorebook({
     name: "Moonlit Tavern lore",
     description: "Shared world facts for the starter story",
     entries: [
@@ -116,6 +109,19 @@ export function seedPresets() {
         scanDepth: 8,
       },
     ],
+  });
+
+  saveStory({
+    name: "The Alchemist's Debt",
+    description:
+      "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice pulls [user_name] into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
+    characterIds: [mira.id, kael.id],
+    // Kael enters the first scene mid-story if the narrator wills it — only Mira opens it
+    scenes: [
+      { sceneId: scene1.id, cast: [mira.id] },
+      { sceneId: scene2.id, cast: [mira.id, kael.id] },
+    ],
+    lorebookIds: [lorebook.id],
   });
 
   // the two starters share some history

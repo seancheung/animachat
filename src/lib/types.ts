@@ -106,11 +106,20 @@ export interface Scene {
   updatedAt: number;
 }
 
+export interface StoryScene {
+  sceneId: string;
+  /** roster members (character ids) on stage when the scene opens — subset of the story's characterIds */
+  cast: string[];
+}
+
 export interface Story {
   id: string;
   name: string;
   description: string;
-  sceneIds: string[];
+  /** ordered roster — drives [charN_name] in playthroughs and the play-as picker */
+  characterIds: string[];
+  scenes: StoryScene[];
+  lorebookIds: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -144,10 +153,30 @@ export interface ChatOverrides {
 }
 
 /**
- * story: a story is required, scene switching within its scenes only, no location control.
- * scene: one fixed scene, no switching. location: one fixed location. casual: none of these.
+ * casual: no setting (characters optional when the narrator is enabled — solo/text-adventure).
+ * immersive: one fixed scene OR location, never switches.
+ * story: a playthrough of a story — narrator required and in sole control of scene
+ * progression, presence and the ending; runs off a self-contained snapshot.
  */
-export type ChatMode = "story" | "scene" | "location" | "casual";
+export type ChatMode = "casual" | "immersive" | "story";
+
+/**
+ * Self-contained copy of a story taken when a playthrough is created. Playthroughs
+ * never read the library afterwards: deleting or editing library items can't touch a
+ * running or finished playthrough. Media stay content-addressed asset ids (never
+ * copied); the storage prune counts snapshot references as used.
+ */
+export interface StorySnapshot {
+  name: string;
+  description: string;
+  /** full sheets in roster order (includes the played character, if any) */
+  characters: Character[];
+  /** ordered scene sequence; cast = character ids on stage when the scene opens */
+  scenes: { scene: Scene; cast: string[] }[];
+  /** locations referenced by the scenes */
+  locations: Location[];
+  lorebooks: Lorebook[];
+}
 
 export interface Chat {
   id: string;
@@ -161,6 +190,12 @@ export interface Chat {
   lorebookIds: string[];
   characterIds: string[];
   personaId: string | null;
+  /** story mode: play as this roster member instead of a persona (resolved from the snapshot) */
+  personaCharacterId: string | null;
+  /** story mode: the frozen story bundle this playthrough runs on */
+  storySnapshot: StorySnapshot | null;
+  /** characterId -> name at creation; display fallback after a library character is deleted */
+  nameSnapshots: Record<string, string>;
   modelId: string | null;
   /** per-character model override for group chats: characterId -> modelId */
   charModels: Record<string, string>;
@@ -174,10 +209,20 @@ export interface Chat {
 
 export type MessageRole = "user" | "character" | "narrator" | "marker";
 
+/**
+ * Stage-affecting metadata on a narrator message, parsed from its structured tags.
+ * All stage state (current scene, who's present, whether the story has ended) is
+ * derived by folding these events over the timeline — never stored mutably.
+ */
 export interface SceneEvent {
-  kind: "scene" | "location";
+  /** <next-scene/>: the story advanced to this scene (id within the playthrough snapshot) */
   sceneId?: string | null;
-  locationId?: string | null;
+  /** <enter>: character ids brought on stage mid-scene */
+  enter?: string[];
+  /** <leave>: character ids sent off stage mid-scene */
+  leave?: string[];
+  /** <the-end/>: the playthrough concluded */
+  theEnd?: boolean;
 }
 
 export interface MessageVariant {

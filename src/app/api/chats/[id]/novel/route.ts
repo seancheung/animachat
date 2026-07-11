@@ -1,31 +1,38 @@
 import JSZip from "jszip";
 import { bad, handler, type IdParams } from "@/lib/api";
-import { getChat, getCharacter, getLocation, getPersona, getScene, listMessages } from "@/lib/store";
+import { chatScene } from "@/lib/ai/prompts";
+import { getChat, getCharacter, getPersona, listMessages } from "@/lib/store";
 import type { Chat, Message } from "@/lib/types";
 
 function speakerOf(chat: Chat, m: Message): string {
-  if (m.role === "user") return chat.personaId ? getPersona(chat.personaId)?.name ?? "You" : "You";
+  if (m.role === "user") {
+    const played = chat.personaCharacterId
+      ? chat.storySnapshot?.characters.find((c) => c.id === chat.personaCharacterId)
+      : null;
+    return played?.name ?? (chat.personaId ? getPersona(chat.personaId)?.name ?? "You" : "You");
+  }
   if (m.role === "narrator") return "";
-  return getCharacter(m.characterId ?? "")?.name ?? "???";
+  return (
+    chat.storySnapshot?.characters.find((c) => c.id === m.characterId)?.name ??
+    getCharacter(m.characterId ?? "")?.name ??
+    chat.nameSnapshots[m.characterId ?? ""] ??
+    "???"
+  );
 }
 
 function toMarkdown(chat: Chat): string {
   const lines: string[] = [`# ${chat.title}`, ""];
   for (const m of listMessages(chat.id)) {
     const content = m.variants[m.activeVariant]?.content ?? "";
-    if (m.role === "marker") {
-      if (m.sceneEvent?.kind === "scene") {
-        const s = m.sceneEvent.sceneId ? getScene(m.sceneEvent.sceneId) : null;
-        lines.push(`---`, "", `## ${s?.name ?? "New scene"}`, "");
-      } else if (m.sceneEvent?.kind === "location") {
-        const l = m.sceneEvent.locationId ? getLocation(m.sceneEvent.locationId) : null;
-        lines.push(`*— ${l?.name ?? "elsewhere"} —*`, "");
-      }
-      continue;
+    // a narrator message that advances the story opens a new chapter
+    if (m.sceneEvent?.sceneId) {
+      const s = chatScene(chat, m.sceneEvent.sceneId);
+      lines.push(`---`, "", `## ${s?.name ?? "New scene"}`, "");
     }
-    if (!content) continue;
+    if (m.role === "marker" || !content) continue;
     if (m.role === "narrator") lines.push(`*${content.replace(/^\*|\*$/g, "")}*`, "");
     else lines.push(`**${speakerOf(chat, m)}:** ${content}`, "");
+    if (m.sceneEvent?.theEnd) lines.push(`---`, "", `## The End`, "");
   }
   return lines.join("\n");
 }

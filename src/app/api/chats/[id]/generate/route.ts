@@ -20,14 +20,7 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
-import {
-  appendMessage,
-  getMessage,
-  getScene,
-  getStory,
-  saveChat,
-  updateMessage,
-} from "@/lib/store";
+import { appendMessage, getMessage, saveChat, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -74,19 +67,30 @@ async function resolveMentions(
   const parsed = extractJson<{ speakers?: string[] }>(raw);
   const out: Character[] = [];
   for (const id of parsed?.speakers ?? []) {
-    const c = ctx.characters.find((x) => x.id === id);
+    const c = ctx.present.find((x) => x.id === id);
     if (c && !out.includes(c)) out.push(c);
   }
   return out;
 }
 
+/** Loose name match for narrator <enter>/<leave> payloads — fail-soft (null on no match). */
+function matchCharacter(ctx: ChatContext, name: string): Character | null {
+  const n = name.trim().toLowerCase();
+  if (!n) return null;
+  return (
+    ctx.characters.find((c) => c.name.toLowerCase() === n) ??
+    ctx.characters.find((c) => c.name.toLowerCase().startsWith(n)) ??
+    null
+  );
+}
+
 async function pickDefaultSpeaker(ctx: ChatContext, body: GenerateBody): Promise<Speaker> {
-  if (ctx.characters.length === 1 && !ctx.chat.narratorEnabled) {
-    return { role: "character", character: ctx.characters[0] };
+  if (ctx.present.length === 1 && !ctx.chat.narratorEnabled) {
+    return { role: "character", character: ctx.present[0] };
   }
-  if (ctx.characters.length === 0) {
+  if (ctx.present.length === 0) {
     if (ctx.chat.narratorEnabled) return { role: "narrator", character: null };
-    throw new Error("Chat has no characters");
+    throw new Error("Nobody is on stage to reply");
   }
   // group chat and/or narrator: ask the orchestrator
   const modelRef = resolveModel("orchestrator", ctx.chat);
@@ -102,8 +106,8 @@ async function pickDefaultSpeaker(ctx: ChatContext, body: GenerateBody): Promise
   const parsed = extractJson<{ next?: string }>(raw);
   const next = parsed?.next;
   if (next === "narrator" && ctx.chat.narratorEnabled) return { role: "narrator", character: null };
-  const c = ctx.characters.find((x) => x.id === next);
-  return { role: "character", character: c ?? ctx.characters[0] };
+  const c = ctx.present.find((x) => x.id === next);
+  return { role: "character", character: c ?? ctx.present[0] };
 }
 
 /**
@@ -114,14 +118,14 @@ async function pickDefaultSpeaker(ctx: ChatContext, body: GenerateBody): Promise
 async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speaker[]> {
   if (body.mode === "narrator") return [{ role: "narrator", character: null }];
   if (body.mode === "character" && body.characterId) {
-    const c = ctx.characters.find((x) => x.id === body.characterId);
-    if (!c) throw new Error("Character not in this chat");
+    const c = ctx.present.find((x) => x.id === body.characterId);
+    if (!c) throw new Error("Character not on stage in this chat");
     return [{ role: "character", character: c }];
   }
   const text = body.userText?.trim() ?? "";
-  if (text && ctx.characters.length > 0) {
+  if (text && ctx.present.length > 0) {
     if (ALL_RE.test(text)) {
-      return ctx.characters.map((c) => ({ role: "character" as const, character: c }));
+      return ctx.present.map((c) => ({ role: "character" as const, character: c }));
     }
     if (MENTION_RE.test(text)) {
       const mentioned = await resolveMentions(ctx, text);
@@ -132,14 +136,12 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
   return [await pickDefaultSpeaker(ctx, body)];
 }
 
-function nextSceneEvent(ctx: ChatContext): SceneEvent | null {
-  if (ctx.chat.mode !== "story" || !ctx.chat.storyId || !ctx.stage.sceneId) return null;
-  const story = getStory(ctx.chat.storyId);
-  if (!story) return null;
-  const idx = story.sceneIds.indexOf(ctx.stage.sceneId);
-  if (idx === -1 || idx >= story.sceneIds.length - 1) return null;
-  const nextId = story.sceneIds[idx + 1];
-  return { kind: "scene", sceneId: nextId, locationId: getScene(nextId)?.locationId ?? null };
+function nextSceneId(ctx: ChatContext): string | null {
+  const snap = ctx.snapshot;
+  if (!snap || !ctx.stage.sceneId) return null;
+  const idx = snap.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId);
+  if (idx === -1 || idx >= snap.scenes.length - 1) return null;
+  return snap.scenes[idx + 1].scene.id;
 }
 
 function maybeGenerateTitle(chatId: string) {
@@ -239,9 +241,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         // fresh context per turn so later speakers see earlier replies —
         // and so the infinite-mentions toggle is re-read live from the chat
-        const turnCtx = regenTarget
-          ? { ...buildContext(chatId), messages: regenMessages }
-          : buildContext(chatId);
+        const turnCtx = regenTarget ? buildContext(chatId, regenMessages) : buildContext(chatId);
 
         const infinite = !!turnCtx.chat.overrides.infiniteMentions;
         // kill switch: flipping infinite off mid-chain stops after the reply that just finished
@@ -273,6 +273,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         let emotion: string | null = null;
         let options: string[] | null = null;
         let sawNextScene = false;
+        let sawTheEnd = false;
+        const enters: string[] = [];
+        const leaves: string[] = [];
         const parser = new TagStreamParser();
 
         const handleEvents = (events: TagEvent[]) => {
@@ -287,6 +290,11 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               options = ev.options;
             } else if (ev.type === "nextScene") {
               sawNextScene = true;
+            } else if (ev.type === "theEnd") {
+              sawTheEnd = true;
+            } else if (ev.type === "enter" || ev.type === "leave") {
+              // narrator-only staging; resolved to ids at save time (fail-soft)
+              (ev.type === "enter" ? enters : leaves).push(ev.name);
             }
           }
         };
@@ -320,7 +328,27 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         content = content.trim();
         if (content) {
-          const sceneEvent = sawNextScene && speaker.role === "narrator" ? nextSceneEvent(turnCtx) : null;
+          // stage events come only from the narrator, and never once the story has ended
+          let sceneEvent: SceneEvent | null = null;
+          if (speaker.role === "narrator" && turnCtx.snapshot && !turnCtx.ended) {
+            const ev: SceneEvent = {};
+            if (sawNextScene) {
+              const next = nextSceneId(turnCtx);
+              if (next) ev.sceneId = next;
+            }
+            const resolve = (names: string[]) => [
+              ...new Set(names.map((n) => matchCharacter(turnCtx, n)?.id).filter((x): x is string => !!x)),
+            ];
+            const enterIds = resolve(enters);
+            const leaveIds = resolve(leaves);
+            if (enterIds.length) ev.enter = enterIds;
+            if (leaveIds.length) ev.leave = leaveIds;
+            if (sawTheEnd) {
+              ev.theEnd = true;
+              options = null; // no suggested actions under "The End"
+            }
+            if (Object.keys(ev).length) sceneEvent = ev;
+          }
           let saved: Message | null;
           if (regenTarget) {
             const variants = [
@@ -350,7 +378,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             type: "done",
             message: saved,
             options,
-            stage: { ...stage, ...resolveStageAssets(stage) },
+            stage: { ...stage, ...resolveStageAssets(fresh.chat, stage) },
           });
         } else {
           send({ type: "done", message: null, options: null, stage: null });
@@ -359,10 +387,10 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         // characters can pass the turn by @mentioning each other (never themselves);
         // the MAX_TURNS cap and no back-to-back repeats keep it finite
-        if (!regenTarget && speaker.role === "character" && content && turnCtx.characters.length > 1) {
+        if (!regenTarget && speaker.role === "character" && content && turnCtx.present.length > 1) {
           let chained: Character[] = [];
           if (ALL_RE.test(content)) {
-            chained = turnCtx.characters.filter((c) => c.id !== speaker.character!.id);
+            chained = turnCtx.present.filter((c) => c.id !== speaker.character!.id);
           } else if (MENTION_RE.test(content)) {
             chained = (await resolveMentions(turnCtx, content, speaker.character).catch(() => [])).filter(
               (c) => c.id !== speaker.character!.id
