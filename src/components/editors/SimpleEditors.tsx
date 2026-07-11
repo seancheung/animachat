@@ -8,9 +8,9 @@ import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
+import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
-import Select from "@/components/ui/select";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/ui";
@@ -193,7 +193,7 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
         <Textarea className="w-full h-32" value={form.setup ?? ""} onChange={(v) => setForm({ ...form, setup: v })} />
       </Field>
       <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
-        <Select
+        <Combobox
           className="w-full"
           value={form.locationId ?? null}
           onChange={(v) => setForm({ ...form, locationId: v })}
@@ -304,7 +304,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
               <Button variant="ghost" size="sm" shape="square" onClick={() => removeCast(cid)}><X /></Button>
             </div>
           ))}
-          <Select
+          <Combobox
             className="w-full"
             value={null}
             onChange={(v) => v && !cast.includes(v) && setForm({ ...form, characterIds: [...cast, v] })}
@@ -340,7 +340,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
               )}
             </div>
           ))}
-          <Select
+          <Combobox
             className="w-full"
             value={null}
             onChange={(v) =>

@@ -13,6 +13,7 @@ import {
   ScrollText,
   Search,
   Trash2,
+  UserRound,
   VenetianMask,
 } from "lucide-react";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -20,6 +21,7 @@ import { EmptyState, Field, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
+import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
@@ -107,9 +109,21 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     : [];
 
   const settingOptions = [
-    ...(scenes?.map((s) => ({ value: `scene:${s.id}`, label: `${s.name} — scene` })) ?? []),
-    ...(locations?.map((l) => ({ value: `location:${l.id}`, label: `${l.name} — location` })) ?? []),
+    ...(scenes?.map((s) => ({ value: `scene:${s.id}`, label: s.name })) ?? []),
+    ...(locations?.map((l) => ({ value: `location:${l.id}`, label: l.name })) ?? []),
   ].sort((a, b) => a.label.localeCompare(b.label));
+  // typed option rows: the icon carries the entity type, so labels stay clean names
+  const typedOption = (icons: Record<string, React.ReactNode>) =>
+    function TypedOption(o: { value: string; label: string }) {
+      return (
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 text-content-300">{icons[o.value.split(":")[0]]}</span>
+          <span className="truncate">{o.label}</span>
+        </span>
+      );
+    };
+  const settingOption = typedOption({ scene: <Clapperboard size={13} />, location: <MapPin size={13} /> });
+  const playAsOption = typedOption({ char: <UserRound size={13} />, persona: <VenetianMask size={13} /> });
 
   const narrator = form.mode === "story" ? true : form.narratorEnabled;
   const modeValid =
@@ -200,7 +214,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           {form.mode === "story" && (
             <>
               <Field label="Story (required)" hint="cast, scenes & lorebooks come from it — snapshotted at creation">
-                <Select
+                <Combobox
                   className="w-full"
                   value={form.storyId}
                   onChange={(v) => setForm({ ...form, storyId: v, sceneId: null, personaCharacterId: null })}
@@ -209,7 +223,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 />
               </Field>
               <Field label="Play as" hint="a cast member, or one of your personas">
-                <Select
+                <Combobox
                   className="w-full"
                   value={
                     form.personaCharacterId
@@ -227,9 +241,10 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                     });
                   }}
                   options={[
-                    ...storyCast.map((c) => ({ value: `char:${c.id}`, label: `${c.name} — cast member` })),
-                    ...(personas?.map((p) => ({ value: `persona:${p.id}`, label: `${p.name} — persona` })) ?? []),
+                    ...storyCast.map((c) => ({ value: `char:${c.id}`, label: c.name })),
+                    ...(personas?.map((p) => ({ value: `persona:${p.id}`, label: p.name })) ?? []),
                   ]}
+                  renderOption={playAsOption}
                   placeholder="(spectator)"
                   clearable
                   onClear={() => setForm({ ...form, personaCharacterId: null, personaId: null })}
@@ -252,7 +267,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           )}
           {form.mode === "immersive" && (
             <Field label="Setting (required)" hint="fixed for the whole chat">
-              <Select
+              <Combobox
                 className="w-full"
                 value={
                   form.sceneId ? `scene:${form.sceneId}` : form.locationId ? `location:${form.locationId}` : null
@@ -262,13 +277,14 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                   setForm({ ...form, sceneId: kind === "scene" ? id : null, locationId: kind === "location" ? id : null });
                 }}
                 options={settingOptions}
+                renderOption={settingOption}
                 placeholder="choose a scene or location…"
               />
             </Field>
           )}
           {form.mode !== "story" && (
             <Field label="Your persona">
-              <Select
+              <Combobox
                 className="w-full"
                 value={form.personaId}
                 onChange={(v) => setForm({ ...form, personaId: v })}
