@@ -213,7 +213,7 @@ Optional in casual and immersive chats; **required in playthroughs**, where it i
 - **BGM:** active scene/location BGM (same precedence); loops, cross-fades on scene/location change. Volume slider + mute in chat UI (mute also covers typing SFX).
 - **Typing SFX:** `sfx-typewriter.wav` plays during streaming (VN-style blip); global toggle, per-character override.
 - **Sprite animation:** fade/slide transitions on expression change and character enter/leave; subtle idle motion (e.g. breathing bob) so the stage feels alive — the idle motion can be disabled per character.
-- **Fullscreen VN mode:** toggle that hides app chrome — just background, stage, and a dialogue box at the bottom, advancing message-by-message on click like a real visual novel. Normal chat view remains the default.
+- **Fullscreen VN mode:** toggle that hides app chrome — just background, stage, and a dialogue box at the bottom, advancing message-by-message on click like a real visual novel. The stage always fills the viewport; the dialogue box floats over it, height-capped to roughly the bottom third with long messages scrolling inside (the box keeps the tail visible while streaming). Normal chat view remains the default.
 - Character-immersive theming throughout.
 
 ## AI output structure

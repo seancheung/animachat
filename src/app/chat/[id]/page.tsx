@@ -543,6 +543,13 @@ function VnOverlay({
 
   const v = shown?.variants[shown.activeVariant];
   const displayText = streaming && atEnd ? streaming.text : v?.content ?? "";
+
+  // the box is height-capped and scrolls internally — keep the tail of a
+  // long or streaming message in view
+  const textRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    textRef.current?.scrollTo({ top: textRef.current.scrollHeight });
+  }, [displayText]);
   const speakerName =
     streaming && atEnd
       ? streaming.role === "narrator"
@@ -555,42 +562,44 @@ function VnOverlay({
           : characters.find((c: Character) => c.id === shown?.characterId)?.name;
 
   return (
-    <div className="fixed inset-0 z-40 bg-black flex flex-col">
-      <div className="flex-1 relative min-h-0">
+    <div className="fixed inset-0 z-40 bg-black">
+      {/* the stage always fills the viewport — the dialogue box floats over it,
+          so its height never squashes the sprites */}
+      <div className="absolute inset-0">
         <VNStage characters={stageCharacters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
-        <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          shape="circle"
-          className="absolute top-3 right-12 opacity-15 hover:opacity-100 transition-opacity"
-          title={boxHidden ? "Show dialogue box" : "Hide dialogue box"}
-          onClick={() => setBoxHidden(!boxHidden)}
-        >
-          {boxHidden ? <MessageSquareOff /> : <MessageSquare />}
-        </Button>
-        {!atEnd && (
-          <Badge variant="secondary" rounded className="absolute top-3 left-3">
-            history {idx + 1}/{messages.length} — click to advance
-          </Badge>
-        )}
       </div>
+      <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        shape="circle"
+        className="absolute top-3 right-12 opacity-15 hover:opacity-100 transition-opacity"
+        title={boxHidden ? "Show dialogue box" : "Hide dialogue box"}
+        onClick={() => setBoxHidden(!boxHidden)}
+      >
+        {boxHidden ? <MessageSquareOff /> : <MessageSquare />}
+      </Button>
+      {!atEnd && (
+        <Badge variant="secondary" rounded className="absolute top-3 left-3">
+          history {idx + 1}/{messages.length} — click to advance
+        </Badge>
+      )}
       <div
         className={cn(
-          "mx-auto w-full max-w-3xl px-6 pb-5 relative z-10",
-          !boxHidden && "-mt-28 cursor-pointer select-none"
+          "absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-3xl px-6 pb-5",
+          !boxHidden && "cursor-pointer select-none"
         )}
         style={styleVars}
         onClick={boxHidden ? undefined : () => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
         {!boxHidden && (
-          <div className="msg-bubble vn-dialog rounded-lg border border-base-400 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
-            {speakerName && <div className="vn-speaker text-sm font-semibold mb-1">{speakerName}</div>}
-            <div className="text-[1.02rem] leading-relaxed">
+          <div className="msg-bubble vn-dialog flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
+            {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
+            <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
               <MessageText text={displayText} streaming={!!streaming && atEnd} />
             </div>
             {atEnd && !busy && v?.options && (
-              <div className="flex flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
                 {v.options.map((o: string, i: number) => (
                   <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
                     <ChevronRight /> {o}
