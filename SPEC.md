@@ -183,6 +183,7 @@ Parser rules:
 - Chat-style co-writing side panel in every editor (character/story/scene/location).
 - Conversational side streams as prose; the assistant fills/updates form fields via tool calls as the discussion progresses.
 - **Reference attachments:** a picker in the input toolbar attaches library items (characters, personas, locations, scenes, stories, lorebooks) to the conversation; their sheets are sent as read-only background context with every message, so new content can build on the existing cast and world (e.g. a scene written for specific characters). Items that no longer exist are skipped silently.
+- **Library guide:** a Guide button on the library page opens a batch co-writing dialog — the assistant creates/updates any number of items across all types in one conversation, shown on the left as editable forms (removable per item). Attached `.txt`/`.md` files are sent as source material (truncated past a size cap) so items can be extracted from a novel or notes. Nothing persists until Save, which stores the whole batch — scenes link to locations and stories to their scenes by name, against the batch or the existing library.
 - Follows the global language setting.
 
 ## Language

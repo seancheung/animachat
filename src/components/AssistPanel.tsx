@@ -1,17 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Paperclip, SendHorizontal, X } from "lucide-react";
+import { FileText, FileUp, Paperclip, SendHorizontal, X } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { streamSse } from "@/lib/ui";
 import { MessageText } from "./MessageText";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
+}
+
+interface TextFile {
+  name: string;
+  text: string;
 }
 
 /**
@@ -22,17 +28,24 @@ export function AssistPanel({
   entityType,
   fields,
   onFields,
+  allowFiles = false,
+  emptyHint,
 }: {
   entityType: string;
   fields: Record<string, unknown>;
   onFields: (partial: Record<string, unknown>) => void;
+  /** offer attaching .txt/.md files, sent as source material with every message */
+  allowFiles?: boolean;
+  emptyHint?: string;
 }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [refs, setRefs] = useState<LibraryRef[]>([]);
+  const [files, setFiles] = useState<TextFile[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
 
@@ -56,6 +69,7 @@ export function AssistPanel({
           fields: fieldsRef.current,
           messages: history,
           references: refs.map(({ type, id }) => ({ type, id })),
+          attachments: files,
         },
         (ev) => {
           if (ev.type === "text") {
@@ -89,9 +103,8 @@ export function AssistPanel({
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
         {messages.length === 0 && (
           <div className="text-xs text-content-400 leading-relaxed">
-            Describe what you want to create and we&apos;ll write it together — the form fills in as
-            we go. e.g. &quot;a tsundere alchemist who secretly loves stray cats&quot;. Attach library
-            items with the paperclip to build on existing characters and places.
+            {emptyHint ??
+              "Describe what you want to create and we'll write it together — the form fills in as we go. e.g. \"a tsundere alchemist who secretly loves stray cats\". Attach library items with the paperclip to build on existing characters and places."}
           </div>
         )}
         {messages.map((m, i) => (
@@ -107,7 +120,7 @@ export function AssistPanel({
           </div>
         ))}
       </div>
-      {refs.length > 0 && (
+      {(refs.length > 0 || files.length > 0) && (
         <div className="flex flex-wrap gap-1 pt-2">
           {refs.map((r) => {
             const Icon = libraryTypeIcon(r.type);
@@ -125,6 +138,19 @@ export function AssistPanel({
               </Badge>
             );
           })}
+          {files.map((f) => (
+            <Badge key={f.name} variant="secondary" rounded>
+              <FileText size={11} /> {f.name}
+              <button
+                type="button"
+                className="cursor-pointer opacity-60 hover:opacity-100"
+                title="Detach"
+                onClick={() => setFiles(files.filter((x) => x.name !== f.name))}
+              >
+                <X size={11} />
+              </button>
+            </Badge>
+          ))}
         </div>
       )}
       <InputBox
@@ -150,6 +176,17 @@ export function AssistPanel({
         >
           <Paperclip />
         </Button>
+        {allowFiles && (
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            title="Attach text files as source material (.txt, .md)"
+            onClick={() => fileRef.current?.click()}
+          >
+            <FileUp />
+          </Button>
+        )}
         <span className="flex-1" />
         <Button size="sm" shape="square" title="Send (Enter)" onClick={send} disabled={busy || !input.trim()}>
           <SendHorizontal />
@@ -163,6 +200,33 @@ export function AssistPanel({
         selection={refs}
         onChange={setRefs}
       />
+      {allowFiles && (
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          multiple
+          accept=".txt,.md,text/plain,text/markdown"
+          onChange={async (e) => {
+            const picked = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            const read = await Promise.all(
+              picked.map(async (f) => {
+                try {
+                  return { name: f.name, text: await f.text() };
+                } catch {
+                  toast.error(`Could not read "${f.name}"`);
+                  return null;
+                }
+              })
+            );
+            setFiles((prev) => [
+              ...prev,
+              ...read.filter((f): f is TextFile => !!f?.text && !prev.some((p) => p.name === f!.name)),
+            ]);
+          }}
+        />
+      )}
     </div>
   );
 }

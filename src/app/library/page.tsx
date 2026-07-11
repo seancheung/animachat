@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import useSWR from "swr";
-import { Download, Plus, Upload } from "lucide-react";
+import { Download, Plus, Sparkles, Upload } from "lucide-react";
 import { CharacterEditor } from "@/components/editors/CharacterEditor";
 import {
   LocationEditor,
@@ -14,6 +14,7 @@ import {
 import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
+import { GuideDialog } from "@/components/GuideDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
 import Tabs from "@/components/ui/tab";
@@ -47,6 +48,7 @@ export default function LibraryPage() {
   const [editing, setEditing] = useState<any | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
+  const [guideOpen, setGuideOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   const type = TYPES.find((t) => t.key === tab)!;
@@ -93,6 +95,9 @@ export default function LibraryPage() {
           >
             <Download /> Export
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setGuideOpen(true)}>
+            <Sparkles /> Guide
+          </Button>
           <Button size="sm" onClick={() => setEditing({})}>
             <Plus /> New
           </Button>
@@ -117,6 +122,8 @@ export default function LibraryPage() {
           ))}
         </div>
       </div>
+
+      <GuideDialog open={guideOpen} onClose={() => setGuideOpen(false)} />
 
       <LibraryPicker
         open={exportOpen}

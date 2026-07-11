@@ -44,13 +44,29 @@ const FIELD_DOCS: Record<string, string> = {
     `"entries": [{"id": "keep existing id or omit for new", "title": string, "keywords": ["trigger", "words"], "content": string, "scanDepth": 8}]`,
 };
 
+// multi-item "library guide" mode: one batch of items across all entity types
+FIELD_DOCS.library =
+  `"items": [{"type": "character" | "persona" | "location" | "scene" | "story" | "lorebook", ...fields for that type}]\n` +
+  `Per-type fields:\n` +
+  `- character: ${FIELD_DOCS.character}\n` +
+  `- persona: ${FIELD_DOCS.persona}\n` +
+  `- location: ${FIELD_DOCS.location}\n` +
+  `- scene: ${FIELD_DOCS.scene}; "locationName": string (optional — the name of a location among these items or in the library, linked on save)\n` +
+  `- story: ${FIELD_DOCS.story}; "sceneNames": ["ordered", "scene", "names"] (optional — scenes among these items or in the library, linked on save)\n` +
+  `- lorebook: ${FIELD_DOCS.lorebook}`;
+
 interface AssistBody {
   entityType: keyof typeof FIELD_DOCS;
   fields: Record<string, unknown>;
   messages: { role: "user" | "assistant"; content: string }[];
   /** library items attached by the user as background context */
   references?: { type: string; id: string }[];
+  /** text files attached by the user as source material */
+  attachments?: { name: string; text: string }[];
 }
+
+/** Cap per attached file so a whole novel can't blow the context. */
+const ATTACHMENT_CHAR_CAP = 60_000;
 
 /** Serialize an attached library item for the system prompt; null if it no longer exists. */
 function referenceText(ref: { type: string; id: string }): string | null {
@@ -106,14 +122,27 @@ export const POST = handler(async (req: Request) => {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
   const settings = getSettings();
+  const isLibrary = body.entityType === "library";
   const refTexts = (body.references ?? []).map(referenceText).filter(Boolean) as string[];
+  const attachTexts = (body.attachments ?? [])
+    .filter((a) => a?.text)
+    .map((a) => {
+      const t = String(a.text);
+      return `FILE "${a.name}"\n${t.slice(0, ATTACHMENT_CHAR_CAP)}${t.length > ATTACHMENT_CHAR_CAP ? "\n…(truncated)" : ""}`;
+    });
 
   const system =
     `You are a creative co-writing assistant inside the editor of a visual-novel roleplay app. ` +
-    `You are helping the user create/refine a ${body.entityType}. Discuss ideas conversationally in ${settings.language}, ask at most one question at a time, and be concrete.\n\n` +
+    (isLibrary
+      ? `You are helping the user populate their library: create one or more items — characters, personas, locations, scenes, stories, lorebooks — in one session, often extracted from attached source material or built as a themed set. `
+      : `You are helping the user create/refine a ${body.entityType}. `) +
+    `Discuss ideas conversationally in ${settings.language}, ask at most one question at a time, and be concrete.\n\n` +
     `CURRENT FORM STATE:\n${JSON.stringify(body.fields, null, 2)}\n\n` +
     (refTexts.length
-      ? `REFERENCE MATERIAL — library items the user attached for context. Use them to make this ${body.entityType} fit that cast and world (read-only background — don't copy them into the fields verbatim unless asked):\n\n${refTexts.join("\n\n")}\n\n`
+      ? `REFERENCE MATERIAL — library items the user attached for context. Use them to make the new content fit that cast and world (read-only background — don't copy them into the fields verbatim unless asked):\n\n${refTexts.join("\n\n")}\n\n`
+      : "") +
+    (attachTexts.length
+      ? `SOURCE MATERIAL — text files the user attached (novels, notes, transcripts). Draw items from them when asked — stay faithful to the source:\n\n${attachTexts.join("\n\n")}\n\n`
       : "") +
     `FIELDS YOU MAY SET:\n${FIELD_DOCS[body.entityType]}\n\n` +
     `Text fields support placeholder tags replaced with live chat values: [user_name] (the user's persona), ` +
@@ -121,7 +150,10 @@ export const POST = handler(async (req: Request) => {
     `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
     `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n` +
     `Whenever you and the user have converged on content (or the user asks you to write it), apply it: end your reply with\n` +
-    `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n` +
+    (isLibrary
+      ? `${OPEN}{ "items": [ ...only items you are adding or changing... ] }${CLOSE}\n` +
+        `An item is identified by its "type" + "name": a new name creates an item, an existing name updates it (only the fields you include change). Give new items complete fields. Never re-emit unchanged items.\n`
+      : `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n`) +
     `The JSON must be valid. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
 
   const encoder = new TextEncoder();
@@ -164,7 +196,7 @@ export const POST = handler(async (req: Request) => {
           modelRef,
           system,
           messages: body.messages,
-          maxTokens: 2000,
+          maxTokens: isLibrary ? 8000 : 2000, // item batches (e.g. novel extraction) need room
           feature: "assist",
           signal: abort.signal,
         })) {
@@ -187,6 +219,13 @@ export const POST = handler(async (req: Request) => {
                 (typeof body.fields?.name === "string" && (body.fields.name as string)) ||
                 null;
               fields = normalizeSelfTags(fields, selfName);
+            } else if (isLibrary && Array.isArray(fields.items)) {
+              fields.items = fields.items.map((it: unknown) => {
+                const item = it as { type?: string; name?: string };
+                return item?.type === "character"
+                  ? normalizeSelfTags(item, typeof item.name === "string" ? item.name : null)
+                  : it;
+              });
             }
             send({ type: "fields", fields });
           } catch {
