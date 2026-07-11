@@ -17,6 +17,39 @@ Open http://localhost:3000 (or the port Next picks), then:
 
 All data lives in `./data` (SQLite + uploaded assets). `Settings → Backup` exports/restores the whole thing as one zip.
 
+## Suggested models per task
+
+Two tiers cover everything: a **creative** model for the prose you'll actually read, and a cheap **utility** model for the background plumbing. Set the creative model as the global default, then map the utility tasks in `Settings → Models per task`.
+
+| Task | Tier | Why |
+|---|---|---|
+| Chat generation | Creative | The star — character voice and prose quality live here |
+| Narrator | Creative | Same class as chat; sharing the chat model works well |
+| Co-writing assistant | Creative | Or drop to utility to save cost |
+| Summarization & memory | Utility | Reliable JSON extraction matters more than prose |
+| Group-chat orchestration | Utility | Tiny JSON decisions, called before every auto turn — keep it fast & cheap |
+| Impersonate | Utility | Drafts 1–3 sentences in your voice |
+| Title generation | Utility | Six words |
+
+Picks per provider (as of July 2026 — lineups move fast, check your provider's docs; context window in parentheses, enter it when adding the model):
+
+| Tier | Anthropic | OpenAI | Google | DeepSeek | xAI (Grok) |
+|---|---|---|---|---|---|
+| **Creative** | Claude Sonnet 5 — `claude-sonnet-5` (1M) | GPT-5.6 Terra — `gpt-5.6-terra` (1M) | Gemini 3.1 Pro — `gemini-3.1-pro-preview` (1M) | DeepSeek V4 Pro — `deepseek-v4-pro` (1M) | Grok 4.5 — `grok-4.5` (500K) |
+| **Utility** | Claude Haiku 4.5 — `claude-haiku-4-5` (200K) | GPT-5.6 Luna — `gpt-5.6-luna` (1M) | Gemini 3.5 Flash — `gemini-3.5-flash` (1M) | DeepSeek V4 Flash — `deepseek-v4-flash` (1M) | Grok 4.3 — `grok-4.3` (1M) |
+
+Splurge picks for chat if cost is no object: Claude Opus 4.8 (`claude-opus-4-8`) or GPT-5.6 Sol (`gpt-5.6-sol`). DeepSeek is the budget king — V4 Flash costs a fraction of the others and holds up fine as a utility model.
+
+Provider setup (`Settings → Add provider`):
+
+| Provider | Type | Base URL |
+|---|---|---|
+| Anthropic | Anthropic | `https://api.anthropic.com` (or leave empty) |
+| OpenAI | OpenAI-compatible | `https://api.openai.com/v1` |
+| Google | OpenAI-compatible | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| DeepSeek | OpenAI-compatible | `https://api.deepseek.com/v1` |
+| xAI | OpenAI-compatible | `https://api.x.ai/v1` |
+
 ## Feature map
 
 | Area | What you get |
