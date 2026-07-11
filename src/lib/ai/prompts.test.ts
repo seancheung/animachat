@@ -2,17 +2,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildCharacterRequest, type ChatContext } from "./prompts";
+import { buildCharacterRequest, resolveStageAssets, type ChatContext } from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
 import type { Character, Chat, Message, MessageRole } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
 
-// prompts.ts reads facts/relationships through the store — point it at a throwaway DB
+// prompts.ts reads through the store — point it at a throwaway DB. The store opens
+// its connection lazily on first query, so setting the env here (after imports) is safe.
 process.env.ANIMACHAT_DB_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
   "test.db"
 );
+import { saveLocation, saveScene } from "@/lib/store";
 
 function makeCharacter(id: string, name: string): Character {
   return {
@@ -119,6 +121,29 @@ function exchange(characterId: string, ownReplies: number): { role: MessageRole;
   }
   return out;
 }
+
+describe("resolveStageAssets stage style", () => {
+  it("merges per-field with location fields winning, and strips the enabled flag", () => {
+    const loc = saveLocation({ name: "L1", stageStyle: { enabled: true, panelTint: "#111111", accent: "#aaaaaa" } });
+    const scn = saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelTint: "#222222", background: "#000000" } });
+    const st = resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle;
+    expect(st).toMatchObject({ panelTint: "#111111", accent: "#aaaaaa", background: "#000000" });
+    expect(st).not.toHaveProperty("enabled");
+  });
+
+  it("styles are opt-in: a style without enabled: true contributes nothing", () => {
+    const loc = saveLocation({ name: "L2", stageStyle: { panelTint: "#111111" } });
+    const scn = saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelTint: "#222222" } });
+    expect(resolveStageAssets({ sceneId: scn.id, locationId: loc.id }).stageStyle?.panelTint).toBe("#222222");
+  });
+
+  it("returns null when the only style is not enabled", () => {
+    const off = saveLocation({ name: "L3", stageStyle: { panelTint: "#111111", enabled: false } });
+    expect(resolveStageAssets({ sceneId: null, locationId: off.id }).stageStyle).toBeNull();
+    const absent = saveLocation({ name: "L4", stageStyle: { panelTint: "#111111" } });
+    expect(resolveStageAssets({ sceneId: null, locationId: absent.id }).stageStyle).toBeNull();
+  });
+});
 
 describe("buildCharacterRequest", () => {
   const mira = makeCharacter("c1", "Mira");

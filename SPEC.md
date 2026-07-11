@@ -41,7 +41,7 @@ All world-building entities are reusable across chats.
 ### Location
 - Reusable place description.
 - Optional **artwork** (chat background, **16:9**), optional **BGM**, optional **ambient SFX loop** (rain, tavern chatter…) mixed under the BGM.
-- Optional **chat style** — per-field colors applied while the place is active: stage background color (shown when there's no artwork, and under it while it loads), chat panel tint & opacity, message bubble background, panel text color, accent color. Governed by the global "scene & location styling" switch.
+- Optional **chat style** — per-field colors applied while the place is active: stage background color (shown when there's no artwork, and under it while it loads), chat panel tint & opacity, message bubble background, panel text color, accent color. Has its own **enable checkbox, off by default** — colors apply only when explicitly enabled; a non-enabled location style contributes nothing (falling back to the scene's, per precedence). Governed overall by the global "scene & location styling" switch.
 - **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
 
 ### Scene

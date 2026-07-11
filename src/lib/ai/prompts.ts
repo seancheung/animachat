@@ -77,11 +77,14 @@ export interface StageAssets {
 export function resolveStageAssets(state: StageState): StageAssets {
   const scene = state.sceneId ? getScene(state.sceneId) : null;
   const location = state.locationId ? getLocation(state.locationId) : null;
-  // per-field precedence: the location's set fields win, the scene's fill the rest
+  // per-field precedence: the location's set fields win, the scene's fill the rest;
+  // styles are opt-in — only an explicitly enabled one contributes
+  const active = (st: StageStyle | null | undefined) => (st?.enabled === true ? st : null);
   const style: StageStyle = {
-    ...(scene?.stageStyle ?? {}),
-    ...Object.fromEntries(Object.entries(location?.stageStyle ?? {}).filter(([, v]) => v != null)),
+    ...(active(scene?.stageStyle) ?? {}),
+    ...Object.fromEntries(Object.entries(active(location?.stageStyle) ?? {}).filter(([, v]) => v != null)),
   };
+  delete style.enabled;
   return {
     scene,
     location,

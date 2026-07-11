@@ -7,6 +7,7 @@ import { AssistPanel } from "@/components/AssistPanel";
 import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import Button from "@/components/ui/button";
+import Checkbox from "@/components/ui/checkbox";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import Select from "@/components/ui/select";
@@ -14,6 +15,7 @@ import Slider from "@/components/ui/slider";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -141,7 +143,13 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
         label="Chat style"
         hint="colors the VN stage & floating chat panel while this place is active — governed by the scene/location styling switch in Settings"
       >
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="space-y-2">
+        <Checkbox
+          value={style.enabled === true}
+          onChange={(v) => setStyle({ enabled: v ? true : null })}
+          label="Apply this style in chat (off by default)"
+        />
+        <div className={cn("flex items-center gap-4 flex-wrap", style.enabled !== true && "opacity-40 pointer-events-none")}>
           <ColorSwatch label="Stage bg" value={style.background} onChange={(v) => setStyle({ background: v })} />
           <ColorSwatch label="Panel" value={style.panelTint} onChange={(v) => setStyle({ panelTint: v })} />
           <ColorSwatch label="Bubbles" value={style.messageTint} onChange={(v) => setStyle({ messageTint: v })} />
@@ -157,6 +165,7 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
               <Button variant="ghost" size="sm" shape="square" title="Clear" onClick={() => setStyle({ panelOpacity: null })}><X /></Button>
             )}
           </div>
+        </div>
         </div>
       </Field>
     </>

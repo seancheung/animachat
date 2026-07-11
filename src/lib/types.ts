@@ -57,6 +57,8 @@ export interface Persona {
 /** Per-location/scene coloring for the chat UI; applied while the place is active
  *  when the global stageStyleEnabled switch is on. All fields optional. */
 export interface StageStyle {
+  /** true = apply the colors in chat; absent/false = configured but off (the default) */
+  enabled?: boolean | null;
   /** stage background color — shown when there's no artwork, and under it while it loads */
   background?: string | null;
   /** floating chat panel background color */
