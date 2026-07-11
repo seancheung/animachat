@@ -558,23 +558,52 @@ function VnOverlay({
       setPage(0);
     }
   };
+  // backlog: previous page, or the LAST page of the previous message (mirror of advance)
+  const retreat = () => {
+    if (!isStreamingShown && pageIdx > 0) setPage(pageIdx - 1);
+    else if (idx > 0) {
+      setIdx(idx - 1);
+      setPage(Number.MAX_SAFE_INTEGER);
+    }
+  };
   // latest-ref so the window listener binds once but always sees fresh page state
-  const advanceRef = useRef(advance);
+  const navRef = useRef({ advance, retreat });
   useEffect(() => {
-    advanceRef.current = advance;
+    navRef.current = { advance, retreat };
   });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onExit();
-      if ((e.key === " " || e.key === "Enter") && document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
+      const typing =
+        document.activeElement?.tagName === "TEXTAREA" || document.activeElement?.tagName === "INPUT";
+      if (typing) return;
+      if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") {
         e.preventDefault();
-        advanceRef.current();
+        navRef.current.advance();
+      }
+      if (e.key === "ArrowLeft" || e.key === "Backspace") {
+        e.preventDefault();
+        navRef.current.retreat();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onExit]);
+
+  // wheel on the stage navigates (VN backlog gesture); wheel over the dialogue
+  // box keeps scrolling the box's own overflowing content natively
+  const wheelAcc = useRef(0);
+  const onStageWheel = (e: React.WheelEvent) => {
+    wheelAcc.current += e.deltaY;
+    if (wheelAcc.current > 40) {
+      navRef.current.advance();
+      wheelAcc.current = 0;
+    } else if (wheelAcc.current < -40) {
+      navRef.current.retreat();
+      wheelAcc.current = 0;
+    }
+  };
 
   // the box is height-capped and scrolls internally — follow the tail while
   // streaming, start a freshly turned page at its top
@@ -598,7 +627,7 @@ function VnOverlay({
     <div className="fixed inset-0 z-40 bg-black">
       {/* the stage always fills the viewport — the dialogue box floats over it,
           so its height never squashes the sprites */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0" onWheel={onStageWheel}>
         <VNStage characters={stageCharacters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
       </div>
       <Button variant="secondary" size="sm" shape="circle" className="absolute top-3 right-3 opacity-15 hover:opacity-100 transition-opacity" title="Exit fullscreen (Esc)" onClick={onExit}><X /></Button>
@@ -614,7 +643,7 @@ function VnOverlay({
       </Button>
       {!atEnd && (
         <Badge variant="secondary" rounded className="absolute top-3 left-3">
-          history {idx + 1}/{messages.length} — click to advance
+          history {idx + 1}/{messages.length} — scroll or ←/→
         </Badge>
       )}
       <div
