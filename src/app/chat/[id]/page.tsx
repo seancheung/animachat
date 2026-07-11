@@ -201,6 +201,29 @@ export default function ChatPage() {
 
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 
+  // active scene/location coloring (location fields win) — gated by the global switch
+  const stageStyle = settings?.stageStyleEnabled !== false ? data.stage?.stageStyle : null;
+  // shared overrides: bubbles resolve through --color-base-100, accents through --color-primary-500
+  const styleVars: React.CSSProperties | undefined = stageStyle
+    ? {
+        ...(stageStyle.accent ? { "--color-primary-500": stageStyle.accent } : {}),
+        ...(stageStyle.messageTint ? { "--color-base-100": stageStyle.messageTint } : {}),
+        ...(stageStyle.textColor ? { color: stageStyle.textColor } : {}),
+      }
+    : undefined;
+  const panelInline: React.CSSProperties | undefined = stageStyle
+    ? {
+        ...(stageStyle.panelTint || stageStyle.panelOpacity != null
+          ? {
+              backgroundColor: `color-mix(in srgb, ${stageStyle.panelTint ?? "var(--color-base-200)"} ${Math.round(
+                (stageStyle.panelOpacity ?? 0.45) * 100
+              )}%, transparent)`,
+            }
+          : {}),
+        ...styleVars,
+      }
+    : undefined;
+
   const lastNonMarker = [...messages].reverse().find((m) => m.role !== "marker");
   const wrapAction = () => {
     const el = inputRef.current;
@@ -307,6 +330,7 @@ export default function ChatPage() {
           emotions={emotions}
           speakingId={speakingId}
           backgroundUrl={assetUrl(data.stage?.artworkAsset)}
+          backgroundColor={stageStyle?.background}
           tall
         />
       </div>
@@ -317,6 +341,7 @@ export default function ChatPage() {
           "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col bg-base-200/45 sm:border-l border-base-400/60",
           settings?.chatPanelBlur !== false && "backdrop-blur-md"
         )}
+        style={panelInline}
       >
       <div className="px-4 py-1.5 border-b border-base-400/60 flex items-center gap-2 text-sm">
         <Button variant="ghost" size="sm" shape="square" onClick={() => router.push("/")}><ArrowLeft /></Button>
@@ -373,6 +398,8 @@ export default function ChatPage() {
       {vnMode && (
         <VnOverlay
           data={data}
+          backgroundColor={stageStyle?.background}
+          styleVars={styleVars}
           characters={characters}
           emotions={emotions}
           speakingId={speakingId}
@@ -419,6 +446,8 @@ export default function ChatPage() {
 
 function VnOverlay({
   data,
+  backgroundColor,
+  styleVars,
   characters,
   emotions,
   speakingId,
@@ -468,7 +497,7 @@ function VnOverlay({
   return (
     <div className="fixed inset-0 z-40 bg-black flex flex-col">
       <div className="flex-1 relative min-h-0">
-        <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} tall />
+        <VNStage characters={characters} emotions={emotions} speakingId={speakingId} backgroundUrl={assetUrl(data.stage?.artworkAsset)} backgroundColor={backgroundColor} tall />
         <Button variant="secondary" size="sm" className="absolute top-3 right-3" onClick={onExit}><X /> Esc</Button>
         {!atEnd && (
           <Badge variant="secondary" rounded className="absolute top-3 left-3">
@@ -480,7 +509,7 @@ function VnOverlay({
         className="mx-auto w-full max-w-3xl px-6 pb-5 -mt-28 relative z-10 cursor-pointer select-none"
         onClick={() => setIdx((i: number) => Math.min(i + 1, messages.length - 1))}
       >
-        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl">
+        <div className="rounded-lg border border-base-400 bg-base-100/92 backdrop-blur px-5 py-4 min-h-28 shadow-2xl" style={styleVars}>
           {speakerName && <div className="text-primary-500 text-sm font-semibold mb-1">{speakerName}</div>}
           <div className="text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={!!streaming && atEnd} />

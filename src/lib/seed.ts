@@ -62,6 +62,16 @@ export function seedPresets() {
       "A crooked three-story tavern wedged between the river wall and the old temple. Low beams, candle smoke, the permanent smell of rosemary bread and spilled ale. The back room doubles as Mira's apothecary; the cellar door is always locked. Locals swear the moon looks bigger from its windows.",
     imagePrompt:
       "16:9 background art, cozy fantasy tavern interior at night, low wooden beams, candlelight, cluttered shelves with potion bottles, moonlight through leaded windows, warm painterly anime style, visual novel background, no people",
+    stageStyle: { background: "#1b1410", panelTint: "#2e2013", panelOpacity: 0.5 },
+  });
+
+  saveLocation({
+    name: "The Whisperwood",
+    description:
+      "An old-growth forest on the hills above town, where the temple road ends and deer trails take over. Moss swallows every footstep, sunlight falls in green shafts through the canopy, and the locals say the trees pass rumors along their roots — hence the name. Charcoal burners and herb-gatherers work its edges; nobody sensible camps past the standing stones.",
+    imagePrompt:
+      "16:9 background art, ancient mossy forest interior, towering trees, green light shafts through dense canopy, ferns and standing stones, fireflies, tranquil and slightly mysterious, warm painterly anime style, visual novel background, no people",
+    stageStyle: { background: "#0e1a12", panelTint: "#142619", panelOpacity: 0.5, messageTint: "#1d3325", textColor: "#dcedde", accent: "#7cc98a" },
   });
 
   const scene1 = saveScene({

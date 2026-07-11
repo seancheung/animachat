@@ -41,13 +41,14 @@ All world-building entities are reusable across chats.
 ### Location
 - Reusable place description.
 - Optional **artwork** (chat background, **16:9**), optional **BGM**, optional **ambient SFX loop** (rain, tavern chatter…) mixed under the BGM.
+- Optional **chat style** — per-field colors applied while the place is active: stage background color (shown when there's no artwork, and under it while it loads), chat panel tint & opacity, message bubble background, panel text color, accent color. Governed by the global "scene & location styling" switch.
 - **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
 
 ### Scene
 - A situation/setup; optionally references a location.
-- Optional **artwork** (**16:9**), optional **BGM**, optional **ambient SFX loop**.
+- Optional **artwork** (**16:9**), optional **BGM**, optional **ambient SFX loop**, optional **chat style** (same fields as a location's).
 - **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
-- **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced).
+- **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced). Chat style resolves the same way, per field.
 
 ### Story
 - An ordered sequence of scenes.
@@ -130,6 +131,7 @@ Optional per chat (most useful with a story/scene attached).
 ## Visual-novel presentation
 
 - **Layout:** the default chat view is a full-bleed VN stage (sprites centered) with the chat panel **floating over it on the right** as a translucent sidebar; its backdrop blur is a global setting (default on). On narrow screens the panel spans the full width.
+- **Scene/location styling:** when the global "scene & location styling" switch is on (default on), the active scene/location's chat style colors the view — stage background color (replaces the default gradient when there's no artwork; underlays it while it loads, in both normal and fullscreen VN mode), chat panel tint & opacity, message bubble background, panel text color, and accent color; bubble/text/accent colors also theme the fullscreen-VN dialogue box. Location fields win over scene fields, per field. Off = the app's default look everywhere.
 - **Stage:** the speaking character's sprite displayed large. With multiple characters, **all** participants' sprites are on stage; the current speaker is at full brightness, others dimmed.
 - **Expression selection:** each character message carries an emotion tag chosen by the AI (see AI output structure). Resolution: exact match → `neutral` → placeholder sprite (avatars are never shown on stage). Tags are stored per message, so scrolling history and swiping alternatives replay expressions. The tag is user-correctable when editing a message.
 - **Background:** active scene/location artwork (precedence rules above).

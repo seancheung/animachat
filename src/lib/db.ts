@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS locations (
   artwork_asset TEXT,
   bgm_asset TEXT,
   ambient_asset TEXT,
+  stage_style TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS scenes (
   artwork_asset TEXT,
   bgm_asset TEXT,
   ambient_asset TEXT,
+  stage_style TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

@@ -302,6 +302,14 @@ export default function SettingsPage() {
                 label={settings.chatPanelBlur ? "Enabled" : "Disabled"}
               />
             </Field>
+            <Field label="Scene & location styling" hint="let the active scene/location color the VN stage and chat panel (set per location/scene in the Library)">
+              <Switch
+                className="h-8"
+                value={settings.stageStyleEnabled}
+                onChange={(v) => patchSettings({ stageStyleEnabled: v })}
+                label={settings.stageStyleEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
             <Field label="User relationships" hint="track affinity between you (persona) and characters — off: no updates, no prompt injection">
               <Switch
                 className="h-8"

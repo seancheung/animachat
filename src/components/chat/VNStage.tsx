@@ -19,21 +19,25 @@ export function VNStage({
   emotions,
   speakingId,
   backgroundUrl,
+  backgroundColor,
   tall,
 }: {
   characters: Character[];
   emotions: StageEmotions;
   speakingId: string | null;
   backgroundUrl: string | null;
+  /** stage color from the active scene/location — replaces the default gradient, shows under artwork while it loads */
+  backgroundColor?: string | null;
   tall?: boolean;
 }) {
   return (
     <div className={cn("relative overflow-hidden shrink-0 select-none", tall ? "h-full" : "h-64 md:h-80")}>
+      {backgroundColor && <div className="absolute inset-0" style={{ backgroundColor }} />}
       {backgroundUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img key={backgroundUrl} src={backgroundUrl} alt="" className="bg-art absolute inset-0 w-full h-full object-cover fade-in" />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-b from-base-400 to-base-200" />
+        !backgroundColor && <div className="absolute inset-0 bg-gradient-to-b from-base-400 to-base-200" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
       <div className="absolute inset-x-0 bottom-0 top-4 flex items-end justify-center gap-[2%] px-4">

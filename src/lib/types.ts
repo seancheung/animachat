@@ -54,6 +54,23 @@ export interface Persona {
   updatedAt: number;
 }
 
+/** Per-location/scene coloring for the chat UI; applied while the place is active
+ *  when the global stageStyleEnabled switch is on. All fields optional. */
+export interface StageStyle {
+  /** stage background color — shown when there's no artwork, and under it while it loads */
+  background?: string | null;
+  /** floating chat panel background color */
+  panelTint?: string | null;
+  /** floating chat panel background opacity, 0..1 (default matches the app's ~0.45) */
+  panelOpacity?: number | null;
+  /** message bubble background inside the chat panel (and the fullscreen-VN dialogue box) */
+  messageTint?: string | null;
+  /** default text color inside the chat panel */
+  textColor?: string | null;
+  /** accent color inside the chat panel (speaker highlights, primary buttons) */
+  accent?: string | null;
+}
+
 export interface Location {
   id: string;
   name: string;
@@ -63,6 +80,7 @@ export interface Location {
   artworkAsset: string | null;
   bgmAsset: string | null;
   ambientAsset: string | null;
+  stageStyle: StageStyle | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -77,6 +95,7 @@ export interface Scene {
   artworkAsset: string | null;
   bgmAsset: string | null;
   ambientAsset: string | null;
+  stageStyle: StageStyle | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -240,6 +259,8 @@ export interface Settings {
   typingSfxEnabled: boolean;
   /** backdrop blur behind the floating chat panel */
   chatPanelBlur: boolean;
+  /** let the active scene/location color the VN stage & chat panel (their stageStyle) */
+  stageStyleEnabled: boolean;
   /** track user(persona)↔character affinity; off = no updates, no prompt injection */
   userRelationshipsEnabled: boolean;
   /** track affinity between characters (group chats); off = no updates, no prompt injection */
@@ -257,6 +278,7 @@ export const DEFAULT_SETTINGS: Settings = {
   outputReserve: 2000,
   typingSfxEnabled: true,
   chatPanelBlur: true,
+  stageStyleEnabled: true,
   userRelationshipsEnabled: true,
   charRelationshipsEnabled: true,
 };

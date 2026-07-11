@@ -10,6 +10,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import Select from "@/components/ui/select";
+import Slider from "@/components/ui/slider";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/ui";
@@ -91,7 +92,39 @@ export function PersonaEditor({ initial, onSaved }: { initial: Partial<Persona>;
   );
 }
 
+function ColorSwatch({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | null | undefined;
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 text-sm">
+      <span className="text-content-300">{label}</span>
+      <input
+        type="color"
+        value={value ?? "#888888"}
+        onChange={(e) => onChange(e.target.value)}
+        title={value ?? "not set"}
+        className={"h-8 w-10 rounded-md border border-base-400 bg-transparent cursor-pointer" + (value ? "" : " opacity-35")}
+      />
+      {value != null && (
+        <Button variant="ghost" size="sm" shape="square" title="Clear" onClick={() => onChange(null)}><X /></Button>
+      )}
+    </div>
+  );
+}
+
 function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
+  const style = form.stageStyle ?? {};
+  const setStyle = (patch: any) => {
+    const next = { ...style, ...patch };
+    const empty = Object.values(next).every((v) => v == null);
+    setForm({ ...form, stageStyle: empty ? null : next });
+  };
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
@@ -103,6 +136,28 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
       </div>
       <Field label="Image prompt" hint="text-to-image prompt for the background — generate the art elsewhere, upload it above">
         <Textarea className="w-full h-20" value={form.imagePrompt ?? ""} onChange={(v) => setForm({ ...form, imagePrompt: v })} />
+      </Field>
+      <Field
+        label="Chat style"
+        hint="colors the VN stage & floating chat panel while this place is active — governed by the scene/location styling switch in Settings"
+      >
+        <div className="flex items-center gap-4 flex-wrap">
+          <ColorSwatch label="Stage bg" value={style.background} onChange={(v) => setStyle({ background: v })} />
+          <ColorSwatch label="Panel" value={style.panelTint} onChange={(v) => setStyle({ panelTint: v })} />
+          <ColorSwatch label="Bubbles" value={style.messageTint} onChange={(v) => setStyle({ messageTint: v })} />
+          <ColorSwatch label="Text" value={style.textColor} onChange={(v) => setStyle({ textColor: v })} />
+          <ColorSwatch label="Accent" value={style.accent} onChange={(v) => setStyle({ accent: v })} />
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-content-300">Panel opacity</span>
+            <div className="w-28 flex items-center">
+              <Slider min={0.1} max={1} step={0.05} value={style.panelOpacity ?? 0.45} onChange={(v) => setStyle({ panelOpacity: v })} />
+            </div>
+            <span className="text-content-300 w-9">{Math.round((style.panelOpacity ?? 0.45) * 100)}%</span>
+            {style.panelOpacity != null && (
+              <Button variant="ghost" size="sm" shape="square" title="Clear" onClick={() => setStyle({ panelOpacity: null })}><X /></Button>
+            )}
+          </div>
+        </div>
       </Field>
     </>
   );

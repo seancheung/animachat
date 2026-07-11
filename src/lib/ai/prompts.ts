@@ -26,6 +26,7 @@ import type {
   Pov,
   Scene,
   Settings,
+  StageStyle,
   Story,
 } from "@/lib/types";
 import { EMOTIONS } from "@/lib/types";
@@ -69,18 +70,25 @@ export interface StageAssets {
   artworkAsset: string | null;
   bgmAsset: string | null;
   ambientAsset: string | null;
+  stageStyle: StageStyle | null;
 }
 
-/** Location assets win when present; otherwise the scene's own. */
+/** Location assets win when present; otherwise the scene's own. Style fields resolve the same way. */
 export function resolveStageAssets(state: StageState): StageAssets {
   const scene = state.sceneId ? getScene(state.sceneId) : null;
   const location = state.locationId ? getLocation(state.locationId) : null;
+  // per-field precedence: the location's set fields win, the scene's fill the rest
+  const style: StageStyle = {
+    ...(scene?.stageStyle ?? {}),
+    ...Object.fromEntries(Object.entries(location?.stageStyle ?? {}).filter(([, v]) => v != null)),
+  };
   return {
     scene,
     location,
     artworkAsset: location?.artworkAsset ?? scene?.artworkAsset ?? null,
     bgmAsset: location?.bgmAsset ?? scene?.bgmAsset ?? null,
     ambientAsset: location?.ambientAsset ?? scene?.ambientAsset ?? null,
+    stageStyle: Object.values(style).some((v) => v != null) ? style : null,
   };
 }
 

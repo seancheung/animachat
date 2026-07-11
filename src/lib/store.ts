@@ -281,6 +281,7 @@ const locationFromRow = (r: Row): Location => ({
   artworkAsset: r.artwork_asset,
   bgmAsset: r.bgm_asset,
   ambientAsset: r.ambient_asset,
+  stageStyle: J.parse(r.stage_style, null),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -304,6 +305,7 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
     artworkAsset: null,
     bgmAsset: null,
     ambientAsset: null,
+    stageStyle: null,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -311,9 +313,9 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
   });
   getDb()
     .prepare(
-      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
-       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
+      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,created_at,updated_at)
+       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@style,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -323,6 +325,7 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
       art: m.artworkAsset,
       bgm: m.bgmAsset,
       amb: m.ambientAsset,
+      style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -344,6 +347,7 @@ const sceneFromRow = (r: Row): Scene => ({
   artworkAsset: r.artwork_asset,
   bgmAsset: r.bgm_asset,
   ambientAsset: r.ambient_asset,
+  stageStyle: J.parse(r.stage_style, null),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -368,6 +372,7 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
     artworkAsset: null,
     bgmAsset: null,
     ambientAsset: null,
+    stageStyle: null,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -375,9 +380,9 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
   });
   getDb()
     .prepare(
-      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,created_at,updated_at)
-       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, updated_at=@updated`
+      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,created_at,updated_at)
+       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@style,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -388,6 +393,7 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
       art: m.artworkAsset,
       bgm: m.bgmAsset,
       amb: m.ambientAsset,
+      style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
       created: m.createdAt,
       updated: m.updatedAt,
     });
