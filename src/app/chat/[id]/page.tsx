@@ -622,7 +622,20 @@ export default function ChatPage() {
       {/* floating header — back button and the stage context chip
           (the chip remounts, and fades in, on scene/location change) */}
       <div className="absolute top-3 left-3 z-20 max-w-[75%] flex items-center gap-2">
-        <Button variant="secondary" size="sm" shape="circle" className="shadow-lg shrink-0 opacity-40 hover:opacity-100 transition-opacity" title="Back to chats" onClick={() => router.push("/")}>
+        {/* picture mode wants an unobstructed stage: the button fades out entirely and
+            comes back under the cursor (opacity doesn't affect hit-testing, so it stays
+            exactly where the hand expects it) */}
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="circle"
+          className={cn(
+            "shadow-lg shrink-0 hover:opacity-100 transition-opacity",
+            pictureMode ? "opacity-0" : "opacity-40"
+          )}
+          title="Back to chats"
+          onClick={() => router.push("/")}
+        >
           <ArrowLeft />
         </Button>
         {data.ended && <Badge rounded className="shrink-0">The End</Badge>}
@@ -737,8 +750,14 @@ export default function ChatPage() {
         />
       )}
 
-      {/* corner controls — layout switch (persisted), settings, picture mode */}
-      <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-2 opacity-40 hover:opacity-100 transition-opacity">
+      {/* corner controls — layout switch (persisted), settings, picture mode, mute.
+          In picture mode the whole group hides until the cursor finds it. */}
+      <div
+        className={cn(
+          "absolute bottom-3 left-3 z-20 flex flex-col gap-2 hover:opacity-100 transition-opacity",
+          pictureMode ? "opacity-0" : "opacity-40"
+        )}
+      >
         <Button
           variant="secondary"
           size="sm"
