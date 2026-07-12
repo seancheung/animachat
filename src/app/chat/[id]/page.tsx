@@ -62,6 +62,30 @@ import {
 
 const DEFAULT_BLIP = "/defaults/sfx-typewriter.wav";
 
+/** The wand turns into a Stop while the AI writes the user's reply into the input —
+ *  same swap the Send button does during generation. Stopping keeps the partial draft. */
+function ImpersonateButton({
+  drafting,
+  disabled,
+  onClick,
+  onStop,
+}: {
+  drafting: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  onStop: () => void;
+}) {
+  return drafting ? (
+    <Button variant="danger" size="sm" shape="square" title="Stop drafting (keeps what's written)" onClick={onStop}>
+      <Square />
+    </Button>
+  ) : (
+    <Button variant="ghost" size="sm" shape="square" disabled={disabled} title="AI drafts your reply" onClick={onClick}>
+      <Wand2 />
+    </Button>
+  );
+}
+
 interface Streaming {
   role: "character" | "narrator";
   characterId: string | null;
@@ -93,6 +117,7 @@ export default function ChatPage() {
   const [pictureMode, setPictureMode] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const draftAbortRef = useRef<AbortController | null>(null);
   const openedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -239,18 +264,43 @@ export default function ChatPage() {
     void generate({ mode: "auto", userText: text });
   }
 
+  /** The draft streams straight into the input box; Stop keeps what has been written. */
   async function impersonate() {
     if (locked) return;
     setError(null);
     setDrafting(true);
+    setInput("");
+    const abort = new AbortController();
+    draftAbortRef.current = abort;
+    let draft = "";
     try {
-      const { text } = await api.post(`/api/chats/${id}/impersonate`);
-      setInput(text);
-      inputRef.current?.focus();
+      await streamSse(
+        `/api/chats/${id}/impersonate`,
+        {},
+        (ev) => {
+          if (ev.type === "text") {
+            draft += ev.text;
+            setInput(draft.trimStart());
+          } else if (ev.type === "error") {
+            setError(ev.message);
+          }
+        },
+        abort.signal
+      );
     } catch (e: any) {
-      setError(e.message);
+      if (!abort.signal.aborted) setError(e.message);
     } finally {
+      draftAbortRef.current = null;
+      setInput(draft.trim());
       setDrafting(false);
+      // after the re-render that re-enables the box: focus it with the caret after the
+      // draft, ready to keep writing (a disabled textarea can't take focus any earlier)
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
     }
   }
 
@@ -370,7 +420,12 @@ export default function ChatPage() {
         }}
       >
         <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
-        <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={locked} onClick={impersonate}><Wand2 /></Button>
+        <ImpersonateButton
+          drafting={drafting}
+          disabled={locked}
+          onClick={impersonate}
+          onStop={() => draftAbortRef.current?.abort()}
+        />
         <span className="flex-1" />
         <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
           <SkipForward />
@@ -506,6 +561,9 @@ export default function ChatPage() {
           onTurnPage={() => setStreamPage((p) => p + 1)}
           personaName={personaName}
           busy={locked}
+          drafting={drafting}
+          stopDrafting={() => draftAbortRef.current?.abort()}
+          inputRef={inputRef}
           error={error}
           hidden={pictureMode}
           input={input}
@@ -585,6 +643,9 @@ function DialogueLayout({
   onTurnPage,
   personaName,
   busy,
+  drafting,
+  stopDrafting,
+  inputRef,
   error,
   hidden,
   input,
@@ -761,6 +822,7 @@ function DialogueLayout({
         {showInput && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
             <InputBox
+              textareaRef={inputRef}
               textareaClassName="h-10"
               placeholder={`Write as ${personaName}…`}
               value={input}
@@ -773,7 +835,12 @@ function DialogueLayout({
                 }
               }}
             >
-              <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
+              <ImpersonateButton
+                drafting={drafting}
+                disabled={busy}
+                onClick={impersonate}
+                onStop={stopDrafting}
+              />
               <span className="flex-1" />
               <Button variant="ghost" size="sm" shape="square" title="Let the AI continue" disabled={busy} onClick={() => generate({ mode: "auto" })}><SkipForward /></Button>
               {data.chat.narratorEnabled && (

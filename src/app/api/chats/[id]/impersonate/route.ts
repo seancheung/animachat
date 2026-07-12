@@ -1,24 +1,65 @@
-import { bad, handler, ok, type IdParams } from "@/lib/api";
-import { AiConfigError, callLlm, resolveModel } from "@/lib/ai/client";
+import { bad, handler, type IdParams } from "@/lib/api";
+import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { buildContext, buildImpersonateRequest } from "@/lib/ai/prompts";
 
-/** Draft the user's next reply in their persona's voice. */
-export const POST = handler(async (_req: Request, { params }: IdParams) => {
+export const dynamic = "force-dynamic";
+
+/** Draft the user's next reply in their persona's voice, streamed into their input box.
+ *  Aborting keeps whatever was written — a half-draft is still a starting point. */
+export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
   const ctx = buildContext(id);
+
+  let built;
+  let modelRef;
   try {
-    const modelRef = resolveModel("impersonate", ctx.chat);
-    const req = buildImpersonateRequest(ctx, modelRef);
-    const text = await callLlm({
-      modelRef,
-      system: req.system,
-      messages: req.messages,
-      maxTokens: 400,
-      feature: "impersonate",
-      chatId: id,
-    });
-    return ok({ text: text.trim() });
+    modelRef = resolveModel("impersonate", ctx.chat);
+    built = buildImpersonateRequest(ctx, modelRef);
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
+
+  const encoder = new TextEncoder();
+  const abort = new AbortController();
+  req.signal.addEventListener("abort", () => abort.abort());
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        } catch {
+          /* client disconnected */
+        }
+      };
+      try {
+        for await (const ev of streamLlm({
+          modelRef,
+          system: built.system,
+          messages: built.messages,
+          maxTokens: 400,
+          feature: "impersonate",
+          chatId: id,
+          signal: abort.signal,
+        })) {
+          if (ev.type === "text") send({ type: "text", text: ev.text });
+        }
+      } catch (e) {
+        if (!abort.signal.aborted) send({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      }
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
 });
