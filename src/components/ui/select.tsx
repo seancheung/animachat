@@ -22,13 +22,18 @@ import { useRef, useState } from "react";
 import { cn } from "@/utils/cn";
 
 const triggerVariants = cva(
-  "has-icon inline-flex h-8 min-w-50 not-disabled:cursor-pointer items-center gap-1.5 rounded-md border bg-base-100 px-3 icon:text-content-400 text-content-100 text-sm outline-none transition-all",
+  "has-icon inline-flex min-w-50 not-disabled:cursor-pointer items-center gap-1.5 rounded-md border bg-base-100 icon:text-content-400 text-content-100 outline-none transition-all",
   {
     variants: {
+      size: {
+        sm: "h-6 px-2 text-xs",
+        md: "h-8 px-3 text-sm",
+        lg: "h-9 px-3.5 text-base",
+      },
       error: {
         true: "border-error focus-visible:ring-3 focus-visible:ring-error/10 data-[open=true]:ring-3 data-[open=true]:ring-error/10",
         false:
-          "border-base-400 focus-visible:border-primary-500 focus-visible:ring-3 focus-visible:ring-primary-500/10 data-[open=true]:border-primary-500 data-[open=true]:ring-3 data-[open=true]:ring-primary-500/10",
+          "border-base-400 focus-visible:border-primary-500 focus-visible:ring-3 focus-visible:ring-ring/10 data-[open=true]:border-primary-500 data-[open=true]:ring-3 data-[open=true]:ring-ring/10",
       },
       disabled: {
         true: "opacity-40",
@@ -36,6 +41,7 @@ const triggerVariants = cva(
       },
     },
     defaultVariants: {
+      size: "md",
       error: false,
       disabled: false,
     },
@@ -62,6 +68,7 @@ export type SelectProps<T = unknown> = Omit<
     icon?: React.ReactNode;
     clearable?: boolean;
     onClear?: () => void;
+    renderOption?: (option: SelectOption<T>) => React.ReactNode;
   };
 
 export default function Select<T = unknown>({
@@ -74,9 +81,11 @@ export default function Select<T = unknown>({
   icon,
   error,
   disabled,
+  size,
   className,
   clearable,
   onClear,
+  renderOption,
   ...props
 }: SelectProps<T>) {
   const [internalValue, setInternalValue] = useState<T | undefined>(
@@ -173,7 +182,10 @@ export default function Select<T = unknown>({
         ref={refs.setReference}
         disabled={disabled ?? false}
         data-open={open}
-        className={cn("group", triggerVariants({ className, error, disabled }))}
+        className={cn(
+          "group",
+          triggerVariants({ className, size, error, disabled }),
+        )}
         {...getReferenceProps(props)}
       >
         {icon}
@@ -225,7 +237,7 @@ export default function Select<T = unknown>({
             >
               <div
                 style={{ ...transitionStyles, maxHeight: "inherit" }}
-                className="flex flex-col overflow-y-auto rounded-md border border-base-400 bg-base-100 p-1 text-content-100 text-sm shadow-lg"
+                className="flex flex-col overflow-y-auto rounded-md border border-base-400 bg-base-100 p-1 text-content-100 text-sm shadow-(--shadow-overlay)"
               >
                 {options.length === 0 && (
                   <div className="px-2 py-2 text-content-400 text-xs">
@@ -265,7 +277,11 @@ export default function Select<T = unknown>({
                       },
                     })}
                   >
-                    <span className="flex-1 truncate">{opt.label}</span>
+                    {renderOption && opt ? (
+                      renderOption(opt)
+                    ) : (
+                      <span className="flex-1 truncate">{opt.label}</span>
+                    )}
                     {opt.value === value && (
                       <CheckIcon className="size-3.5 text-content-100" />
                     )}

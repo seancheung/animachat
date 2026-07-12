@@ -1,3 +1,5 @@
+/** biome-ignore-all lint/correctness/useExhaustiveDependencies: refs are stable; only re-bind when open toggles */
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import {
@@ -25,13 +27,18 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/utils/cn";
 
 const containerVariants = cva(
-  "flex h-8 min-w-50 items-center gap-1.5 rounded-md border bg-base-100 pr-1.5 pl-3 text-content-100 text-sm transition-all",
+  "flex min-w-50 items-center gap-1.5 rounded-md border bg-base-100 text-content-100 transition-all",
   {
     variants: {
+      size: {
+        sm: "h-6 pr-1 pl-2 text-xs",
+        md: "h-8 pr-1.5 pl-3 text-sm",
+        lg: "h-9 pr-2 pl-3.5 text-base",
+      },
       error: {
         true: "border-error focus-within:ring-3 focus-within:ring-error/10",
         false:
-          "border-base-400 focus-within:border-primary-500 focus-within:ring-3 focus-within:ring-primary-500/10",
+          "border-base-400 focus-within:border-primary-500 focus-within:ring-3 focus-within:ring-ring/10",
       },
       disabled: {
         true: "opacity-40",
@@ -39,6 +46,7 @@ const containerVariants = cva(
       },
     },
     defaultVariants: {
+      size: "md",
       error: false,
       disabled: false,
     },
@@ -53,7 +61,7 @@ export type ComboboxOption<T> = {
 
 export type ComboboxProps<T = unknown> = Omit<
   React.ComponentProps<"input">,
-  "value" | "onChange" | "defaultValue" | "type"
+  "value" | "onChange" | "defaultValue" | "type" | "size"
 > &
   VariantProps<typeof containerVariants> & {
     value?: T | null;
@@ -67,6 +75,7 @@ export type ComboboxProps<T = unknown> = Omit<
     clearable?: boolean;
     onClear?: () => void;
     acceptCustom?: boolean;
+    createMessage?: (text: string) => React.ReactNode;
     onSearch?: (query: string) => void;
     loading?: boolean;
     hasMore?: boolean;
@@ -93,6 +102,7 @@ export default function Combobox<T = unknown>({
   clearable = false,
   onClear,
   acceptCustom = false,
+  createMessage = (text) => `Add “${text}”`,
   onSearch,
   loading = false,
   hasMore = false,
@@ -101,6 +111,7 @@ export default function Combobox<T = unknown>({
   renderOption,
   error,
   disabled,
+  size,
   className,
   ...props
 }: ComboboxProps<T>) {
@@ -173,7 +184,6 @@ export default function Combobox<T = unknown>({
     capture: { outsidePress: true, escapeKey: true },
   });
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable; only re-bind when open toggles
   useEffect(() => {
     if (!open) return;
     function handle(event: MouseEvent) {
@@ -270,7 +280,7 @@ export default function Combobox<T = unknown>({
         ref={refs.setReference}
         className={cn(
           "group relative",
-          containerVariants({ className, error, disabled }),
+          containerVariants({ className, size, error, disabled }),
         )}
         data-open={open || undefined}
       >
@@ -291,7 +301,7 @@ export default function Combobox<T = unknown>({
           aria-activedescendant={
             activeIndex !== null ? `${listId}-${activeIndex}` : undefined
           }
-          className="w-full min-w-0 flex-1 border-none bg-transparent outline-none placeholder:text-content-400"
+          className="w-0 flex-1 border-none bg-transparent outline-none placeholder:text-content-400"
           {...getReferenceProps({
             onChange(e) {
               const next = (e.target as HTMLInputElement).value;
@@ -331,7 +341,7 @@ export default function Combobox<T = unknown>({
               setOpen((v) => !v);
             }}
             className={cn(
-              "has-icon-3.5 absolute inset-0 inline-flex cursor-pointer items-center justify-center rounded text-content-400 transition icon:transition-transform not-disabled:hover:text-content-300",
+              "has-icon-3.5 absolute inset-0 inline-flex cursor-pointer items-center justify-center rounded-sm text-content-400 transition icon:transition-transform not-disabled:hover:text-content-300",
               showClear && "group-focus-within:opacity-0 group-hover:opacity-0",
             )}
           >
@@ -344,7 +354,7 @@ export default function Combobox<T = unknown>({
               aria-label="Clear"
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleClear}
-              className="has-icon-3.5 absolute inset-0 inline-flex cursor-pointer items-center justify-center rounded text-content-400 opacity-0 transition hover:text-content-200 group-focus-within:opacity-100 group-hover:opacity-100"
+              className="has-icon-3.5 absolute inset-0 inline-flex cursor-pointer items-center justify-center rounded-sm text-content-400 opacity-0 transition hover:text-content-200 group-focus-within:opacity-100 group-hover:opacity-100"
             >
               <XIcon />
             </button>
@@ -365,7 +375,7 @@ export default function Combobox<T = unknown>({
             <div
               id={listId}
               style={{ ...transitionStyles, maxHeight: "inherit" }}
-              className="flex flex-col overflow-y-auto rounded-md border border-base-400 bg-base-100 p-1 text-content-100 text-sm shadow-lg"
+              className="flex flex-col overflow-y-auto rounded-md border border-base-400 bg-base-100 p-1 text-content-100 text-sm shadow-(--shadow-overlay)"
             >
               {showLoading && (
                 <div className="flex items-center justify-center gap-2 px-2 py-3 text-content-400 text-xs">
@@ -408,7 +418,7 @@ export default function Combobox<T = unknown>({
                       <>
                         <PlusIcon className="size-3.5 shrink-0 text-content-300" />
                         <span className="flex-1 truncate">
-                          Add &ldquo;{item.text}&rdquo;
+                          {createMessage(item.text)}
                         </span>
                       </>
                     ) : (
@@ -432,7 +442,7 @@ export default function Combobox<T = unknown>({
               {isFetchingMore && items.length > 0 && (
                 <div className="flex items-center justify-center gap-2 py-2 text-content-400 text-xs">
                   <Loader2Icon className="size-3.5 animate-spin" />
-                  Loading…
+                  {loadingMessage}
                 </div>
               )}
             </div>

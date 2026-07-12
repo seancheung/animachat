@@ -3,7 +3,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { cn } from "@/utils/cn";
 import Button from "./button";
 
@@ -15,6 +15,7 @@ export type ToastData = {
   description?: React.ReactNode;
   variant: ToastVariant;
   duration: number;
+  icon?: React.ReactNode;
   action?: { label: React.ReactNode; onClick: () => void };
 };
 
@@ -107,7 +108,10 @@ export function Toaster({ position }: ToasterProps = {}) {
   const ordered = isTop ? items : [...items].reverse();
 
   return (
-    <section className={cn(containerVariants({ position }))} aria-label="Notifications">
+    <section
+      className={cn(containerVariants({ position }))}
+      aria-label="Notifications"
+    >
       <AnimatePresence initial={false}>
         {ordered.map((t) => (
           <ToastItem key={t.id} toast={t} fromTop={isTop} />
@@ -118,7 +122,7 @@ export function Toaster({ position }: ToasterProps = {}) {
 }
 
 const itemVariants = cva(
-  "pointer-events-auto flex w-90 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-md border px-4 py-3 text-sm shadow-lg backdrop-blur",
+  "pointer-events-auto flex w-90 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-md border px-4 py-3 text-sm shadow-(--shadow-overlay) backdrop-blur",
   {
     variants: {
       variant: {
@@ -163,11 +167,37 @@ function ToastItem({
   toast: ToastData;
   fromTop: boolean;
 }) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remainingRef = useRef(t.duration);
+  const startedAtRef = useRef(0);
+  const hasTimer = t.duration > 0 && Number.isFinite(t.duration);
+
   useEffect(() => {
-    if (t.duration <= 0 || !Number.isFinite(t.duration)) return;
-    const id = setTimeout(() => dismiss(t.id), t.duration);
-    return () => clearTimeout(id);
-  }, [t.id, t.duration]);
+    if (!hasTimer) return;
+    remainingRef.current = t.duration;
+    startedAtRef.current = Date.now();
+    timerRef.current = setTimeout(() => dismiss(t.id), t.duration);
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [t.id, t.duration, hasTimer]);
+
+  function pauseTimer() {
+    if (timerRef.current === null) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    remainingRef.current -= Date.now() - startedAtRef.current;
+  }
+
+  function resumeTimer() {
+    if (!hasTimer || timerRef.current !== null) return;
+    startedAtRef.current = Date.now();
+    timerRef.current = setTimeout(
+      () => dismiss(t.id),
+      Math.max(remainingRef.current, 0),
+    );
+  }
 
   const semantic = t.variant === "default" ? null : t.variant;
   const Icon = semantic ? ICONS[semantic] : null;
@@ -182,10 +212,18 @@ function ToastItem({
       transition={{ duration: 0.2, ease: "easeOut" }}
       className={cn(itemVariants({ variant: t.variant }))}
       role="status"
+      onMouseEnter={pauseTimer}
+      onMouseLeave={resumeTimer}
     >
-      {Icon && semantic && (
-        <span className={cn(badgeVariants({ variant: semantic }))}>
-          <Icon />
+      {(t.icon != null || semantic) && (
+        <span
+          className={cn(
+            semantic
+              ? badgeVariants({ variant: semantic })
+              : "has-icon-3 mt-px inline-flex size-4 shrink-0 items-center justify-center",
+          )}
+        >
+          {t.icon ?? (Icon && <Icon />)}
         </span>
       )}
       <div className="min-w-0 flex-1">

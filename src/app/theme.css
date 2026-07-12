@@ -24,6 +24,7 @@
   --color-error-content: #4d0218;
   --color-info: #60a5fa;
   --color-info-content: #042e49;
+  --color-ring: var(--color-primary-500);
 
   --text-3xl: 40px;
   --text-3xl--line-height: calc(44 / 40);
@@ -107,6 +108,10 @@
 
 :root {
   @apply bg-base-200 text-content-100;
+  --shadow-overlay:
+    0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-raised:
+    0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   color-scheme: dark;
   scrollbar-gutter: stable;
   scrollbar-width: thin;

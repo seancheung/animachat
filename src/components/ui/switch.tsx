@@ -22,8 +22,8 @@ const trackVariants = cva(
   cn(
     "relative inline-flex shrink-0 items-center rounded-full bg-base-400 p-0.5 transition-colors",
     "peer-checked:bg-primary-500",
-    "peer-focus-visible:ring-3 peer-focus-visible:ring-primary-500/20",
-    "[&>span]:rounded-full [&>span]:bg-white [&>span]:shadow-sm [&>span]:transition-transform",
+    "peer-focus-visible:ring-3 peer-focus-visible:ring-ring/20",
+    "[&>span]:rounded-full [&>span]:bg-white [&>span]:shadow-(--shadow-raised) [&>span]:transition-transform",
   ),
   {
     variants: {

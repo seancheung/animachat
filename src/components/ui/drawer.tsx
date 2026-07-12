@@ -17,7 +17,7 @@ import { cn } from "@/utils/cn";
 import Button from "./button";
 
 const contentVariants = cva(
-  "fixed flex max-h-full max-w-full flex-col border-base-200 bg-base-100 shadow-lg outline-none",
+  "fixed flex max-h-full max-w-full flex-col border-base-200 bg-base-100 shadow-(--shadow-overlay) outline-none",
   {
     variants: {
       side: {

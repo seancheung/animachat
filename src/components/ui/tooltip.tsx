@@ -111,7 +111,7 @@ export default function Tooltip({
             <div
               style={transitionStyles}
               className={cn(
-                "relative max-w-xs rounded-md bg-content-100 px-2.5 py-1.5 text-base-100 text-xs shadow-lg",
+                "relative max-w-xs rounded-md bg-content-100 px-2.5 py-1.5 text-base-100 text-xs shadow-(--shadow-overlay)",
                 className,
               )}
             >
