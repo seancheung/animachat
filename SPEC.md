@@ -13,7 +13,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 
 - Models are grouped under providers. The user adds providers, then adds models under each provider.
 - **Provider:** display name, type (`anthropic` | `openai-compatible`), base URL, API key.
-- **Model:** model ID, display name, **context window size** (tokens, user-entered — the hard ceiling), optional **custom request body** (JSON) that is deep-merged into outgoing requests, user values winning over app defaults (e.g. `{"thinking":{"type":"disabled"}}`). Invalid JSON is flagged on save, not at chat time.
+- **Model:** model ID, display name, **context window size** (tokens, user-entered — the hard ceiling), optional **pricing** (USD per million input / cache-read / cache-write / output tokens, user-entered — powers cost tracking; all empty = unpriced, an empty cache price = that leg billed as input, which suits providers that don't discount or surcharge it), optional **custom request body** (JSON) that is deep-merged into outgoing requests, user values winning over app defaults (e.g. `{"thinking":{"type":"disabled"}}`). Invalid JSON is flagged on save, not at chat time.
 - API keys are managed in the in-app settings UI (stored in the database).
 - **Per-task models:** a task→model map in settings — chat generation, narrator, group-chat orchestration, summarization & fact extraction, co-writing assistant, impersonate, title generation (future tasks slot in). Every task defaults to "inherit" the global default model.
 - **Resolution order:** per-character model (group chats) → per-chat model → task's assigned model → global default.
@@ -267,7 +267,9 @@ Parser rules:
 ## Token usage tracking
 
 - Every AI call records input/output tokens, tagged with provider, model, and feature (chat, narrator, orchestrator, memory, co-writing assistant, future features).
-- Usage dashboard in settings: breakdowns by provider/model/feature and totals over time.
+- **Cache reads and writes are logged separately** from full-price input: OpenAI-compatible providers cache automatically and report the discounted read portion (`cached_tokens` / DeepSeek's `prompt_cache_hit_tokens`) and — on models that surcharge writes, e.g. GPT-5.6+ — the written portion (`cache_write_tokens`); both are subsets of `prompt_tokens` and are split out of it. Models that don't report writes simply bill them as input, which matches their pricing. This matters here because every turn resends a long history prefix. The Anthropic client doesn't request caching, but reads (`cache_read_input_tokens`) and writes (`cache_creation_input_tokens`) are captured if a response ever reports them.
+- Usage dashboard in settings: breakdowns by provider/model/feature and totals over time (cache-read share shown in the totals).
+- **Cost tracking:** derived from the per-model prices (USD per million tokens) at report time — never stored per call. Prices therefore apply retroactively to the whole logged history, and editing a price recomputes it. Cache reads/writes bill at their own price, each falling back to the full input price when unset. Tokens from models with no prices set (or logged under a provider/model that no longer exists) are reported as **unpriced**, never as $0; cost figures are estimates (token counts fall back to local estimation when a provider omits usage).
 
 ## Import / export
 

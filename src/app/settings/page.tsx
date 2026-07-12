@@ -113,7 +113,11 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
         {models.map((m) => (
           <div key={m.id} className="flex items-center justify-between bg-base-200 rounded-md px-3 py-1.5 text-sm">
             <div>
-              {m.displayName} <span className="text-content-300 text-xs">({m.modelId}, ctx {Math.round(m.contextWindow / 1000)}k)</span>
+              {m.displayName}{" "}
+              <span className="text-content-300 text-xs">
+                ({m.modelId}, ctx {Math.round(m.contextWindow / 1000)}k
+                {(m.inputPrice != null || m.outputPrice != null) && `, $${m.inputPrice ?? 0}/$${m.outputPrice ?? 0} per Mtok`})
+              </span>
               {m.customBody && <Badge variant="secondary" rounded className="ml-2">custom body</Badge>}
             </div>
             <div className="flex gap-1">
@@ -140,7 +144,7 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
             </div>
           </div>
         ))}
-        <Button variant="secondary" size="sm" onClick={() => setNewModel({ modelId: "", displayName: "", contextWindow: 128000, customBody: "" })}>
+        <Button variant="secondary" size="sm" onClick={() => setNewModel({ modelId: "", displayName: "", contextWindow: 128000, inputPrice: null, cacheReadPrice: null, cacheWritePrice: null, outputPrice: null, customBody: "" })}>
           <Plus /> Add model
         </Button>
       </div>
@@ -172,6 +176,48 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
               <Field label="Context window (tokens)" hint="the model's hard ceiling — used for context budgeting">
                 <InputNumber className="w-full" integer value={state.contextWindow} onChange={(v) => set({ ...state, contextWindow: v })} />
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Input price ($/M tokens)" hint="optional — powers cost tracking">
+                  <InputNumber
+                    className="w-full"
+                    min={0}
+                    clearable
+                    value={state.inputPrice ?? null}
+                    onChange={(v) => set({ ...state, inputPrice: v })}
+                    onClear={() => set({ ...state, inputPrice: null })}
+                  />
+                </Field>
+                <Field label="Output price ($/M tokens)" hint="empty = cost not tracked">
+                  <InputNumber
+                    className="w-full"
+                    min={0}
+                    clearable
+                    value={state.outputPrice ?? null}
+                    onChange={(v) => set({ ...state, outputPrice: v })}
+                    onClear={() => set({ ...state, outputPrice: null })}
+                  />
+                </Field>
+                <Field label="Cache read ($/M tokens)" hint="usually discounted; empty = input price">
+                  <InputNumber
+                    className="w-full"
+                    min={0}
+                    clearable
+                    value={state.cacheReadPrice ?? null}
+                    onChange={(v) => set({ ...state, cacheReadPrice: v })}
+                    onClear={() => set({ ...state, cacheReadPrice: null })}
+                  />
+                </Field>
+                <Field label="Cache write ($/M tokens)" hint="often 1.25× input; empty = input price">
+                  <InputNumber
+                    className="w-full"
+                    min={0}
+                    clearable
+                    value={state.cacheWritePrice ?? null}
+                    onChange={(v) => set({ ...state, cacheWritePrice: v })}
+                    onClear={() => set({ ...state, cacheWritePrice: null })}
+                  />
+                </Field>
+              </div>
               <Field label="Custom request body (JSON)" hint='deep-merged into every request, e.g. {"thinking":{"type":"disabled"}}'>
                 <Textarea
                   className="w-full font-mono text-xs h-24"
@@ -207,6 +253,8 @@ function UsagePanel() {
   const { data } = useSWR<any>(`/api/usage?days=${days}`, api.get);
   if (!data) return null;
   const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
+  const fmtCost = (n: number | null) => (n == null ? "—" : n > 0 && n < 0.01 ? "< $0.01" : `$${n.toFixed(2)}`);
+  const anyPriced = data.totals.cost != null;
   return (
     <div className="space-y-3">
       <Row>
@@ -218,7 +266,14 @@ function UsagePanel() {
             onChange={(v) => setDays(v)}
             options={[7, 30, 90, 365].map((d) => ({ value: d, label: String(d) }))}
           />
-          days: <b className="text-content-100">{fmt(data.totals.input)}</b> in / <b className="text-content-100">{fmt(data.totals.output)}</b> out tokens · {data.totals.calls} calls
+          days: <b className="text-content-100">{fmt(data.totals.input + data.totals.cached)}</b> in
+          {data.totals.cached > 0 && <> ({fmt(data.totals.cached)} cached)</>} / <b className="text-content-100">{fmt(data.totals.output)}</b> out tokens · {data.totals.calls} calls
+          {anyPriced && (
+            <>
+              {" "}· ≈ <b className="text-content-100">{fmtCost(data.totals.cost)}</b>
+              {data.totals.unpriced > 0 && <span> ({fmt(data.totals.unpriced)} tokens from unpriced models)</span>}
+            </>
+          )}
         </div>
       </Row>
       <div className="grid md:grid-cols-2 gap-4">
@@ -227,7 +282,7 @@ function UsagePanel() {
           {data.byFeature.map((r: any) => (
             <div key={r.feature} className="flex justify-between text-sm py-0.5">
               <span>{TASK_LABELS[r.feature] ?? r.feature}</span>
-              <span className="text-content-300">{fmt(r.input)} / {fmt(r.output)}</span>
+              <span className="text-content-300">{fmt(r.input + r.cached)} / {fmt(r.output)}{anyPriced && <> · {fmtCost(r.cost)}</>}</span>
             </div>
           ))}
         </div>
@@ -236,7 +291,7 @@ function UsagePanel() {
           {data.byModel.map((r: any) => (
             <div key={r.provider + r.model} className="flex justify-between text-sm py-0.5">
               <span>{r.provider} · {r.model}</span>
-              <span className="text-content-300">{fmt(r.input)} / {fmt(r.output)}</span>
+              <span className="text-content-300">{fmt(r.input + r.cached)} / {fmt(r.output)}{anyPriced && <> · {fmtCost(r.cost)}</>}</span>
             </div>
           ))}
         </div>
@@ -383,7 +438,7 @@ export default function SettingsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Token usage</h2>
+          <h2 className="text-lg font-semibold">Token usage & cost</h2>
           <UsagePanel />
         </section>
 

@@ -24,4 +24,10 @@ export function handler<Args extends any[]>(
   };
 }
 
+/** Coerce a request-body price (USD per 1M tokens) — empty/invalid/negative → null (unpriced). */
+export function price(v: unknown): number | null {
+  const n = Number(v);
+  return v == null || v === "" || !Number.isFinite(n) || n < 0 ? null : n;
+}
+
 export type IdParams = { params: Promise<{ id: string }> };

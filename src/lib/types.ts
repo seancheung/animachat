@@ -15,6 +15,13 @@ export interface Model {
   modelId: string;
   displayName: string;
   contextWindow: number;
+  /** USD per million tokens; null = unpriced (usage dashboard shows tokens only) */
+  inputPrice: number | null;
+  /** USD per million cached prompt reads/writes; null = billed at inputPrice
+      (right for providers that don't discount/surcharge that leg) */
+  cacheReadPrice: number | null;
+  cacheWritePrice: number | null;
+  outputPrice: number | null;
   customBody: Record<string, unknown> | null;
   createdAt: number;
 }

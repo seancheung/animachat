@@ -105,6 +105,10 @@ const modelFromRow = (r: Row): Model => ({
   modelId: r.model_id,
   displayName: r.display_name,
   contextWindow: r.context_window,
+  inputPrice: r.input_price ?? null,
+  cacheReadPrice: r.cache_read_price ?? null,
+  cacheWritePrice: r.cache_write_price ?? null,
+  outputPrice: r.output_price ?? null,
   customBody: J.parse(r.custom_body, null),
   createdAt: r.created_at,
 });
@@ -118,13 +122,22 @@ export function getModel(id: string): Model | null {
   return r ? modelFromRow(r) : null;
 }
 
-export function createModel(m: Pick<Model, "providerId" | "modelId" | "displayName" | "contextWindow" | "customBody">): Model {
+export function createModel(
+  m: Pick<
+    Model,
+    "providerId" | "modelId" | "displayName" | "contextWindow" | "inputPrice" | "cacheReadPrice" | "cacheWritePrice" | "outputPrice" | "customBody"
+  >
+): Model {
   const id = uid();
   getDb()
     .prepare(
-      "INSERT INTO models (id, provider_id, model_id, display_name, context_window, custom_body, created_at) VALUES (?,?,?,?,?,?,?)"
+      "INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
     )
-    .run(id, m.providerId, m.modelId, m.displayName, m.contextWindow, m.customBody ? J.str(m.customBody) : null, now());
+    .run(
+      id, m.providerId, m.modelId, m.displayName, m.contextWindow,
+      m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
+      m.customBody ? J.str(m.customBody) : null, now()
+    );
   return getModel(id)!;
 }
 
@@ -133,8 +146,14 @@ export function updateModel(id: string, p: Partial<Model>) {
   if (!cur) return null;
   const m = { ...cur, ...p };
   getDb()
-    .prepare("UPDATE models SET model_id=?, display_name=?, context_window=?, custom_body=? WHERE id=?")
-    .run(m.modelId, m.displayName, m.contextWindow, m.customBody ? J.str(m.customBody) : null, id);
+    .prepare(
+      "UPDATE models SET model_id=?, display_name=?, context_window=?, input_price=?, cache_read_price=?, cache_write_price=?, output_price=?, custom_body=? WHERE id=?"
+    )
+    .run(
+      m.modelId, m.displayName, m.contextWindow,
+      m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
+      m.customBody ? J.str(m.customBody) : null, id
+    );
   return getModel(id);
 }
 
@@ -929,38 +948,59 @@ export function logUsage(u: {
   model: string;
   feature: string;
   chatId?: string | null;
+  /** full-price prompt tokens (cache reads/writes excluded) */
   inputTokens: number;
+  /** cached prompt reads (provider-discounted) and cache writes (may carry a surcharge) */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   outputTokens: number;
 }) {
   getDb()
     .prepare(
-      "INSERT INTO usage_log (ts, provider, model, feature, chat_id, input_tokens, output_tokens) VALUES (?,?,?,?,?,?,?)"
+      "INSERT INTO usage_log (ts, provider, model, feature, chat_id, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens) VALUES (?,?,?,?,?,?,?,?,?)"
     )
-    .run(now(), u.provider, u.model, u.feature, u.chatId ?? null, u.inputTokens, u.outputTokens);
+    .run(now(), u.provider, u.model, u.feature, u.chatId ?? null, u.inputTokens, u.cacheReadTokens ?? 0, u.cacheWriteTokens ?? 0, u.outputTokens);
 }
 
 export function usageReport(sinceTs = 0) {
   const db = getDb();
+  // Cost is derived at query time from the current per-model prices (USD per 1M tokens),
+  // matched on the provider name + model id strings the log stores — so prices apply
+  // retroactively, and rows whose model has no prices (or was deleted) count as unpriced
+  // (cost NULL), never as $0. Cache reads/writes bill at their own price, each falling
+  // back to the full input price when unset.
+  const FROM = `FROM usage_log u
+    LEFT JOIN (
+      SELECT p.name AS provider, m.model_id AS model, MAX(m.input_price) AS ip,
+             MAX(m.cache_read_price) AS crp, MAX(m.cache_write_price) AS cwp, MAX(m.output_price) AS op
+      FROM models m JOIN providers p ON p.id = m.provider_id
+      GROUP BY p.name, m.model_id
+    ) pr ON pr.provider = u.provider AND pr.model = u.model
+    WHERE u.ts>=?`;
+  const UNPRICED = `pr.ip IS NULL AND pr.crp IS NULL AND pr.cwp IS NULL AND pr.op IS NULL`;
+  const COST = `SUM(CASE WHEN ${UNPRICED} THEN NULL
+    ELSE (u.input_tokens*COALESCE(pr.ip,0) + u.cache_read_tokens*COALESCE(pr.crp,pr.ip,0)
+          + u.cache_write_tokens*COALESCE(pr.cwp,pr.ip,0) + u.output_tokens*COALESCE(pr.op,0))/1e6 END) AS cost`;
+  const SUMS = `SUM(u.input_tokens)+SUM(u.cache_write_tokens) AS input, SUM(u.cache_read_tokens) AS cached,
+    SUM(u.output_tokens) AS output, COUNT(*) AS calls, ${COST}`;
   const totals = db
     .prepare(
-      "SELECT COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output, COUNT(*) AS calls FROM usage_log WHERE ts>=?"
+      `SELECT COALESCE(SUM(u.input_tokens)+SUM(u.cache_write_tokens),0) AS input, COALESCE(SUM(u.cache_read_tokens),0) AS cached,
+         COALESCE(SUM(u.output_tokens),0) AS output, COUNT(*) AS calls, ${COST},
+         COALESCE(SUM(CASE WHEN ${UNPRICED} THEN u.input_tokens+u.cache_read_tokens+u.cache_write_tokens+u.output_tokens ELSE 0 END),0) AS unpriced
+       ${FROM}`
     )
     .get(sinceTs) as Row;
   const byFeature = db
-    .prepare(
-      "SELECT feature, SUM(input_tokens) AS input, SUM(output_tokens) AS output, COUNT(*) AS calls FROM usage_log WHERE ts>=? GROUP BY feature ORDER BY input+output DESC"
-    )
+    .prepare(`SELECT u.feature AS feature, ${SUMS} ${FROM} GROUP BY u.feature ORDER BY input+cached+output DESC`)
     .all(sinceTs) as Row[];
   const byModel = db
     .prepare(
-      "SELECT provider, model, SUM(input_tokens) AS input, SUM(output_tokens) AS output, COUNT(*) AS calls FROM usage_log WHERE ts>=? GROUP BY provider, model ORDER BY input+output DESC"
+      `SELECT u.provider AS provider, u.model AS model, ${SUMS} ${FROM} GROUP BY u.provider, u.model ORDER BY input+cached+output DESC`
     )
     .all(sinceTs) as Row[];
   const byDay = db
-    .prepare(
-      `SELECT date(ts/1000, 'unixepoch') AS day, SUM(input_tokens) AS input, SUM(output_tokens) AS output
-       FROM usage_log WHERE ts>=? GROUP BY day ORDER BY day`
-    )
+    .prepare(`SELECT date(u.ts/1000, 'unixepoch') AS day, ${SUMS} ${FROM} GROUP BY day ORDER BY day`)
     .all(sinceTs) as Row[];
   return { totals, byFeature, byModel, byDay };
 }

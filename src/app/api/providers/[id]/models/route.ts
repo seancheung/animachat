@@ -1,4 +1,4 @@
-import { bad, handler, ok, type IdParams } from "@/lib/api";
+import { bad, handler, ok, price, type IdParams } from "@/lib/api";
 import { createModel, getProvider } from "@/lib/store";
 
 export const POST = handler(async (req: Request, { params }: IdParams) => {
@@ -16,6 +16,10 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
       modelId: b.modelId,
       displayName: b.displayName || b.modelId,
       contextWindow: Number(b.contextWindow) || 128000,
+      inputPrice: price(b.inputPrice),
+      cacheReadPrice: price(b.cacheReadPrice),
+      cacheWritePrice: price(b.cacheWritePrice),
+      outputPrice: price(b.outputPrice),
       customBody,
     })
   );

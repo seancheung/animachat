@@ -69,7 +69,9 @@ function deepMerge(base: any, extra: any): any {
   return extra;
 }
 
-export type StreamEvent = { type: "text"; text: string } | { type: "usage"; input: number; output: number };
+export type StreamEvent =
+  | { type: "text"; text: string }
+  | { type: "usage"; input: number; cacheRead: number; cacheWrite: number; output: number };
 
 function joinUrl(base: string, path: string): string {
   return base.replace(/\/+$/, "") + path;
@@ -128,6 +130,8 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
   });
   if (!res.ok || !res.body) await raiseHttpError(res, provider);
   let input = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let output = 0;
   for await (const data of sseLines(res)) {
     if (!data || data === "[DONE]") continue;
@@ -138,7 +142,11 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
       continue;
     }
     if (ev.type === "message_start") {
-      input = ev.message?.usage?.input_tokens ?? 0;
+      // input_tokens excludes cache reads/writes — those arrive in their own fields
+      const u = ev.message?.usage;
+      input = u?.input_tokens ?? 0;
+      cacheRead = u?.cache_read_input_tokens ?? 0;
+      cacheWrite = u?.cache_creation_input_tokens ?? 0;
     } else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
       yield { type: "text", text: ev.delta.text };
     } else if (ev.type === "message_delta") {
@@ -147,7 +155,7 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
       throw new Error(`${provider.name} stream error: ${ev.error?.message ?? "unknown"}`);
     }
   }
-  yield { type: "usage", input, output };
+  yield { type: "usage", input, cacheRead, cacheWrite, output };
 }
 
 async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
@@ -177,7 +185,9 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
     signal: req.signal,
   });
   if (!res.ok || !res.body) await raiseHttpError(res, provider);
-  let input = 0;
+  let prompt = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let output = 0;
   for await (const data of sseLines(res)) {
     if (!data || data === "[DONE]") continue;
@@ -190,11 +200,17 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
     const delta = ev.choices?.[0]?.delta?.content;
     if (typeof delta === "string" && delta) yield { type: "text", text: delta };
     if (ev.usage) {
-      input = ev.usage.prompt_tokens ?? input;
+      // prompt_tokens includes cache reads and writes; split them out so each bills at
+      // its own price. Reads: cached_tokens (DeepSeek: prompt_cache_hit_tokens). Writes:
+      // cache_write_tokens, reported by GPT-5.6+ — absent on models that bill writes as input.
+      const det = ev.usage.prompt_tokens_details;
+      prompt = ev.usage.prompt_tokens ?? prompt;
+      cacheRead = det?.cached_tokens ?? ev.usage.prompt_cache_hit_tokens ?? cacheRead;
+      cacheWrite = det?.cache_write_tokens ?? cacheWrite;
       output = ev.usage.completion_tokens ?? output;
     }
   }
-  yield { type: "usage", input, output };
+  yield { type: "usage", input: Math.max(0, prompt - cacheRead - cacheWrite), cacheRead, cacheWrite, output };
 }
 
 /**
@@ -204,7 +220,7 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
 export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
   const gen = req.modelRef.provider.type === "anthropic" ? streamAnthropic(req) : streamOpenAi(req);
   let collected = "";
-  let usage: { input: number; output: number } | null = null;
+  let usage: { input: number; cacheRead: number; cacheWrite: number; output: number } | null = null;
   for await (const ev of gen) {
     if (ev.type === "text") {
       collected += ev.text;
@@ -214,7 +230,11 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
     }
   }
   const promptText = req.system + req.messages.map((m) => m.content).join("\n");
-  const input = usage?.input || estimateTokens(promptText);
+  const cacheRead = usage?.cacheRead ?? 0;
+  const cacheWrite = usage?.cacheWrite ?? 0;
+  // estimate only when the provider reported no prompt usage at all — a fully cached
+  // prompt legitimately has input 0
+  const input = usage && usage.input + cacheRead + cacheWrite > 0 ? usage.input : estimateTokens(promptText);
   const output = usage?.output || estimateTokens(collected);
   logUsage({
     provider: req.modelRef.provider.name,
@@ -222,9 +242,11 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
     feature: req.feature,
     chatId: req.chatId ?? null,
     inputTokens: input,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
     outputTokens: output,
   });
-  yield { type: "usage", input, output };
+  yield { type: "usage", input, cacheRead, cacheWrite, output };
 }
 
 /** Non-streaming convenience for utility tasks (orchestrator, memory, title, impersonate...). */

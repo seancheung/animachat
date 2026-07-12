@@ -1,4 +1,4 @@
-import { bad, handler, ok, type IdParams } from "@/lib/api";
+import { bad, handler, ok, price, type IdParams } from "@/lib/api";
 import { deleteModel, updateModel } from "@/lib/store";
 
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
@@ -6,6 +6,9 @@ export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const b = await req.json();
   if (typeof b.customBody === "string") {
     b.customBody = b.customBody.trim() ? JSON.parse(b.customBody) : null;
+  }
+  for (const k of ["inputPrice", "cacheReadPrice", "cacheWritePrice", "outputPrice"] as const) {
+    if (k in b) b[k] = price(b[k]);
   }
   const updated = updateModel(id, b);
   return updated ? ok(updated) : bad("Model not found", 404);

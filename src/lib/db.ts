@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS models (
   display_name TEXT NOT NULL,
   context_window INTEGER NOT NULL DEFAULT 128000,
   custom_body TEXT,
+  input_price REAL,
+  cache_read_price REAL,
+  cache_write_price REAL,
+  output_price REAL,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS assets (
@@ -186,6 +190,8 @@ CREATE TABLE IF NOT EXISTS usage_log (
   feature TEXT NOT NULL,
   chat_id TEXT,
   input_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0
 );
 `;
