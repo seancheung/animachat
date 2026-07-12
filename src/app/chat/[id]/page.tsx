@@ -176,28 +176,44 @@ export default function ChatPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length, streaming?.text, pendingUser]);
 
-  /* ---- stage emotions: last emotion per character, streaming overrides ---- */
+  // the dialogue box's backlog position (null = the live end). It lives up here because the
+  // stage has to follow it: walking back through history replays the sprites as they were.
+  const timeline: Message[] = useMemo(() => messages.filter((m) => m.role !== "marker"), [messages]);
+  const [viewIdx, setViewIdx] = useState<number | null>(null);
+  const browseIdx = layout === "dialogue" && viewIdx !== null && viewIdx < timeline.length - 1 ? viewIdx : null;
+
+  /* ---- stage emotions: each character's emotion as of the message on screen ---- */
   const emotions: StageEmotions = useMemo(() => {
+    const upto = browseIdx ?? timeline.length - 1;
     const map: StageEmotions = {};
-    for (const m of messages) {
+    for (let i = 0; i <= upto && i < timeline.length; i++) {
+      const m = timeline[i];
       if (m.role === "character" && m.characterId) {
         map[m.characterId] = m.variants[m.activeVariant]?.emotion ?? "neutral";
       }
     }
-    if (streaming?.characterId && streaming.emotion) map[streaming.characterId] = streaming.emotion;
+    // the live reply's emotion only applies at the live end
+    if (browseIdx === null && streaming?.characterId && streaming.emotion) {
+      map[streaming.characterId] = streaming.emotion;
+    }
     return map;
-  }, [messages, streaming]);
+  }, [timeline, streaming, browseIdx]);
 
   const speakingId: string | null = useMemo(() => {
+    // browsing: whoever is speaking on the page being read (nobody, for user/narrator)
+    if (browseIdx !== null) {
+      const m = timeline[browseIdx];
+      return m?.role === "character" ? m.characterId : null;
+    }
     if (streaming) return streaming.characterId;
     if (characters.length < 2) return null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const m = timeline[i];
       if (m.role === "character") return m.characterId;
       if (m.role === "user" || m.role === "narrator") return null;
     }
     return null;
-  }, [messages, streaming, characters.length]);
+  }, [timeline, streaming, characters.length, browseIdx]);
 
   /* ---- generation ---- */
   const generate = useCallback(
@@ -567,6 +583,8 @@ export default function ChatPage() {
           streaming={streaming}
           skipTyping={typewriter.skip}
           onTurnPage={() => setStreamPage((p) => p + 1)}
+          viewIdx={viewIdx}
+          setViewIdx={setViewIdx}
           personaName={personaName}
           busy={locked}
           drafting={drafting}
@@ -649,6 +667,8 @@ function DialogueLayout({
   streaming,
   skipTyping,
   onTurnPage,
+  viewIdx,
+  setViewIdx,
   personaName,
   busy,
   drafting,
@@ -663,7 +683,9 @@ function DialogueLayout({
   impersonate,
 }: any) {
   const messages: Message[] = data.messages.filter((m: Message) => m.role !== "marker");
-  const [idx, setIdx] = useState(messages.length - 1);
+  // the backlog position is owned by the page (the stage follows it); null = the live end
+  const idx: number = viewIdx ?? messages.length - 1;
+  const setIdx = (i: number) => setViewIdx(i >= messages.length - 1 ? null : i);
   // paragraph page within the shown message — long messages advance VN-style,
   // paragraph by paragraph (display-only; the message itself stays whole)
   const [page, setPage] = useState(0);
@@ -697,9 +719,10 @@ function DialogueLayout({
     if (streaming) wasStreaming.current = true;
   }, [streaming]);
   useEffect(() => {
-    setIdx(messages.length - 1);
+    setViewIdx(null); // a new reply jumps back to the live end
     setPage(wasStreaming.current ? Number.MAX_SAFE_INTEGER : 0);
     wasStreaming.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
   const advance = () => {
@@ -712,7 +735,7 @@ function DialogueLayout({
     }
     if (pageIdx < pages.length - 1) setPage(pageIdx + 1);
     else if (!atEnd) {
-      setIdx((i: number) => Math.min(i + 1, messages.length - 1));
+      setIdx(Math.min(idx + 1, messages.length - 1));
       setPage(0);
     }
   };
