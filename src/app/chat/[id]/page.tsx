@@ -172,9 +172,51 @@ export default function ChatPage() {
     },
   });
 
+  /* ---- panel scrolling: pinned to the newest message unless the user reads back ---- */
+  // "pinned" as a ref (the scroll effect reads it without re-binding) and as state (the
+  // jump-to-latest button renders off it)
+  const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
+  // the opening jump is instant and must happen again whenever the panel remounts
+  const landedRef = useRef(false);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length, streaming?.text, pendingUser]);
+    landedRef.current = false;
+  }, [id, layout, pictureMode]);
+
+  const onPanelScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    pinnedRef.current = atBottom;
+    setPinned(atBottom);
+  };
+
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinnedRef.current = true;
+    setPinned(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) return;
+    if (!landedRef.current) {
+      // opening the chat: land ON the newest message, no visible scroll from the top.
+      // A second pass next frame catches avatars/sprites that changed the height.
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+      });
+      landedRef.current = true;
+      pinnedRef.current = true;
+      setPinned(true);
+      return;
+    }
+    // afterwards only follow the tail if the user hasn't scrolled back to read
+    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages.length, streaming?.text, pendingUser, layout, pictureMode]);
 
   // the dialogue box's backlog position (null = the live end). It lives up here because the
   // stage has to follow it: walking back through history replays the sprites as they were.
@@ -529,7 +571,11 @@ export default function ChatPage() {
         style={panelInline}
       >
       {/* extra top padding on narrow screens clears the floating header, which sits over the full-width panel */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-14 sm:pt-6 space-y-4">
+      <div
+        ref={scrollRef}
+        onScroll={onPanelScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-14 sm:pt-6 space-y-4"
+      >
         {messages.map((m) => (
           <MessageRow
             key={m.id}
@@ -568,6 +614,20 @@ export default function ChatPage() {
         )}
         {streamingRow}
       </div>
+
+      {/* reading back through the log: one press returns to the newest message */}
+      {!pinned && (
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="circle"
+          className={cn("absolute bottom-24 left-1/2 -translate-x-1/2 z-20 shadow-lg fade-in", busy && "animate-pulse")}
+          title={busy ? "Jump to latest (still writing…)" : "Jump to latest"}
+          onClick={jumpToLatest}
+        >
+          <ChevronDown />
+        </Button>
+      )}
 
       {/* corner-button clearance on narrow screens, where the panel spans the full width */}
       <div className="px-4 pt-3 pb-16 sm:pb-3 border-t border-base-400/60">{inputBar}</div>
