@@ -234,7 +234,10 @@ export default function ChatPage() {
             } else if (ev.type === "text") {
               typewriter.push(ev.text);
             } else if (ev.type === "emotion") {
-              setStreaming((s) => (s ? { ...s, emotion: ev.name } : s));
+              // one emotion per message — the FIRST tag wins, as the server stores it.
+              // Honouring a stray later tag would swap the sprite mid-message and then
+              // snap it back the moment the saved message (tagged with the first) lands.
+              setStreaming((s) => (s ? { ...s, emotion: s.emotion ?? ev.name } : s));
             } else if (ev.type === "done") {
               // a turn can queue several speakers — let this reply finish typing first
               await typewriter.finish();

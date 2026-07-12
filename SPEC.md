@@ -245,6 +245,7 @@ All inline tags that may appear in AI chat output. The stream parser strips them
 Parser rules:
 - Tags are parsed from the stream incrementally: prefix tags are consumed before display begins; trailing tags are held back once an opening `<options>`/`<next-scene`/`<the-end` is detected at the tail.
 - **Malformed or unknown tags:** fail soft. A broken `<emo>` → message falls back to `neutral` and full text is shown; a broken `<options>` block → its raw text is dropped or shown as prose; an `<enter>`/`<leave>` name matching nobody is ignored; never an error state.
+- **One emotion per message: the first `<emo>` wins.** Models sometimes drop a stray second tag mid-message; it is stripped from the text and ignored everywhere (stored message and live stage alike), so the sprite never swaps mid-message and snaps back.
 - Staging tags (`<next-scene/>`, `<enter>`, `<leave>`, `<the-end/>`) only take effect on narrator messages in a playthrough, and never after the story has ended.
 - Tag names are English regardless of the chat language; only the payload (option text) follows the language setting.
 - Stored metadata (emotion, options, stage events) is user-editable via message editing.
