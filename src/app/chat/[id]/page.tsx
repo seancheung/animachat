@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { useBlip, useChatAudio } from "@/components/chat/audio";
+import { useTypewriter } from "@/components/chat/typewriter";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
 import { MessageText } from "@/components/MessageText";
@@ -47,7 +48,15 @@ import Switch from "@/components/ui/switch";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { POV_LABELS, type Character, type ChatLayout, type Message, type Pov, type Settings } from "@/lib/types";
+import {
+  DEFAULT_SETTINGS,
+  POV_LABELS,
+  type Character,
+  type ChatLayout,
+  type Message,
+  type Pov,
+  type Settings,
+} from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -58,6 +67,10 @@ interface Streaming {
   characterId: string | null;
   text: string;
   emotion: string | null;
+  /** the current page has finished typing (dialogue box: waiting for the reader) */
+  pageDone: boolean;
+  /** there is more text past the current page */
+  hasMore: boolean;
 }
 
 export default function ChatPage() {
@@ -80,6 +93,8 @@ export default function ChatPage() {
   const openedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // typing SFX of whoever is speaking right now (per-character override, else the default blip)
+  const blipUrlRef = useRef<string>(DEFAULT_BLIP);
   const blip = useBlip();
 
   const chat = data?.chat;
@@ -101,6 +116,26 @@ export default function ChatPage() {
     ambientUrl: assetUrl(data?.stage?.ambientAsset),
     volume,
     muted,
+  });
+
+  // the provider streams prose in bursts; the typewriter drains them at a steady
+  // characters-per-second rate, and the blip follows the reveal rather than the network.
+  // In the dialogue box the reveal stops at the end of each page and waits for the reader
+  // (picture mode has no dialogue box to click, so it types straight through).
+  const [streamPage, setStreamPage] = useState(0);
+  const revealedRef = useRef(0);
+  const typewriter = useTypewriter({
+    speed: settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed,
+    paginate: layout === "dialogue" && !pictureMode,
+    pageIndex: streamPage,
+    onReveal: ({ text, pageDone, hasMore }) => {
+      setStreaming((s) => (s ? { ...s, text, pageDone, hasMore } : s));
+      // only blip on characters actually typed (the reveal also re-emits on page turns)
+      if (text.length > revealedRef.current && settings?.typingSfxEnabled && !muted) {
+        blip.play(blipUrlRef.current, volume * 0.5);
+      }
+      revealedRef.current = text.length;
+    },
   });
 
   useEffect(() => {
@@ -138,40 +173,57 @@ export default function ChatPage() {
       if (body.userText) setPendingUser(body.userText);
       const abort = new AbortController();
       abortRef.current = abort;
-      let speakerChar: Character | undefined;
+      // Stop reveals the rest at once, VN skip-style, instead of leaving it half-typed
+      abort.signal.addEventListener("abort", () => typewriter.flush());
       try {
         await streamSse(
           `/api/chats/${id}/generate`,
           body,
-          (ev) => {
+          async (ev) => {
             if (ev.type === "start") {
               setPendingUser(null);
               void mutate(); // pick up the just-appended user message
-              speakerChar = characters.find((c) => c.id === ev.speaker.characterId);
-              setStreaming({ role: ev.speaker.role, characterId: ev.speaker.characterId, text: "", emotion: null });
+              const speaker = characters.find((c) => c.id === ev.speaker.characterId);
+              blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
+              typewriter.reset();
+              revealedRef.current = 0;
+              setStreamPage(0);
+              setStreaming({
+                role: ev.speaker.role,
+                characterId: ev.speaker.characterId,
+                text: "",
+                emotion: null,
+                pageDone: false,
+                hasMore: false,
+              });
             } else if (ev.type === "text") {
-              setStreaming((s) => (s ? { ...s, text: s.text + ev.text } : s));
-              if (settings?.typingSfxEnabled && !muted) {
-                blip.play(assetUrl(speakerChar?.typingSfxAsset) ?? DEFAULT_BLIP, volume * 0.5);
-              }
+              typewriter.push(ev.text);
             } else if (ev.type === "emotion") {
               setStreaming((s) => (s ? { ...s, emotion: ev.name } : s));
+            } else if (ev.type === "done") {
+              // a turn can queue several speakers — let this reply finish typing first
+              await typewriter.finish();
             } else if (ev.type === "error") {
               setError(ev.message);
             }
           },
           abort.signal
         );
+        await typewriter.finish();
       } catch (e) {
+        typewriter.flush();
         if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
       } finally {
         abortRef.current = null;
         setPendingUser(null);
+        // pull the saved reply in BEFORE dropping the streaming view: clearing it first
+        // leaves the dialogue box a frame with nothing to show but the previous message
+        // (the user's own), which reads as a flicker at the end of the reveal
+        await mutate().catch(() => {});
         setStreaming(null);
-        void mutate();
       }
     },
-    [busy, id, characters, settings, muted, volume, blip, mutate]
+    [busy, id, characters, mutate, typewriter]
   );
 
   function send(textOverride?: string) {
@@ -440,6 +492,8 @@ export default function ChatPage() {
           styleVars={styleVars}
           characters={characters}
           streaming={streaming}
+          skipTyping={typewriter.skip}
+          onTurnPage={() => setStreamPage((p) => p + 1)}
           personaName={personaName}
           busy={busy}
           error={error}
@@ -517,6 +571,8 @@ function DialogueLayout({
   styleVars,
   characters,
   streaming,
+  skipTyping,
+  onTurnPage,
   personaName,
   busy,
   error,
@@ -540,10 +596,17 @@ function DialogueLayout({
   const fullText: string = isStreamingShown ? streaming.text : v?.content ?? "";
   const split = fullText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const pages = split.length ? split : [fullText];
-  const pageIdx = Math.min(page, pages.length - 1);
-  const hasMorePages = !isStreamingShown && pageIdx < pages.length - 1;
-  // a streaming reply shows live in full; otherwise the current paragraph page
-  const displayText = isStreamingShown ? fullText : pages[pageIdx] ?? "";
+  // a reply types into the page it belongs to and stops there: the typewriter never turns
+  // the page on its own, so the last page revealed is the one being read
+  const pageIdx = isStreamingShown ? pages.length - 1 : Math.min(page, pages.length - 1);
+  // mid-reveal the chevron means "this page is typed out, there's more waiting"
+  const hasMorePages = isStreamingShown
+    ? streaming.pageDone && streaming.hasMore
+    : pageIdx < pages.length - 1;
+  const displayText = pages[pageIdx] ?? "";
+  // the input stays put (disabled) for the whole reply — page breaks during a reveal are
+  // not the "unread pages" state that parks it, and blinking it in and out jitters the box
+  const showInput = atEnd && (isStreamingShown || !hasMorePages);
 
   // after a reply streamed in the user has already read it — land on its last
   // page instead of making them click through again; plain navigation starts at 0.
@@ -561,7 +624,13 @@ function DialogueLayout({
   }, [messages.length]);
 
   const advance = () => {
-    if (isStreamingShown) return;
+    // mid-reveal, VN-style: a click first finishes typing this page, the next one turns
+    // it — and while the page is still typing there is nothing to turn to yet
+    if (isStreamingShown) {
+      if (!streaming.pageDone) skipTyping?.();
+      else if (streaming.hasMore) onTurnPage?.();
+      return;
+    }
     if (pageIdx < pages.length - 1) setPage(pageIdx + 1);
     else if (!atEnd) {
       setIdx((i: number) => Math.min(i + 1, messages.length - 1));
@@ -679,7 +748,7 @@ function DialogueLayout({
             </div>
           )}
         </div>
-        {atEnd && !hasMorePages && (
+        {showInput && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
             <InputBox
               textareaClassName="h-10"

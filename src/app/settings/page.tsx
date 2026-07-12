@@ -35,6 +35,20 @@ function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: numbe
   );
 }
 
+/** Typewriter speed in characters per second; 0 = off (text appears as it streams in). */
+function TypingSpeedSlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  const commit = () => v !== value && onCommit(v);
+  return (
+    <div className="flex items-center gap-2 h-8">
+      <div className="flex-1 flex items-center">
+        <Slider min={0} max={200} step={10} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
+      </div>
+      <span className="text-sm text-content-300 w-16 text-right">{v === 0 ? "Off" : `${v} c/s`}</span>
+    </div>
+  );
+}
+
 const fmtBytes = (b: number) =>
   b >= 1048576
     ? `${(b / 1048576).toFixed(1)} MB`
@@ -392,6 +406,12 @@ export default function SettingsPage() {
                 value={settings.typingSfxEnabled}
                 onChange={(v) => patchSettings({ typingSfxEnabled: v })}
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Typing speed" hint="characters per second the reply types out at; off = it appears as it streams in">
+              <TypingSpeedSlider
+                value={settings.typingSpeed}
+                onCommit={(v) => patchSettings({ typingSpeed: v })}
               />
             </Field>
             <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel">

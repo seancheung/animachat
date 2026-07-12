@@ -23,11 +23,13 @@ export const api = {
   del: <T = any>(url: string) => fetchJson<T>(url, { method: "DELETE" }),
 };
 
-/** POST returning an SSE stream; invokes onEvent per parsed data payload. */
+/** POST returning an SSE stream; invokes onEvent per parsed data payload.
+ *  An async onEvent is awaited before the next event — the chat page uses that to let
+ *  one speaker's reply finish typing out before the next speaker's starts. */
 export async function streamSse(
   url: string,
   body: any,
-  onEvent: (ev: any) => void,
+  onEvent: (ev: any) => void | Promise<void>,
   signal?: AbortSignal
 ): Promise<void> {
   const res = await fetch(url, {
@@ -52,11 +54,13 @@ export async function streamSse(
     for (const chunk of chunks) {
       const line = chunk.split("\n").find((l) => l.startsWith("data:"));
       if (!line) continue;
+      let ev: any;
       try {
-        onEvent(JSON.parse(line.slice(5).trim()));
+        ev = JSON.parse(line.slice(5).trim());
       } catch {
-        /* skip malformed */
+        continue; // skip malformed
       }
+      await onEvent(ev);
     }
   }
 }
