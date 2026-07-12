@@ -747,10 +747,16 @@ function DialogueLayout({
       setPage(Number.MAX_SAFE_INTEGER);
     }
   };
+  // leave the backlog in one step, landing on the last page of the latest message so the
+  // input is right there (it was already read — no clicking back through it)
+  const toLive = () => {
+    setViewIdx(null);
+    setPage(Number.MAX_SAFE_INTEGER);
+  };
   // latest-ref so the window listener binds once but always sees fresh page state
-  const navRef = useRef({ advance, retreat });
+  const navRef = useRef({ advance, retreat, toLive, browsing: !atEnd });
   useEffect(() => {
-    navRef.current = { advance, retreat };
+    navRef.current = { advance, retreat, toLive, browsing: !atEnd };
   });
 
   useEffect(() => {
@@ -766,6 +772,12 @@ function DialogueLayout({
       if (e.key === "ArrowLeft" || e.key === "Backspace") {
         e.preventDefault();
         navRef.current.retreat();
+      }
+      // Esc leaves the backlog entirely — only while browsing, so it stays free for
+      // whatever else (drawers, dialogs) wants it at the live end
+      if (e.key === "Escape" && navRef.current.browsing) {
+        e.preventDefault();
+        navRef.current.toLive();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -812,7 +824,7 @@ function DialogueLayout({
       <div className="absolute inset-0" onWheel={onStageWheel} />
       {!atEnd && (
         <Badge variant="secondary" rounded className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-          history {idx + 1}/{messages.length} — scroll or ←/→
+          history {idx + 1}/{messages.length} — scroll or ←/→, Esc to return
         </Badge>
       )}
       <div
