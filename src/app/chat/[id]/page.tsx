@@ -62,6 +62,9 @@ import {
 
 const DEFAULT_BLIP = "/defaults/sfx-typewriter.wav";
 
+/** How long the user's own line holds the dialogue box, however fast the reply lands. */
+const MIN_ECHO_MS = 700;
+
 /** The wand turns into a Stop while the AI writes the user's reply into the input —
  *  same swap the Send button does during generation. Stopping keeps the partial draft. */
 function ImpersonateButton({
@@ -109,6 +112,10 @@ export default function ChatPage() {
   // first reply only starts streaming once the orchestrator has picked a speaker
   const [generating, setGenerating] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
+  // the user's own line, held in the dialogue box until the reply starts arriving
+  const [userEcho, setUserEcho] = useState<string | null>(null);
+  const echoUntil = useRef(0);
+  const echoDropping = useRef(false);
   // the AI is drafting the user's own reply (impersonate) — the input is its output slot,
   // so it stays locked until the draft lands
   const [drafting, setDrafting] = useState(false);
@@ -152,6 +159,20 @@ export default function ChatPage() {
     muted,
   });
 
+  /** Hand the dialogue box back to the AI — but never before the user has had time to read
+   *  their own line, or a fast model turns the send into a flicker. */
+  const dropEcho = useCallback(() => {
+    if (echoDropping.current) return;
+    echoDropping.current = true;
+    window.setTimeout(
+      () => {
+        setUserEcho(null);
+        echoDropping.current = false;
+      },
+      Math.max(0, echoUntil.current - Date.now())
+    );
+  }, []);
+
   // the provider streams prose in bursts; the typewriter drains them at a steady
   // characters-per-second rate, and the blip follows the reveal rather than the network.
   // In the dialogue box the reveal stops at the end of each page and waits for the reader
@@ -164,6 +185,7 @@ export default function ChatPage() {
     pageIndex: streamPage,
     onReveal: ({ text, pageDone, hasMore }) => {
       setStreaming((s) => (s ? { ...s, text, pageDone, hasMore } : s));
+      if (text) dropEcho(); // the reply has begun to appear — the user's line steps aside
       // only blip on characters actually typed (the reveal also re-emits on page turns)
       if (text.length > revealedRef.current && settings?.typingSfxEnabled && !muted) {
         blip.play(blipUrlRef.current, volume * 0.5);
@@ -223,6 +245,10 @@ export default function ChatPage() {
   const timeline: Message[] = useMemo(() => messages.filter((m) => m.role !== "marker"), [messages]);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const browseIdx = layout === "dialogue" && viewIdx !== null && viewIdx < timeline.length - 1 ? viewIdx : null;
+  // the user's line owns the dialogue box until the reply appears — while it does, the stage
+  // stays quiet too: nobody is speaking yet (the panel shows the reply as it streams, so it
+  // keeps switching the sprite the moment the emotion tag lands)
+  const echoing = layout === "dialogue" && userEcho !== null;
 
   /* ---- stage emotions: each character's emotion as of the message on screen ---- */
   const emotions: StageEmotions = useMemo(() => {
@@ -234,12 +260,12 @@ export default function ChatPage() {
         map[m.characterId] = m.variants[m.activeVariant]?.emotion ?? "neutral";
       }
     }
-    // the live reply's emotion only applies at the live end
-    if (browseIdx === null && streaming?.characterId && streaming.emotion) {
+    // the live reply's emotion only applies at the live end, once it is on screen
+    if (browseIdx === null && !echoing && streaming?.characterId && streaming.emotion) {
       map[streaming.characterId] = streaming.emotion;
     }
     return map;
-  }, [timeline, streaming, browseIdx]);
+  }, [timeline, streaming, browseIdx, echoing]);
 
   const speakingId: string | null = useMemo(() => {
     // browsing: whoever is speaking on the page being read (nobody, for user/narrator)
@@ -247,6 +273,7 @@ export default function ChatPage() {
       const m = timeline[browseIdx];
       return m?.role === "character" ? m.characterId : null;
     }
+    if (echoing) return null; // the user has the floor
     if (streaming) return streaming.characterId;
     if (characters.length < 2) return null;
     for (let i = timeline.length - 1; i >= 0; i--) {
@@ -255,7 +282,7 @@ export default function ChatPage() {
       if (m.role === "user" || m.role === "narrator") return null;
     }
     return null;
-  }, [timeline, streaming, characters.length, browseIdx]);
+  }, [timeline, streaming, characters.length, browseIdx, echoing]);
 
   /* ---- generation ---- */
   const generate = useCallback(
@@ -263,7 +290,14 @@ export default function ChatPage() {
       if (locked) return;
       setError(null);
       setGenerating(true);
-      if (body.userText) setPendingUser(body.userText);
+      if (body.userText) {
+        setPendingUser(body.userText);
+        // the dialogue box shows the user's line straight away, and keeps it for at least
+        // MIN_ECHO_MS so an instant reply can't flash it past them
+        setUserEcho(body.userText);
+        echoUntil.current = Date.now() + MIN_ECHO_MS;
+        echoDropping.current = false;
+      }
       const abort = new AbortController();
       abortRef.current = abort;
       // Stop reveals the rest at once, VN skip-style, instead of leaving it half-typed
@@ -312,6 +346,7 @@ export default function ChatPage() {
       } finally {
         abortRef.current = null;
         setPendingUser(null);
+        dropEcho(); // a turn that produced nothing (error, stop) must still hand the box back
         // pull the saved reply in BEFORE dropping the streaming view: clearing it first
         // leaves the dialogue box a frame with nothing to show but the previous message
         // (the user's own), which reads as a flicker at the end of the reveal
@@ -320,7 +355,7 @@ export default function ChatPage() {
         setGenerating(false);
       }
     },
-    [locked, id, characters, mutate, typewriter]
+    [locked, id, characters, mutate, typewriter, dropEcho]
   );
 
   function send(textOverride?: string) {
@@ -645,6 +680,7 @@ export default function ChatPage() {
           onTurnPage={() => setStreamPage((p) => p + 1)}
           viewIdx={viewIdx}
           setViewIdx={setViewIdx}
+          userEcho={userEcho}
           personaName={personaName}
           busy={locked}
           drafting={drafting}
@@ -729,6 +765,7 @@ function DialogueLayout({
   onTurnPage,
   viewIdx,
   setViewIdx,
+  userEcho,
   personaName,
   busy,
   drafting,
@@ -753,7 +790,10 @@ function DialogueLayout({
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
 
   const v = shown?.variants[shown.activeVariant];
-  const isStreamingShown = !!streaming && atEnd;
+  // the user's own line holds the box from the moment they send until the reply appears —
+  // it outranks both the streamed reply (still empty) and the message underneath
+  const echo: string | null = atEnd && userEcho ? userEcho : null;
+  const isStreamingShown = !!streaming && atEnd && !echo;
   const fullText: string = isStreamingShown ? streaming.text : v?.content ?? "";
   const split = fullText.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const pages = split.length ? split : [fullText];
@@ -761,13 +801,15 @@ function DialogueLayout({
   // the page on its own, so the last page revealed is the one being read
   const pageIdx = isStreamingShown ? pages.length - 1 : Math.min(page, pages.length - 1);
   // mid-reveal the chevron means "this page is typed out, there's more waiting"
-  const hasMorePages = isStreamingShown
-    ? streaming.pageDone && streaming.hasMore
-    : pageIdx < pages.length - 1;
-  const displayText = pages[pageIdx] ?? "";
+  const hasMorePages = echo
+    ? false
+    : isStreamingShown
+      ? streaming.pageDone && streaming.hasMore
+      : pageIdx < pages.length - 1;
+  const displayText = echo ?? pages[pageIdx] ?? "";
   // the input stays put (disabled) for the whole reply — page breaks during a reveal are
   // not the "unread pages" state that parks it, and blinking it in and out jitters the box
-  const showInput = atEnd && (isStreamingShown || !hasMorePages);
+  const showInput = atEnd && (!!echo || isStreamingShown || !hasMorePages);
 
   // after a reply streamed in the user has already read it — land on its last
   // page instead of making them click through again; plain navigation starts at 0.
@@ -786,6 +828,7 @@ function DialogueLayout({
   }, [messages.length]);
 
   const advance = () => {
+    if (echo) return; // the user's own line: nothing to advance to until the reply arrives
     // mid-reveal, VN-style: a click first finishes typing this page, the next one turns
     // it — and while the page is still typing there is nothing to turn to yet
     if (isStreamingShown) {
@@ -865,8 +908,9 @@ function DialogueLayout({
     const el = textRef.current;
     el?.scrollTo({ top: isStreamingShown ? el.scrollHeight : 0 });
   }, [displayText, isStreamingShown]);
-  const speakerName =
-    streaming && atEnd
+  const speakerName = echo
+    ? personaName
+    : streaming && atEnd
       ? streaming.role === "narrator"
         ? "Narrator"
         : characters.find((c: Character) => c.id === streaming.characterId)?.name
