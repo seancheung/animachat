@@ -382,7 +382,7 @@ export default function ChatPage() {
       {layout === "panel" && !pictureMode && (
       <div
         className={cn(
-          "absolute inset-y-0 right-0 z-10 w-full sm:w-[26rem] xl:w-[30rem] flex flex-col sm:border-l border-base-400/60",
+          "absolute inset-y-0 right-0 z-10 w-full sm:w-104 xl:w-120 flex flex-col sm:border-l border-base-400/60",
           settings?.chatPanelBlur !== false && "backdrop-blur-md"
         )}
         style={panelInline}
