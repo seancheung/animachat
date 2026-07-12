@@ -82,6 +82,9 @@ export default function ChatPage() {
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
+  // the AI is drafting the user's own reply (impersonate) — the input is its output slot,
+  // so it stays locked until the draft lands
+  const [drafting, setDrafting] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
@@ -103,7 +106,10 @@ export default function ChatPage() {
   const characters: Character[] = useMemo(() => data?.characters ?? [], [data]);
   const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
   const personaName = data?.persona?.name ?? "You";
+  /** a turn is being generated (drives the Stop button) */
   const busy = !!streaming || !!pendingUser;
+  /** …or the AI is writing into the input: either way the user can't act */
+  const locked = busy || drafting;
   // story mode: only the on-stage cast is drawn; casual/immersive show everyone
   const present: string[] | null = data?.stage?.present ?? null;
   const stageCharacters: Character[] = useMemo(
@@ -168,7 +174,7 @@ export default function ChatPage() {
   /* ---- generation ---- */
   const generate = useCallback(
     async (body: any) => {
-      if (busy) return;
+      if (locked) return;
       setError(null);
       if (body.userText) setPendingUser(body.userText);
       const abort = new AbortController();
@@ -223,25 +229,28 @@ export default function ChatPage() {
         setStreaming(null);
       }
     },
-    [busy, id, characters, mutate, typewriter]
+    [locked, id, characters, mutate, typewriter]
   );
 
   function send(textOverride?: string) {
     const text = (textOverride ?? input).trim();
-    if (!text) return;
+    if (!text || locked) return; // never clear the box for a send that can't happen
     setInput("");
     void generate({ mode: "auto", userText: text });
   }
 
   async function impersonate() {
-    if (busy) return;
+    if (locked) return;
     setError(null);
+    setDrafting(true);
     try {
       const { text } = await api.post(`/api/chats/${id}/impersonate`);
       setInput(text);
       inputRef.current?.focus();
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -347,6 +356,7 @@ export default function ChatPage() {
             : `Write as ${personaName}… (*asterisks* for actions)`
         }
         value={input}
+        disabled={locked}
         onChange={setInput}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
@@ -359,21 +369,21 @@ export default function ChatPage() {
           }
         }}
       >
-        <Button variant="ghost" size="sm" shape="square" title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
-        <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={busy} onClick={impersonate}><Wand2 /></Button>
+        <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="AI drafts your reply" disabled={locked} onClick={impersonate}><Wand2 /></Button>
         <span className="flex-1" />
-        <Button variant="ghost" size="sm" shape="square" disabled={busy} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
+        <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Let the AI continue" onClick={() => generate({ mode: "auto" })}>
           <SkipForward />
         </Button>
         {chat.narratorEnabled && (
-          <Button variant="ghost" size="sm" disabled={busy} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
+          <Button variant="ghost" size="sm" disabled={locked} title="Summon the narrator" onClick={() => generate({ mode: "narrator" })}>
             <ScrollText /> Narrate
           </Button>
         )}
         {busy ? (
           <Button variant="danger" size="sm" shape="square" title="Stop generating" onClick={() => abortRef.current?.abort()}><Square /></Button>
         ) : (
-          <Button size="sm" shape="square" title="Send (Enter)" disabled={!input.trim()} onClick={() => send()}><SendHorizontal /></Button>
+          <Button size="sm" shape="square" title="Send (Enter)" disabled={locked || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
         )}
       </InputBox>
     </div>
@@ -495,7 +505,7 @@ export default function ChatPage() {
           skipTyping={typewriter.skip}
           onTurnPage={() => setStreamPage((p) => p + 1)}
           personaName={personaName}
-          busy={busy}
+          busy={locked}
           error={error}
           hidden={pictureMode}
           input={input}
