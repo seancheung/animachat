@@ -105,6 +105,9 @@ export default function ChatPage() {
   const { data: allScenes } = useSWR<any[]>("/api/scenes", api.get);
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
+  // a turn is in flight from the very click: Continue/Narrate carry no user text and the
+  // first reply only starts streaming once the orchestrator has picked a speaker
+  const [generating, setGenerating] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   // the AI is drafting the user's own reply (impersonate) — the input is its output slot,
   // so it stays locked until the draft lands
@@ -132,7 +135,7 @@ export default function ChatPage() {
   const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
   const personaName = data?.persona?.name ?? "You";
   /** a turn is being generated (drives the Stop button) */
-  const busy = !!streaming || !!pendingUser;
+  const busy = generating || !!streaming || !!pendingUser;
   /** …or the AI is writing into the input: either way the user can't act */
   const locked = busy || drafting;
   // story mode: only the on-stage cast is drawn; casual/immersive show everyone
@@ -201,6 +204,7 @@ export default function ChatPage() {
     async (body: any) => {
       if (locked) return;
       setError(null);
+      setGenerating(true);
       if (body.userText) setPendingUser(body.userText);
       const abort = new AbortController();
       abortRef.current = abort;
@@ -252,6 +256,7 @@ export default function ChatPage() {
         // (the user's own), which reads as a flicker at the end of the reveal
         await mutate().catch(() => {});
         setStreaming(null);
+        setGenerating(false);
       }
     },
     [locked, id, characters, mutate, typewriter]
