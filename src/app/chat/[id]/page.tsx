@@ -308,6 +308,21 @@ export default function ChatPage() {
     return map;
   }, [timeline, streaming, browseIdx, echoing]);
 
+  // Esc leaves picture mode — the way out when the corner buttons are invisible.
+  // Capture phase: the drawer's dismiss handler (floating-ui) takes Escape on the document
+  // and stops it, so a bubble-phase listener would never see the key. An open dialog still
+  // gets first refusal — Escape closes that, not picture mode.
+  useEffect(() => {
+    if (!pictureMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      setPictureMode(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [pictureMode]);
+
   const speakingId: string | null = useMemo(() => {
     // browsing: whoever is speaking on the page being read (nobody, for user/narrator)
     if (browseIdx !== null) {
@@ -947,15 +962,25 @@ function DialogueLayout({
         e.preventDefault();
         navRef.current.retreat();
       }
-      // Esc leaves the backlog entirely — only while browsing, so it stays free for
-      // whatever else (drawers, dialogs) wants it at the live end
-      if (e.key === "Escape" && navRef.current.browsing) {
-        e.preventDefault();
-        navRef.current.toLive();
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [hidden]);
+
+  // Esc leaves the backlog entirely — only while browsing, so it stays free for whatever
+  // else wants it at the live end. Capture phase, because the drawer's dismiss handler
+  // (floating-ui) takes Escape on the document and stops it before it can bubble; an open
+  // dialog still gets first refusal.
+  useEffect(() => {
+    if (hidden) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !navRef.current.browsing) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      navRef.current.toLive();
+    };
+    window.addEventListener("keydown", onEsc, true);
+    return () => window.removeEventListener("keydown", onEsc, true);
   }, [hidden]);
 
   // wheel on the stage navigates (VN backlog gesture); wheel over the dialogue
