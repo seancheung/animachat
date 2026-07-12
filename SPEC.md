@@ -107,7 +107,7 @@ Sheets (character/persona/location/scene/story/lorebook text fields) may contain
 - **Impersonate:** a button that has the AI draft the *user's* next reply in the active persona's voice, **streamed into the input box**; editable before sending. While it writes, the input is locked and the button becomes a **Stop** — stopping keeps the partial draft (a half-written line is still a starting point). When the draft lands the box is focused with the caret after it, ready to keep writing.
 - **Relationship/affinity tracking:** per character–persona pair, the AI maintains an evolving relationship state (affinity, trust, notes) that persists across chats and feeds prompts. When the user plays a story cast member, that pair is tracked as a character↔character relationship instead. Facts/relationships live in the library, so a playthrough whose snapshot characters were deleted from the library simply skips those updates. **Character↔character relationships too:** each character keeps their own directed view (affinity, note) of other characters, updated by the same memory pass and injected into that character's prompt for characters present in the chat. Both kinds are governed by **system settings** (default on; off = no updates, no prompt injection): "user relationships" for persona↔character, "character relationships" for character↔character. Inspectable in the chat settings drawer and in the character editor. Can be **disabled per character** (toggle: no updates, no prompt injection, applies to both kinds) and **reset** (deletes that character's relationship data with all personas and characters).
 - **Organization:** chat tags/folders, auto-generated chat titles, full-text search across all chats. Playthroughs are labeled "Playthrough — <story name>" (from the snapshot, so the label outlives the story) with a "The End" badge once completed.
-- Markdown rendering with styled action text.
+- Dialogue, action and narration each rendered in their own style (see [Message format](#message-format-speech--actions)).
 
 ### Turn & message workflow
 
@@ -168,11 +168,19 @@ Notes: each queued turn rebuilds the context, so later speakers see earlier repl
 
 ### Message format (speech & actions)
 
-Shared convention for AI and user:
-- `*actions*` in asterisks → rendered italic, muted (stage-direction style). In chat messages single-asterisk means action, not emphasis.
-- `"dialogue"` in quotes → normal, prominent text.
-- Plain user text is treated as dialogue; input helpers (shortcut/toolbar) wrap selection in asterisks.
-- Stored as plain text with the convention embedded; edits work on the raw text.
+The SillyTavern convention, shared by AI and user — two markers, three kinds of text:
+
+| Marker | Kind | Rendered as |
+|---|---|---|
+| `"double quotes"` (straight or curly) | **dialogue** — spoken words | full-strength text, slightly heavier |
+| `*asterisks*` | **action** — what the body does, what the camera sees | muted (**never italic** — paragraphs of italics are tiring to read) |
+| unmarked | **narration** — everything else | the middle step of the text ladder |
+
+- **What unmarked text means depends on the role.** A character writes prose and quotes their speech, so their unmarked text is narration. The user types into a chat box, so *their* bare line is speech — their actions go in asterisks (toolbar button / Ctrl+`*`). The narrator only ever narrates.
+- **The markers are display syntax, not content:** quote marks and asterisks are stripped at render time (a VN dialogue box shows no quotation marks). They stay in the stored text, which is what edits work on.
+- **Auto-formatting** (system setting, **default on**): on send, the unmarked runs of the user's message are quoted, so the AI reads the same convention it writes — `Where have you been? *I fold my arms.*` is stored as `"Where have you been?" *I fold my arms.*`. Deliberately conservative: it works line by line, skips runs that already carry a quote (so an inline quotation survives intact), skips punctuation-only runs and unpaired asterisks, and matches the message's own quote style (curly in → curly out). It is applied **at storage time**, while speaker routing still reads the raw text — quoting would otherwise put a `"` before a leading `@mention` and break the match. **Narrator suggestions are exempt** (they are already written in the convention; quoting `*Follow her into the kitchen.*` would turn an action into something the user says). Off = the message is stored exactly as typed.
+- The prompts state the convention to the AI, including that the user's messages follow it.
+- The **co-writing assistant** is not roleplay: its messages render verbatim, so the quotes it puts around field values are never eaten.
 
 ### Point of view
 
@@ -207,7 +215,7 @@ Optional in casual and immersive chats; **required in playthroughs**, where it i
 |---|---|---|
 | Stage | `stageBg` — replaces the default gradient when there's no artwork, underlays it while loading (both chat layouts) | — (no text sits on the stage) |
 | Panel | the panel itself (`panelBg` @ the global chat-panel-opacity setting); derived shades: inputs & secondary buttons (92%), hover (82%), badges/avatar chips/borders (68%); narrator & user bubbles are translucent and sit on the panel | `panelFg` (auto-contrast with `panelBg` when unset); muted steps at 85/65/45% alpha for names, badge labels, hints |
-| Bubbles | character bubbles: `messageBg`, solid; the VN dialogue box (dialogue-box layout): `messageBg` @ the global chat-panel-opacity setting | `messageFg` (auto-contrast with `messageBg` when unset); `*actions*` at 70% alpha |
+| Bubbles | character bubbles: `messageBg`, solid; the VN dialogue box (dialogue-box layout): `messageBg` @ the global chat-panel-opacity setting | `messageFg` (auto-contrast with `messageBg` when unset); the text ladder derives from it — dialogue full, narration 85%, `*actions*` 70% |
 | Accent | primary buttons, slider thumb, focus rings — `accent` plus derived hover/active shades | `accentFg` (auto-contrast with the accent when unset) |
 
   Error surfaces (alerts, the Stop button) always keep theme colors so failure states stay recognizable. The accent also appears as decorative text (avatar initials, the streaming caret, VN speaker names) on panel/bubble surfaces — where the style makes the accent unreadable there (WCAG contrast < 3), it automatically falls back to that family's own text color.
@@ -281,7 +289,7 @@ Parser rules:
 - Bundle = zip with a JSON manifest + all referenced assets (avatars, sprites, artwork, BGM).
 - A story export pulls in its cast, scenes (with per-scene casts), the scenes' locations, and its lorebooks.
 - Import restores everything, with duplicate handling (references remapped, names deduped).
-- **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter — scene advances become chapter headings, `<the-end/>` a closing "The End".
+- **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter — scene advances become chapter headings, `<the-end/>` a closing "The End". A book is not a chat log: the `*asterisks*` are chat markup and come off, so action reads as ordinary narrative prose, while the **quotes stay** — they are real punctuation, and they are what makes speech look like speech on the page.
 - **Full backup/restore:** one-click export of the entire database + all assets as a single archive (distinct from entity bundles); restore from archive.
 - **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files nothing references (after a confirm showing count & size; unsaved editor uploads count as unused). References counted: characters, locations, scenes — **and playthrough snapshots**, so a finished playthrough keeps its sprites/art/BGM alive even after the library items are deleted.
 

@@ -20,6 +20,15 @@ function speakerOf(chat: Chat, m: Message): string {
   );
 }
 
+/**
+ * A book is not a chat log: the *asterisks* are chat markup, so they come off and the action
+ * reads as ordinary narrative prose. The quotes are real punctuation and stay — they are what
+ * makes speech look like speech on the page.
+ */
+function prose(s: string): string {
+  return s.replace(/\*([^*\n]+)\*/g, "$1");
+}
+
 function toMarkdown(chat: Chat): string {
   const lines: string[] = [`# ${chat.title}`, ""];
   for (const m of listMessages(chat.id)) {
@@ -30,8 +39,8 @@ function toMarkdown(chat: Chat): string {
       lines.push(`---`, "", `## ${s?.name ?? "New scene"}`, "");
     }
     if (m.role === "marker" || !content) continue;
-    if (m.role === "narrator") lines.push(`*${content.replace(/^\*|\*$/g, "")}*`, "");
-    else lines.push(`**${speakerOf(chat, m)}:** ${content}`, "");
+    if (m.role === "narrator") lines.push(prose(content), "");
+    else lines.push(`**${speakerOf(chat, m)}:** ${prose(content)}`, "");
     if (m.sceneEvent?.theEnd) lines.push(`---`, "", `## The End`, "");
   }
   return lines.join("\n");

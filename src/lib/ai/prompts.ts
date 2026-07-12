@@ -329,7 +329,9 @@ function personaBlock(ctx: ChatContext): string {
 function formatRules(ctx: ChatContext, selfName: string | null): string {
   return [
     `Write in ${ctx.language}.`,
-    `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
+    `FORMAT: spoken words go in "double quotes"; physical actions and descriptions go in *asterisks*; ` +
+      `anything else reads as narration. The user's messages follow the same convention — their quoted text ` +
+      `is what they said aloud, their *asterisks* are what they did.`,
     povRules(ctx.pov, ctx.persona?.name ?? "the user", selfName),
   ].join("\n");
 }
@@ -503,7 +505,9 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
           stagingRules +
           `Unless you are concluding the story, ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
           `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
-          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is.`),
+          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is — ` +
+            `in the same format convention: a thing the user DOES goes in *asterisks*, a thing they SAY in "double quotes". ` +
+            `Suggestions are sent verbatim, so an unmarked one would be taken as spoken words.`),
   ]
     .filter(Boolean)
     .join("\n\n");

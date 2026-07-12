@@ -20,7 +20,8 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
-import { appendMessage, getMessage, saveChat, updateMessage } from "@/lib/store";
+import { autoFormatUserText } from "@/lib/format";
+import { appendMessage, getMessage, getSettings, saveChat, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,10 @@ interface GenerateBody {
   characterId?: string;
   /** append this user message before generating (omit to just continue) */
   userText?: string;
+  /** the text is already in the roleplay convention — skip auto-formatting. Set for the
+   *  narrator's suggested actions: they are authored as the user's line, and quoting an
+   *  action ("Follow her into the kitchen") would turn it into something the user says. */
+  preformatted?: boolean;
   /** regenerate: add a new swipe variant to this existing message */
   regenerateMessageId?: string;
 }
@@ -172,9 +177,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id: chatId } = await params;
   const body = (await req.json()) as GenerateBody;
 
-  // append the user's message first so it's part of the context
+  // append the user's message first so it's part of the context. It is stored in the
+  // roleplay convention (unmarked runs quoted), while speaker routing below still reads the
+  // RAW text — quoting would put a `"` in front of a leading @mention and break the match.
   if (body.userText?.trim()) {
-    appendMessage({ chatId, role: "user", content: body.userText.trim() });
+    const raw = body.userText.trim();
+    const format = !body.preformatted && getSettings().autoFormatUserMessages;
+    appendMessage({ chatId, role: "user", content: format ? autoFormatUserText(raw) : raw });
   }
 
   let ctx = buildContext(chatId);

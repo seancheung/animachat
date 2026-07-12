@@ -414,11 +414,13 @@ export default function ChatPage() {
     [locked, id, characters, mutate, typewriter, dropEcho]
   );
 
-  function send(textOverride?: string) {
+  /** preformatted: a narrator suggestion, already written in the convention — auto-formatting
+   *  it would quote an action ("Follow her into the kitchen") into something the user says. */
+  function send(textOverride?: string, preformatted = false) {
     const text = (textOverride ?? input).trim();
     if (!text || locked) return; // never clear the box for a send that can't happen
     setInput("");
-    void generate({ mode: "auto", userText: text });
+    void generate({ mode: "auto", userText: text, preformatted });
   }
 
   /** The draft streams straight into the input box; Stop keeps what has been written. */
@@ -613,7 +615,7 @@ export default function ChatPage() {
           {streaming.role === "narrator" ? "Narrator" : characters.find((c) => c.id === streaming.characterId)?.name}
           {streaming.emotion && <Badge variant="secondary" rounded>{streaming.emotion}</Badge>}
         </div>
-        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400 italic" : "msg-bubble")}>
+        <div className={cn("rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed", streaming.role === "narrator" ? "border border-dashed border-base-400" : "msg-bubble")}>
           <MessageText text={streaming.text} streaming />
         </div>
       </div>
@@ -703,7 +705,7 @@ export default function ChatPage() {
               await api.post(`/api/chats/${id}/checkpoints`, { messageId: m.id, name });
               await mutate();
             }}
-            onPickOption={(text) => send(text)}
+            onPickOption={(text) => send(text, true)}
           />
         ))}
         {pendingUser && (
@@ -712,7 +714,7 @@ export default function ChatPage() {
               {personaName.slice(0, 1).toUpperCase()}
             </div>
             <div className="max-w-[78%] rounded-lg px-3.5 py-2.5 bg-primary-500/15 text-[0.925rem]">
-              <MessageText text={pendingUser} />
+              <MessageText text={pendingUser} plainAs="speech" />
             </div>
           </div>
         )}
@@ -1047,7 +1049,11 @@ function DialogueLayout({
         <div className="msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
           {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
           <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
-            <MessageText text={displayText} streaming={isStreamingShown} />
+            <MessageText
+              text={displayText}
+              streaming={isStreamingShown}
+              plainAs={echo || (!isStreamingShown && shown?.role === "user") ? "speech" : "narration"}
+            />
           </div>
           {hasMorePages && (
             <ChevronDown className="absolute right-3 bottom-2 size-4 animate-bounce text-content-300" />
@@ -1055,7 +1061,7 @@ function DialogueLayout({
           {atEnd && !hasMorePages && !busy && v?.options && (
             <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
               {v.options.map((o: string, i: number) => (
-                <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
+                <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o, true)}>
                   <ChevronRight /> {o}
                 </Button>
               ))}

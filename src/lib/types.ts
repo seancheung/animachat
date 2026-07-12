@@ -324,6 +324,9 @@ export interface Settings {
   chunkThreshold: number;
   outputReserve: number;
   typingSfxEnabled: boolean;
+  /** quote the unmarked (unquoted, non-*action*) runs of the user's messages on send, so the
+   *  AI reads the same convention it writes; off = the message is stored exactly as typed */
+  autoFormatUserMessages: boolean;
   /** VN typewriter reveal, in characters per second; 0 = off (text appears as it streams in) */
   typingSpeed: number;
   /** music channel: the active scene/location BGM, 0..1 */
@@ -354,6 +357,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chunkThreshold: 3000,
   outputReserve: 2000,
   typingSfxEnabled: true,
+  autoFormatUserMessages: true,
   typingSpeed: 60,
   bgmVolume: 0.8,
   sfxVolume: 0.8,

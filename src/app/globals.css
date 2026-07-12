@@ -16,13 +16,18 @@ body {
   }
 }
 
-/* roleplay text styling: *actions* muted stage directions, "dialogue" prominent */
+/* roleplay text: one style per kind, told apart by weight and a three-step text ladder —
+   dialogue is the voice, narration the prose, actions the muted stage directions.
+   No italics: whole paragraphs of them are tiring to read. */
+.msg-dialogue {
+  color: var(--color-content-100);
+  font-weight: 500;
+}
+.msg-narration {
+  color: var(--color-content-200);
+}
 .msg-action {
   color: var(--color-content-300);
-  font-style: italic;
-}
-.msg-quote {
-  color: var(--color-content-100);
 }
 
 /* chat bubbles (character speech & the fullscreen-VN dialogue box).
@@ -42,8 +47,11 @@ body {
     transparent
   );
 }
-.msg-bubble .msg-quote {
+.msg-bubble .msg-dialogue {
   color: var(--bubble-text, var(--color-content-100));
+}
+.msg-bubble .msg-narration {
+  color: var(--bubble-text-soft, var(--color-content-200));
 }
 .msg-bubble .msg-action {
   color: var(--bubble-text-muted, var(--color-content-300));

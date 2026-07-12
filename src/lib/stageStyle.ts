@@ -109,7 +109,9 @@ export function stageStyleVars(style: StageStyle): Record<string, string> {
   }
   const bubbleText = style.messageFg ?? (style.messageBg ? readableOn(style.messageBg) : null);
   if (bubbleText) {
+    // the same three-step ladder the theme uses: dialogue full, narration soft, actions muted
     vars["--bubble-text"] = bubbleText;
+    vars["--bubble-text-soft"] = `color-mix(in srgb, ${bubbleText} 85%, transparent)`;
     vars["--bubble-text-muted"] = `color-mix(in srgb, ${bubbleText} 70%, transparent)`;
   }
 

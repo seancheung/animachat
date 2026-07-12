@@ -106,7 +106,7 @@ export function MessageRow({
             message.role === "user"
               ? "bg-primary-500/15"
               : message.role === "narrator"
-                ? "bg-transparent border border-dashed border-base-400 italic"
+                ? "bg-transparent border border-dashed border-base-400"
                 : "msg-bubble"
           )}
         >
@@ -134,7 +134,9 @@ export function MessageRow({
               </div>
             </div>
           ) : (
-            <MessageText text={v.content} />
+            /* the user types into a chat box, so their bare line is speech; a character
+               writes prose, so theirs is narration (their speech is quoted) */
+            <MessageText text={v.content} plainAs={message.role === "user" ? "speech" : "narration"} />
           )}
         </div>
 

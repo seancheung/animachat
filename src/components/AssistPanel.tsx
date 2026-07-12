@@ -116,7 +116,13 @@ export function AssistPanel({
                 : "text-sm px-1"
             }
           >
-            <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
+            {/* the co-writer isn't roleplaying: its quotes are its own (it quotes field values
+                back at you) and must not be eaten by the convention */}
+            <MessageText
+              mode="plain"
+              text={m.content}
+              streaming={busy && i === messages.length - 1 && m.role === "assistant"}
+            />
           </div>
         ))}
       </div>

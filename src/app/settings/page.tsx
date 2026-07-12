@@ -408,6 +408,17 @@ export default function SettingsPage() {
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
+            <Field
+              label="Auto-format my messages"
+              hint={'quotes what you type as speech, so the AI reads the same convention it writes ("speech" in quotes, *actions* in asterisks). Off = your message is stored exactly as typed'}
+            >
+              <Switch
+                className="h-8"
+                value={settings.autoFormatUserMessages}
+                onChange={(v) => patchSettings({ autoFormatUserMessages: v })}
+                label={settings.autoFormatUserMessages ? "Enabled" : "Disabled"}
+              />
+            </Field>
             <Field label="Typing speed" hint="characters per second the reply types out at; off = it appears as it streams in">
               <TypingSpeedSlider
                 value={settings.typingSpeed}
