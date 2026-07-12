@@ -114,17 +114,26 @@ export function useBlip() {
   return { play, warm: ensureBuffer };
 }
 
+/** Per-channel trims, so the two sliders sit at comparable loudness at the same value. */
+export const MIX = { bgm: 0.6, ambient: 0.35, blip: 0.5 };
+
+/**
+ * Two channels: music (the scene/location BGM) and sound effects (the ambient loop —
+ * and, at the call site, the typing blips). A single mute covers both.
+ */
 export function useChatAudio({
   bgmUrl,
   ambientUrl,
-  volume,
+  bgmVolume,
+  sfxVolume,
   muted,
 }: {
   bgmUrl: string | null;
   ambientUrl: string | null;
-  volume: number;
+  bgmVolume: number;
+  sfxVolume: number;
   muted: boolean;
 }) {
-  useAudioLayer(bgmUrl, volume * 0.6, !muted);
-  useAudioLayer(ambientUrl, volume * 0.35, !muted);
+  useAudioLayer(bgmUrl, bgmVolume * MIX.bgm, !muted);
+  useAudioLayer(ambientUrl, sfxVolume * MIX.ambient, !muted);
 }

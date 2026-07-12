@@ -28,7 +28,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { useBlip, useChatAudio } from "@/components/chat/audio";
+import { MIX, useBlip, useChatAudio } from "@/components/chat/audio";
 import { useTypewriter } from "@/components/chat/typewriter";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
@@ -89,6 +89,34 @@ function ImpersonateButton({
   );
 }
 
+/** One audio channel: the shared mute plus this channel's level (committed on release, so a
+ *  drag doesn't PUT settings per pixel). */
+function ChannelSlider({
+  value,
+  muted,
+  onChange,
+  onMute,
+}: {
+  value: number;
+  muted: boolean;
+  onChange: (v: number) => void;
+  onMute: () => void;
+}) {
+  const [v, setV] = useState(value);
+  const commit = () => v !== value && onChange(v);
+  return (
+    <div className="flex items-center gap-2 h-8">
+      <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={onMute}>
+        {muted ? <VolumeX /> : <Volume2 />}
+      </Button>
+      <div className={cn("flex-1 flex items-center", muted && "opacity-50")}>
+        <Slider min={0} max={1} step={0.05} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
+      </div>
+      <span className="text-sm text-content-300 w-9 text-right">{Math.round(v * 100)}%</span>
+    </div>
+  );
+}
+
 interface Streaming {
   role: "character" | "narrator";
   characterId: string | null;
@@ -104,7 +132,7 @@ export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data, mutate } = useSWR<any>(`/api/chats/${id}`, api.get);
-  const { data: settings } = useSWR<Settings>("/api/settings", api.get);
+  const { data: settings, mutate: mutateSettings } = useSWR<Settings>("/api/settings", api.get);
   const { data: allScenes } = useSWR<any[]>("/api/scenes", api.get);
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
@@ -121,8 +149,6 @@ export default function ChatPage() {
   const [drafting, setDrafting] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(0.8);
   // picture mode hides the chat UI (panel/dialogue box + stage chip) to enjoy the stage — never persisted
   const [pictureMode, setPictureMode] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -152,10 +178,25 @@ export default function ChatPage() {
     [characters, present]
   );
 
+  /* ---- audio: music and sound effects are separate channels, under one mute ---- */
+  const bgmVolume = settings?.bgmVolume ?? DEFAULT_SETTINGS.bgmVolume;
+  const sfxVolume = settings?.sfxVolume ?? DEFAULT_SETTINGS.sfxVolume;
+  const muted = settings?.audioMuted ?? DEFAULT_SETTINGS.audioMuted;
+  // written straight to the global settings (they outlive the chat, like the other
+  // presentation knobs); optimistic so a slider drag doesn't wait on the round trip
+  const patchAudio = useCallback(
+    (patch: Partial<Settings>) => {
+      void mutateSettings((s) => (s ? { ...s, ...patch } : s), { revalidate: false });
+      void api.put("/api/settings", patch).then(() => mutateSettings());
+    },
+    [mutateSettings]
+  );
+
   useChatAudio({
     bgmUrl: assetUrl(data?.stage?.bgmAsset),
     ambientUrl: assetUrl(data?.stage?.ambientAsset),
-    volume,
+    bgmVolume,
+    sfxVolume,
     muted,
   });
 
@@ -188,7 +229,7 @@ export default function ChatPage() {
       if (text) dropEcho(); // the reply has begun to appear — the user's line steps aside
       // only blip on characters actually typed (the reveal also re-emits on page turns)
       if (text.length > revealedRef.current && settings?.typingSfxEnabled && !muted) {
-        blip.play(blipUrlRef.current, volume * 0.5);
+        blip.play(blipUrlRef.current, sfxVolume * MIX.blip);
       }
       revealedRef.current = text.length;
     },
@@ -721,6 +762,17 @@ export default function ChatPage() {
         >
           {pictureMode ? <CameraOffIcon /> : <CameraIcon />}
         </Button>
+        {/* master mute — the per-channel levels live in the settings drawer */}
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="circle"
+          className="shadow-lg"
+          title={muted ? "Unmute" : "Mute music & sound effects"}
+          onClick={() => patchAudio({ audioMuted: !muted })}
+        >
+          {muted ? <VolumeX /> : <Volume2 />}
+        </Button>
       </div>
 
       {/* -------- settings drawer -------- */}
@@ -728,9 +780,9 @@ export default function ChatPage() {
         <ChatDrawer
           data={data}
           muted={muted}
-          setMuted={setMuted}
-          volume={volume}
-          setVolume={setVolume}
+          bgmVolume={bgmVolume}
+          sfxVolume={sfxVolume}
+          onAudio={patchAudio}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
@@ -1007,9 +1059,9 @@ function DialogueLayout({
 function ChatDrawer({
   data,
   muted,
-  setMuted,
-  volume,
-  setVolume,
+  bgmVolume,
+  sfxVolume,
+  onAudio,
   onPatch,
   onCheckpointLoad,
   onCheckpointDelete,
@@ -1033,15 +1085,21 @@ function ChatDrawer({
           ]}
         />
       </Field>
-      <Field label="Volume">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={() => setMuted(!muted)}>
-            {muted ? <VolumeX /> : <Volume2 />}
-          </Button>
-          <div className="flex-1 flex items-center">
-            <Slider min={0} max={1} step={0.05} value={volume} onChange={setVolume} />
-          </div>
-        </div>
+      <Field label="Music" hint="the scene/location BGM">
+        <ChannelSlider
+          muted={muted}
+          value={bgmVolume}
+          onMute={() => onAudio({ audioMuted: !muted })}
+          onChange={(v: number) => onAudio({ bgmVolume: v })}
+        />
+      </Field>
+      <Field label="Sound effects" hint="ambient loops and typing blips">
+        <ChannelSlider
+          muted={muted}
+          value={sfxVolume}
+          onMute={() => onAudio({ audioMuted: !muted })}
+          onChange={(v: number) => onAudio({ sfxVolume: v })}
+        />
       </Field>
       <Field label="Title">
         <Input className="w-full" value={title} onChange={setTitle} onBlur={() => onPatch({ title })} />

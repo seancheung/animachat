@@ -326,6 +326,12 @@ export interface Settings {
   typingSfxEnabled: boolean;
   /** VN typewriter reveal, in characters per second; 0 = off (text appears as it streams in) */
   typingSpeed: number;
+  /** music channel: the active scene/location BGM, 0..1 */
+  bgmVolume: number;
+  /** sound-effects channel: ambient loops and typing blips, 0..1 */
+  sfxVolume: number;
+  /** master mute — silences both channels (the chat's corner button toggles it) */
+  audioMuted: boolean;
   /** backdrop blur behind the floating chat panel */
   chatPanelBlur: boolean;
   /** background opacity of the floating chat panel & the VN dialogue box, 0..1 */
@@ -349,6 +355,9 @@ export const DEFAULT_SETTINGS: Settings = {
   outputReserve: 2000,
   typingSfxEnabled: true,
   typingSpeed: 60,
+  bgmVolume: 0.8,
+  sfxVolume: 0.8,
+  audioMuted: false,
   chatPanelBlur: true,
   chatPanelOpacity: 0.3,
   stageStyleEnabled: true,
