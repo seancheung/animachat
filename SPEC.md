@@ -34,6 +34,7 @@ All world-building entities are reusable across chats. The library page has a pe
   - **Custom expressions:** name + short description (the description teaches the AI when to use it).
   - Characters with no sprites use `sprite-placeholder.svg` (a `currentColor` silhouette, theme-tinted).
 - Optional per-character typing-sound override.
+- **Preview:** a button on the library card opens a sprite preview (2:3 view with an expression switcher over the uploaded sprites; placeholder silhouette when none).
 
 ### Persona
 - Multiple user personas (name + description); chosen per chat. Characters respond according to the active persona.

@@ -1,9 +1,10 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import {
   BookOpen,
   Download,
+  Eye,
   LibraryBig,
   Mountain,
   Trash2,
@@ -11,9 +12,11 @@ import {
   VenetianMask,
 } from "lucide-react";
 import { mutate } from "swr";
+import { Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { EMOTIONS } from "@/lib/types";
 import { api, assetUrl } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 
@@ -76,7 +79,75 @@ function CoverImage({ src, top }: { src: string; top?: boolean }) {
   return <img src={src} alt="" className={cn("w-full h-full object-cover", top && "object-top")} />;
 }
 
+/** Full-size sprite preview with an expression switcher — how the character reads on stage. */
+function CharacterPreview({
+  item,
+  open,
+  onClose,
+}: {
+  item: any;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const sprites: Record<string, string> = item.sprites ?? {};
+  // standard vocabulary first, then custom expressions that have an upload
+  const names = [
+    ...EMOTIONS.filter((e) => sprites[e]),
+    ...Object.keys(sprites).filter((k) => !(EMOTIONS as readonly string[]).includes(k)),
+  ];
+  const [emo, setEmo] = useState<string>(names[0] ?? "neutral");
+  const src = assetUrl(sprites[emo] ?? sprites.neutral);
+  return (
+    <Modal open={open} onClose={onClose} title={item.name}>
+      <div className="flex gap-4">
+        <div className="w-56 shrink-0 aspect-[2/3] bg-base-300 rounded-md overflow-hidden flex items-center justify-center">
+          {src ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={`${item.name} — ${emo}`} className="w-full h-full object-cover" />
+          ) : (
+            <div
+              className="w-2/3 h-5/6 bg-base-400"
+              style={{
+                WebkitMaskImage: "url(/defaults/sprite-placeholder.svg)",
+                maskImage: "url(/defaults/sprite-placeholder.svg)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+              }}
+            />
+          )}
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-2">
+          {names.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {names.map((n) => (
+                <Button
+                  key={n}
+                  size="sm"
+                  variant={n === emo ? "secondary" : "ghost"}
+                  onClick={() => setEmo(n)}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-content-400">no sprites uploaded yet</div>
+          )}
+          <div className="text-xs text-content-300 whitespace-pre-wrap overflow-y-auto max-h-72">
+            {item.description}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function CharacterCard(props: LibraryCardProps) {
+  const [preview, setPreview] = useState(false);
   const avatar = assetUrl(props.item.avatarAsset);
   const neutral = assetUrl(props.item.sprites?.neutral);
   const createPersona = async () => {
@@ -104,9 +175,15 @@ export function CharacterCard(props: LibraryCardProps) {
       coverAspect="square"
       sub={props.item.description?.slice(0, 90) ?? ""}
       extraActions={
-        <Button variant="ghost" size="sm" shape="square" title="Create persona from this character" onClick={createPersona}>
-          <VenetianMask />
-        </Button>
+        <>
+          <Button variant="ghost" size="sm" shape="square" title="Preview sprites" onClick={() => setPreview(true)}>
+            <Eye />
+          </Button>
+          <Button variant="ghost" size="sm" shape="square" title="Create persona from this character" onClick={createPersona}>
+            <VenetianMask />
+          </Button>
+          <CharacterPreview item={props.item} open={preview} onClose={() => setPreview(false)} />
+        </>
       }
       cover={
         neutral ? (
