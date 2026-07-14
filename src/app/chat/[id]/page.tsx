@@ -6,7 +6,6 @@ import useSWR from "swr";
 import {
   ArrowLeft,
   Asterisk,
-  Bookmark,
   CameraIcon,
   CameraOffIcon,
   Captions,
@@ -14,10 +13,8 @@ import {
   ChevronRight,
   Clapperboard,
   Download,
-  GitFork,
   MapPin,
   PanelRight,
-  Rewind,
   ScrollText,
   SendHorizontal,
   Settings2,
@@ -26,7 +23,6 @@ import {
   Volume2,
   VolumeX,
   Wand2,
-  X,
 } from "lucide-react";
 import { MIX, useBlip, useChatAudio, useEmotionSfx } from "@/components/chat/audio";
 import { useTypewriter } from "@/components/chat/typewriter";
@@ -743,11 +739,14 @@ export default function ChatPage() {
               await api.del(`/api/messages/${m.id}`);
               await mutate();
             }}
-            onCheckpoint={async () => {
-              const name = prompt("Save state name:", "Checkpoint");
-              if (name === null) return;
-              await api.post(`/api/chats/${id}/checkpoints`, { messageId: m.id, name });
-              await mutate();
+            onFork={async () => {
+              if (!(await confirmDialog({
+                title: "Fork chat",
+                message: "Start a new chat from this point? Everything up to this message is copied — this chat stays untouched.",
+                confirmLabel: "Fork",
+              }))) return;
+              const res = await api.post(`/api/chats/${id}/fork`, { messageId: m.id });
+              router.push(`/chat/${res.chatId}`);
             }}
             onPickOption={(text) => send(text)}
             onShowOnStage={() => showOnStage(m)}
@@ -869,19 +868,6 @@ export default function ChatPage() {
           onAudio={patchAudio}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
-            await mutate();
-          }}
-          onCheckpointLoad={async (cpId: string, mode: "truncate" | "fork") => {
-            if (mode === "truncate" && !(await confirmDialog({ title: "Rewind chat", message: "Rewind the chat to this save state? Later messages are deleted.", confirmLabel: "Rewind", danger: true }))) return;
-            const res = await api.post(`/api/checkpoints/${cpId}`, { mode });
-            if (mode === "fork") router.push(`/chat/${res.chatId}`);
-            else {
-              await mutate();
-              setDrawer(false);
-            }
-          }}
-          onCheckpointDelete={async (cpId: string) => {
-            await api.del(`/api/checkpoints/${cpId}`);
             await mutate();
           }}
         />
@@ -1320,8 +1306,6 @@ function ChatDrawer({
   sfxVolume,
   onAudio,
   onPatch,
-  onCheckpointLoad,
-  onCheckpointDelete,
 }: any) {
   const chat = data.chat;
   const [title, setTitle] = useState(chat.title);
@@ -1481,21 +1465,6 @@ function ChatDrawer({
           </div>
         </Field>
       )}
-      <Field label="Save states">
-        <div className="space-y-1">
-          {data.checkpoints.length === 0 && (
-            <div className="text-xs text-content-400">none — use the bookmark button on any message</div>
-          )}
-          {data.checkpoints.map((cp: any) => (
-            <div key={cp.id} className="flex items-center gap-1 bg-base-200 rounded-md px-2 py-1 text-sm">
-              <span className="flex-1 truncate inline-flex items-center gap-1"><Bookmark size={12} /> {cp.name}</span>
-              <Button variant="secondary" size="sm" title="Rewind here" onClick={() => onCheckpointLoad(cp.id, "truncate")}><Rewind /> Load</Button>
-              <Button variant="secondary" size="sm" title="Fork a copy" onClick={() => onCheckpointLoad(cp.id, "fork")}><GitFork /> Fork</Button>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => onCheckpointDelete(cp.id)}><X /></Button>
-            </div>
-          ))}
-        </div>
-      </Field>
       <Field label="Export as novel" hint="a plain speaker-labeled transcript, or an AI rewrite into book prose">
         <Button variant="secondary" size="sm" onClick={() => setNovelOpen(true)}>
           <Download /> Export…
@@ -1504,7 +1473,7 @@ function ChatDrawer({
       </Field>
       <Field
         label="Export chat"
-        hint="a self-contained archive (messages, swipes, save states, playthrough assets) — re-import it from the chat list"
+        hint="a self-contained archive (messages, swipes, playthrough assets) — re-import it from the chat list"
       >
         <Button
           variant="secondary"

@@ -5,17 +5,15 @@ import { ASSETS_DIR } from "./db";
 import { assetIdsOf } from "./bundle";
 import {
   appendMessage,
-  createCheckpoint,
   getAsset,
   getChat,
   getCharacter,
-  listCheckpoints,
   listMessages,
   registerAsset,
   saveChat,
   updateMessage,
 } from "./store";
-import type { Chat, Checkpoint, Message } from "./types";
+import type { Chat, Message } from "./types";
 
 interface ChatArchive {
   app: "animachat";
@@ -23,15 +21,15 @@ interface ChatArchive {
   version: 1;
   chat: Chat;
   messages: Message[];
-  checkpoints: Pick<Checkpoint, "messageId" | "name" | "createdAt">[];
   assets: { id: string; filename: string; mime: string }[];
 }
 
 /**
  * Export a chat as a self-contained zip: the chat row, all messages (variants,
- * stage events), checkpoints, and — for playthroughs — the snapshot's assets.
+ * stage events), and — for playthroughs — the snapshot's assets.
  * Casual/immersive chats reference the library by id and degrade fail-soft on
  * import elsewhere (names come from the snapshot completed below).
+ * (Archives from before the fork feature may carry a `checkpoints` field — ignored.)
  */
 export async function exportChatArchive(chatId: string): Promise<Buffer> {
   const chat = getChat(chatId);
@@ -69,11 +67,6 @@ export async function exportChatArchive(chatId: string): Promise<Buffer> {
     version: 1,
     chat: { ...chat, nameSnapshots },
     messages: listMessages(chatId),
-    checkpoints: listCheckpoints(chatId).map((c) => ({
-      messageId: c.messageId,
-      name: c.name,
-      createdAt: c.createdAt,
-    })),
     assets,
   };
   zip.file("chat.json", JSON.stringify(manifest, null, 2));
@@ -81,9 +74,9 @@ export async function exportChatArchive(chatId: string): Promise<Buffer> {
 }
 
 /**
- * Import a chat archive as a NEW chat (fresh chat & message ids; checkpoints
- * remapped). The rolling summary is not carried over — the memory pass simply
- * re-summarizes old history on the next turn.
+ * Import a chat archive as a NEW chat (fresh chat & message ids). The rolling
+ * summary is not carried over — the memory pass simply re-summarizes old
+ * history on the next turn.
  */
 export async function importChatArchive(buf: Buffer): Promise<Chat> {
   const zip = await JSZip.loadAsync(buf);
@@ -106,7 +99,6 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
   const { id: _id, createdAt: _c, updatedAt: _u, ...chatFields } = manifest.chat ?? ({} as Chat);
   const chat = saveChat(chatFields);
 
-  const msgIds = new Map<string, string>();
   for (const m of manifest.messages ?? []) {
     const first = m.variants?.[0];
     const saved = appendMessage({
@@ -121,11 +113,6 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
     // restore the full variant set (swipes) and the active pick verbatim
     if (Array.isArray(m.variants))
       updateMessage(saved.id, { variants: m.variants, activeVariant: m.activeVariant ?? 0 });
-    msgIds.set(m.id, saved.id);
-  }
-  for (const c of manifest.checkpoints ?? []) {
-    const mid = msgIds.get(c.messageId);
-    if (mid) createCheckpoint(chat.id, mid, c.name ?? "Checkpoint");
   }
   return chat;
 }

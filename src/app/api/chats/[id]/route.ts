@@ -7,7 +7,6 @@ import {
   getCharRelationship,
   getRelationship,
   listCharRelationships,
-  listCheckpoints,
   saveChat,
 } from "@/lib/store";
 
@@ -27,7 +26,6 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     storyName: ctx.snapshot?.name ?? null,
     storyScenes: ctx.snapshot?.scenes.map(({ scene }) => scene) ?? [],
     ended: ctx.ended,
-    checkpoints: listCheckpoints(id),
     // the user side: persona↔character, or the played character's char↔char pairs
     relationships: Object.fromEntries(
       chat.characterIds

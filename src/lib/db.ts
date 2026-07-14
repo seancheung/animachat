@@ -151,13 +151,6 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, position);
-CREATE TABLE IF NOT EXISTS checkpoints (
-  id TEXT PRIMARY KEY,
-  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-  message_id TEXT NOT NULL,
-  name TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS summaries (
   chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
   content TEXT NOT NULL DEFAULT '',

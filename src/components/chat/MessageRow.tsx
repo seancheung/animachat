@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import {
-  Bookmark,
   Captions,
   ChevronLeft,
   ChevronRight,
   Clapperboard,
+  GitFork,
   Pencil,
   RefreshCw,
   ScrollText,
@@ -34,7 +34,7 @@ export function MessageRow({
   onSwipe,
   onRegen,
   onDelete,
-  onCheckpoint,
+  onFork,
   onPickOption,
   onShowOnStage,
 }: {
@@ -51,7 +51,8 @@ export function MessageRow({
   onSwipe: (index: number) => Promise<void>;
   onRegen: () => void;
   onDelete: () => Promise<void>;
-  onCheckpoint: () => Promise<void>;
+  /** fork a new chat from this point (non-destructive — this chat is untouched) */
+  onFork: () => Promise<void>;
   onPickOption: (text: string) => void;
   /** jump to this message performed on the VN stage (dialogue-box layout) */
   onShowOnStage?: () => void;
@@ -204,7 +205,7 @@ export function MessageRow({
           {(message.role === "character" || message.role === "narrator") && (
             <Button variant="ghost" size="sm" shape="square" title="Regenerate (adds a swipe)" disabled={busy} onClick={onRegen}><RefreshCw /></Button>
           )}
-          <Button variant="ghost" size="sm" shape="square" title="Save state here" onClick={onCheckpoint}><Bookmark /></Button>
+          <Button variant="ghost" size="sm" shape="square" title="Fork a new chat from here" disabled={busy} onClick={onFork}><GitFork /></Button>
           <Button
             variant="ghost"
             size="sm"

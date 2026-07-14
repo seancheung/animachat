@@ -3,7 +3,6 @@ import type {
   Chat,
   Character,
   CharRelationship,
-  Checkpoint,
   Fact,
   Lorebook,
   Location,
@@ -779,13 +778,6 @@ export function deleteMessage(id: string) {
   getDb().prepare("DELETE FROM messages WHERE id=?").run(id);
 }
 
-/** Delete all messages after (and optionally including) the given position. */
-export function truncateMessages(chatId: string, position: number, inclusive = false) {
-  getDb()
-    .prepare(`DELETE FROM messages WHERE chat_id=? AND position ${inclusive ? ">=" : ">"} ?`)
-    .run(chatId, position);
-}
-
 export function searchMessages(q: string, limit = 50): { message: Message; chat: Chat }[] {
   const rows = getDb()
     .prepare(
@@ -799,39 +791,6 @@ export function searchMessages(q: string, limit = 50): { message: Message; chat:
     if (chat) out.push({ message: messageFromRow(r), chat });
   }
   return out;
-}
-
-/* ---------------- checkpoints ---------------- */
-
-const checkpointFromRow = (r: Row): Checkpoint => ({
-  id: r.id,
-  chatId: r.chat_id,
-  messageId: r.message_id,
-  name: r.name,
-  createdAt: r.created_at,
-});
-
-export function listCheckpoints(chatId: string): Checkpoint[] {
-  return (
-    getDb().prepare("SELECT * FROM checkpoints WHERE chat_id=? ORDER BY created_at DESC").all(chatId) as Row[]
-  ).map(checkpointFromRow);
-}
-
-export function getCheckpoint(id: string): Checkpoint | null {
-  const r = getDb().prepare("SELECT * FROM checkpoints WHERE id=?").get(id) as Row | undefined;
-  return r ? checkpointFromRow(r) : null;
-}
-
-export function createCheckpoint(chatId: string, messageId: string, name: string): Checkpoint {
-  const id = uid();
-  getDb()
-    .prepare("INSERT INTO checkpoints (id, chat_id, message_id, name, created_at) VALUES (?,?,?,?,?)")
-    .run(id, chatId, messageId, name, now());
-  return getCheckpoint(id)!;
-}
-
-export function deleteCheckpoint(id: string) {
-  getDb().prepare("DELETE FROM checkpoints WHERE id=?").run(id);
 }
 
 /* ---------------- memory: summaries, facts, relationships ---------------- */

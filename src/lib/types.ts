@@ -273,14 +273,6 @@ export interface Message {
   createdAt: number;
 }
 
-export interface Checkpoint {
-  id: string;
-  chatId: string;
-  messageId: string;
-  name: string;
-  createdAt: number;
-}
-
 export interface Relationship {
   id: string;
   characterId: string;
