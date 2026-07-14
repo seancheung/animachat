@@ -282,7 +282,7 @@ Parser rules:
 - Character, location, scene, story, and lorebook can be exported; multiple items can be combined into a single **bundle**.
 - Bundle = zip with a JSON manifest + all referenced assets (avatars, sprites, artwork, BGM).
 - A story export pulls in its cast, scenes (with per-scene casts), the scenes' locations, and its lorebooks.
-- Import restores everything, with duplicate handling (references remapped, names deduped).
+- Import opens a **selection dialog** listing the bundle's contents (everything checked by default): checking an item auto-checks and locks its in-bundle dependencies (story → cast/scenes/lorebooks, scene → location); the server enforces the same dependency closure. Duplicate handling as before (references remapped, names deduped); only assets the imported items reference are written.
 - **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter — scene advances become chapter headings, `<the-end/>` a closing "The End".
 - **Full backup/restore:** one-click export of the entire database + all assets as a single archive (distinct from entity bundles); restore from archive.
 - **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files nothing references (after a confirm showing count & size; unsaved editor uploads count as unused). References counted: characters, locations, scenes — **and playthrough snapshots**, so a finished playthrough keeps its sprites/art/BGM alive even after the library items are deleted.

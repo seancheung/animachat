@@ -15,6 +15,7 @@ import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import { GuideDialog } from "@/components/GuideDialog";
+import { ImportDialog } from "@/components/ImportDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -22,6 +23,7 @@ import SegmentedControl from "@/components/ui/segmented-control";
 import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { api, downloadBlob } from "@/lib/ui";
+import type { BundlePreviewItem } from "@/lib/bundle";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -51,6 +53,8 @@ export default function LibraryPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<{ file: File; items: BundlePreviewItem[] } | null>(null);
+  const [importing, setImporting] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -225,6 +229,35 @@ export default function LibraryPage() {
         )}
       </Modal>
 
+      <ImportDialog
+        open={!!importPreview}
+        items={importPreview?.items ?? []}
+        importing={importing}
+        onClose={() => setImportPreview(null)}
+        onConfirm={async (selected) => {
+          if (!importPreview) return;
+          setImporting(true);
+          try {
+            const fd = new FormData();
+            fd.append("file", importPreview.file);
+            fd.append("selected", JSON.stringify(selected));
+            const res = await fetch("/api/import", { method: "POST", body: fd });
+            const data = await res.json();
+            if (!res.ok) return toast.error(data?.error ?? "Import failed");
+            toast.success(
+              "Imported: " +
+                (Object.entries(data.imported ?? {})
+                  .map(([k, v]) => `${v} ${k}(s)`)
+                  .join(", ") || "nothing")
+            );
+            setImportPreview(null);
+            mutate();
+          } finally {
+            setImporting(false);
+          }
+        }}
+      />
+
       <input
         ref={importRef}
         type="file"
@@ -234,18 +267,14 @@ export default function LibraryPage() {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (!f) return;
+          // list the bundle first — the dialog picks what to import
           const fd = new FormData();
           fd.append("file", f);
+          fd.append("preview", "1");
           const res = await fetch("/api/import", { method: "POST", body: fd });
           const data = await res.json();
           if (!res.ok) return toast.error(data?.error ?? "Import failed");
-          toast.success(
-            "Imported: " +
-              (Object.entries(data.imported ?? {})
-                .map(([k, v]) => `${v} ${k}(s)`)
-                .join(", ") || "nothing")
-          );
-          mutate();
+          setImportPreview({ file: f, items: data.items ?? [] });
         }}
       />
     </div>

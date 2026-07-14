@@ -109,17 +109,79 @@ function dedupeName(name: string, existing: Set<string>): string {
   return `${name} (${i})`;
 }
 
-/** Import a bundle zip. New ids are always generated; references are remapped; names deduped. */
-export async function importBundle(buf: Buffer): Promise<{ imported: Record<string, number> }> {
+const keyOf = (i: ManifestItem) => `${i.type}:${i.data.id}`;
+
+/** Bundle-internal dependencies of an item, as `type:id` keys (only ones present in the bundle). */
+function requiresOf(item: ManifestItem, present: Set<string>): string[] {
+  const req: string[] = [];
+  if (item.type === "story") {
+    for (const e of item.data.scenes ?? []) req.push(`scene:${e.sceneId}`);
+    for (const cid of item.data.characterIds ?? []) req.push(`character:${cid}`);
+    for (const lid of item.data.lorebookIds ?? []) req.push(`lorebook:${lid}`);
+    // a story scene's location rides in via the scene's own requires
+  }
+  if (item.type === "scene" && item.data.locationId) req.push(`location:${item.data.locationId}`);
+  return [...new Set(req)].filter((k) => present.has(k) && k !== keyOf(item));
+}
+
+async function readManifest(buf: Buffer): Promise<{ zip: JSZip; manifest: Manifest }> {
   const zip = await JSZip.loadAsync(buf);
   const manifestFile = zip.file("manifest.json");
   if (!manifestFile) throw new Error("Not an AnimaChat bundle: manifest.json missing");
   const manifest = JSON.parse(await manifestFile.async("string")) as Manifest;
   if (manifest.app !== "animachat") throw new Error("Not an AnimaChat bundle");
+  return { zip, manifest };
+}
 
-  // assets are content-addressed, so identical files simply land on the same id
+export interface BundlePreviewItem {
+  type: BundleItemType;
+  id: string;
+  name: string;
+  /** `type:id` keys of bundle items this one depends on */
+  requires: string[];
+}
+
+/** List a bundle's contents without importing anything — feeds the import selection dialog. */
+export async function previewBundle(buf: Buffer): Promise<{ items: BundlePreviewItem[] }> {
+  const { manifest } = await readManifest(buf);
+  const present = new Set(manifest.items.map(keyOf));
+  return {
+    items: manifest.items.map((i) => ({
+      type: i.type,
+      id: String(i.data.id),
+      name: String(i.data.name ?? "(unnamed)"),
+      requires: requiresOf(i, present),
+    })),
+  };
+}
+
+/** Import a bundle zip. New ids are always generated; references are remapped; names deduped.
+ *  `selected` (as `type:id` keys) limits the import to those items plus their dependencies. */
+export async function importBundle(
+  buf: Buffer,
+  selected?: string[]
+): Promise<{ imported: Record<string, number> }> {
+  const { zip, manifest } = await readManifest(buf);
+
+  if (selected) {
+    const byKey = new Map(manifest.items.map((i) => [keyOf(i), i]));
+    const keep = new Set<string>();
+    const visit = (k: string) => {
+      const it = byKey.get(k);
+      if (!it || keep.has(k)) return;
+      keep.add(k);
+      for (const r of requiresOf(it, new Set(byKey.keys()))) visit(r);
+    };
+    for (const k of selected) visit(k);
+    manifest.items = manifest.items.filter((i) => keep.has(keyOf(i)));
+  }
+
+  // assets are content-addressed, so identical files simply land on the same id;
+  // only write the ones the (possibly filtered) items actually reference
+  const wanted = new Set(manifest.items.flatMap((i) => assetIdsOf(i.type, i.data)));
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
   for (const a of manifest.assets ?? []) {
+    if (!wanted.has(a.id)) continue;
     const f = zip.file(`assets/${a.id}`);
     if (!f || !/^[a-f0-9]{32}$/.test(a.id)) continue;
     const data = await f.async("nodebuffer");
