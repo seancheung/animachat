@@ -28,6 +28,7 @@ All world-building entities are reusable across chats. The library page has a pe
 
 ### Character
 - Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), **description** (personality, background, mannerisms, anything else), greeting, example dialogue.
+- **Reply scope:** in prompts, a character writes only their own words, actions and perceptions in the current moment — never the user's actions, dialogue, decisions, or what happens to them. When a narrator is enabled, plot developments and outside events are left to it; either way replies end where the user can react (keeps characters from drifting into narrator-style event direction, most tempting in 2nd-person VN POV).
 - **Anti-recitation:** in prompts, the sheet is framed as private background knowledge — the character is instructed never to quote or re-announce their own traits/backstory, and not to reuse distinctive phrases from earlier messages. Example dialogue seeds the voice early in a chat only: once the character has enough of their own replies in the verbatim window (~8), it is dropped from the prompt and their real messages anchor the style.
 - **Image prompt:** a stored text-to-image prompt describing the neutral sprite (co-writable by the AI assistant; for use with external image generators).
 - Avatars are used in the message list / small character chips only — never on the VN stage. Library card covers prefer the neutral sprite (avatar, then placeholder, as fallbacks).

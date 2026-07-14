@@ -335,6 +335,7 @@ const EXAMPLE_DIALOGUE_FADE = 8;
 export function buildCharacterRequest(ctx: ChatContext, character: Character, model: ResolvedModel): BuiltRequest {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
+  const personaName = ctx.persona?.name ?? "the user";
   // example dialogue seeds the voice early on; once the character has real replies
   // in the window those anchor the style, and the static example only invites copying
   const ownReplies = window.filter(
@@ -393,7 +394,10 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
-      `Speak and act ONLY as ${character.name}. Never write the user's actions, dialogue or decisions.\n` +
+      `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write ${personaName}'s actions, dialogue or decisions, nor what happens to them.\n` +
+      (ctx.chat.narratorEnabled
+        ? `Don't advance events beyond ${character.name}'s own doing — plot developments, outside events and their consequences belong to the narrator. End your reply where ${personaName} can react.\n`
+        : `End your reply where ${personaName} can react — don't resolve a whole situation in one message.\n`) +
       `Your character sheet is private background knowledge, not content: never quote, paraphrase or re-announce your own traits, backstory or appearance — reveal them through how you act and speak, and only when the scene calls for them. Don't reuse distinctive phrases from your earlier messages.\n` +
       (others.length
         ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Name</mention> (exact name) in your reply — they will respond next. Do it only when the scene calls for it; a plain name without the tag does not pass the turn.\n`
