@@ -508,6 +508,9 @@ export default function HomePage() {
                   <div className="flex items-center gap-1 shrink-0">
                     {c.tags?.map((t: string) => <Badge key={t} variant="secondary" rounded>{t}</Badge>)}
                     <span className="text-xs text-content-300">{c.messageCount} msgs</span>
+                    <span className="text-xs text-content-400">
+                      {new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
+                    </span>
                     <Button
                       variant="ghost"
                       size="sm"
