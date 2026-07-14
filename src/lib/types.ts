@@ -255,11 +255,12 @@ export interface MessageVariant {
   content: string;
   emotion: string | null;
   options: string[] | null;
-  /** the model's raw output before tag parsing (kept for debugging; absent on
-      user messages and on messages saved before this field existed) */
-  raw?: string | null;
   createdAt: number;
 }
+// The model's raw output before tag parsing lives in the raw_outputs table
+// (message_id + variant_index), NOT on the variant: debugging data that must
+// never reach the client, forks, or archives — keeping it out of the variants
+// JSON makes that true by construction.
 
 export interface Message {
   id: string;

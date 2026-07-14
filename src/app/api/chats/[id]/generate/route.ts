@@ -20,7 +20,7 @@ import {
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { parseMentions, tagMentions } from "@/lib/mentions";
-import { appendMessage, getMessage, saveChat, updateMessage } from "@/lib/store";
+import { appendMessage, getMessage, saveChat, setRawOutput, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -349,13 +349,14 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           if (regenTarget) {
             const variants = [
               ...regenTarget.variants,
-              { content, emotion, options, raw, createdAt: Date.now() },
+              { content, emotion, options, createdAt: Date.now() },
             ];
             saved = updateMessage(regenTarget.id, {
               variants,
               activeVariant: variants.length - 1,
               sceneEvent: sceneEvent ?? regenTarget.sceneEvent,
             });
+            if (saved) setRawOutput(saved.id, variants.length - 1, raw);
           } else {
             saved = appendMessage({
               chatId,

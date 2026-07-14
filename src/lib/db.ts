@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, position);
+CREATE TABLE IF NOT EXISTS raw_outputs (
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  variant_index INTEGER NOT NULL,
+  raw TEXT NOT NULL,
+  PRIMARY KEY (message_id, variant_index)
+);
 CREATE TABLE IF NOT EXISTS summaries (
   chat_id TEXT PRIMARY KEY REFERENCES chats(id) ON DELETE CASCADE,
   content TEXT NOT NULL DEFAULT '',

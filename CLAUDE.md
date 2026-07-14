@@ -13,7 +13,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 
 ## Architecture
 
-- `src/lib/db.ts` — schema (no migration system: on schema changes, delete `./data` and let it recreate — the user has agreed local data is disposable)
+- `src/lib/db.ts` — schema. No migration framework, but **no database is disposable — never delete `./data`**. The schema is `CREATE TABLE IF NOT EXISTS`, run on every connection init, so purely additive changes (new tables/indexes) apply by themselves on restart. Anything else migrates the data in place: run an idempotent inline `node -e` script against the local db (from the repo root, so `better-sqlite3` resolves; resolve the db path like db.ts: `ANIMACHAT_DB_PATH ?? (ANIMACHAT_DATA_DIR ?? ./data)/animachat.db`), and hand the user the same script wrapped as `docker exec -it <container_name> node -e '…'` for their dockerized server (WORKDIR `/app`, data volume `/app/data`; single-quote-safe: double quotes only inside the script). Order: restart/deploy the new code first, then migrate — and since old code may write rows in between, keep scripts rerunnable.
 - `src/lib/store.ts` — ALL SQL + row↔object marshalling (camelCase objects, snake_case columns, JSON-string columns)
 - `src/lib/types.ts` — shared types, `EMOTIONS`, `AI_TASKS`, defaults
 - `src/lib/ai/` — `client.ts` (raw-fetch Anthropic + OpenAI-compatible clients, SSE, per-task model resolution, usage logging), `tags.ts` (streaming tag parser), `prompts.ts` (context assembly), `memory.ts` (rolling summarization), `placeholders.ts` (`[char_name]`-style substitution)
@@ -42,4 +42,4 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 - Don't render toggle buttons inside a `<label>` — label click re-dispatch double-fires them. `Field` in `components/app.tsx` is deliberately a `<div>`.
 - The vendored ui components compose classes with plain `cva` (no tailwind-merge), so a width/size override passed via `className` may lose to the component's own class — wrap in a sized container instead (see the volume `Slider` in the chat toolbar).
 - The user runs their own dev server on this repo — don't kill processes on port 3000, and don't run a second `next dev` (Next refuses); use `npm start` on another port with `ANIMACHAT_DB_PATH` instead.
-- The DB connection is cached in `globalThis` — schema changes take effect after the user restarts their dev server (with `./data` deleted).
+- The DB connection is cached in `globalThis` — schema changes take effect after the user restarts their dev server (which auto-creates new tables; see the migration rules under `db.ts` above).

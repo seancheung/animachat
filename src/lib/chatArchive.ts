@@ -110,9 +110,14 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
       options: first?.options ?? null,
       sceneEvent: m.sceneEvent ?? null,
     });
-    // restore the full variant set (swipes) and the active pick verbatim
+    // restore the full variant set (swipes) and the active pick verbatim;
+    // archives from before the raw_outputs table carried raw model output
+    // inside variants — debug data that doesn't travel, so drop it
     if (Array.isArray(m.variants))
-      updateMessage(saved.id, { variants: m.variants, activeVariant: m.activeVariant ?? 0 });
+      updateMessage(saved.id, {
+        variants: m.variants.map(({ raw: _raw, ...v }: { raw?: unknown } & Message["variants"][number]) => v),
+        activeVariant: m.activeVariant ?? 0,
+      });
   }
   return chat;
 }

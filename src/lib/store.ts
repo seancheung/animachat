@@ -735,8 +735,11 @@ export function appendMessage(m: {
   if (prevRow) {
     const prev = messageFromRow(prevRow);
     if (prev.variants.length > 1) {
-      const kept = prev.variants[prev.activeVariant] ?? prev.variants[0];
-      updateMessage(prev.id, { variants: [kept], activeVariant: 0 });
+      const keptIndex = prev.variants[prev.activeVariant] ? prev.activeVariant : 0;
+      updateMessage(prev.id, { variants: [prev.variants[keptIndex]], activeVariant: 0 });
+      // raw outputs follow their variants: keep only the chosen one, re-keyed to 0
+      db.prepare("DELETE FROM raw_outputs WHERE message_id=? AND variant_index<>?").run(prev.id, keptIndex);
+      db.prepare("UPDATE raw_outputs SET variant_index=0 WHERE message_id=?").run(prev.id);
     }
   }
   const pos =
@@ -745,7 +748,6 @@ export function appendMessage(m: {
     content: m.content,
     emotion: m.emotion ?? null,
     options: m.options ?? null,
-    ...(m.raw != null ? { raw: m.raw } : {}),
     createdAt: now(),
   };
   const id = uid();
@@ -764,7 +766,16 @@ export function appendMessage(m: {
     now()
   );
   touchChat(m.chatId);
+  if (m.raw != null) setRawOutput(id, 0, m.raw);
   return getMessage(id)!;
+}
+
+/** Attach a model's raw pre-parse output to a message variant. Debugging data,
+ *  database-only: never read by the app, never sent to clients, forks or archives. */
+export function setRawOutput(messageId: string, variantIndex: number, raw: string) {
+  getDb()
+    .prepare("INSERT OR REPLACE INTO raw_outputs (message_id, variant_index, raw) VALUES (?,?,?)")
+    .run(messageId, variantIndex, raw);
 }
 
 export function updateMessage(
