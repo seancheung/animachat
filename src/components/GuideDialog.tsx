@@ -67,11 +67,19 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
         const type = String(it.type ?? "");
         const name = String(it.name ?? "").trim();
         if (!TEXT_FIELDS[type] || !name) continue;
-        const idx = next.findIndex(
-          (x) => x.type === type && String(x.name ?? "").toLowerCase() === name.toLowerCase()
-        );
-        if (idx === -1) next.push({ ...it, type });
-        else next[idx] = { ...next[idx], ...it };
+        const find = (n: string) =>
+          next.findIndex(
+            (x) => x.type === type && String(x.name ?? "").toLowerCase() === n.toLowerCase()
+          );
+        // a rename targets the item under its old name (falling back to the new one,
+        // in case the model repeats a rename that already happened)
+        const renameFrom = String(it.renameFrom ?? "").trim();
+        let idx = renameFrom ? find(renameFrom) : -1;
+        if (idx === -1) idx = find(name);
+        const fields = { ...it };
+        delete fields.renameFrom;
+        if (idx === -1) next.push({ ...fields, type });
+        else next[idx] = { ...next[idx], ...fields };
       }
       return next;
     });

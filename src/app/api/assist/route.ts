@@ -175,7 +175,10 @@ export const POST = handler(async (req: Request) => {
     `Whenever you and the user have converged on content (or the user asks you to write it), apply it: end your reply with\n` +
     (isLibrary
       ? `${OPEN}{ "items": [ ...only items you are adding or changing... ] }${CLOSE}\n` +
-        `An item is identified by its "type" + "name": a new name creates an item, an existing name updates it (only the fields you include change). Give new items complete fields. Never re-emit unchanged items.\n`
+        `An item is identified by its "type" + "name": a new name creates an item, an existing name updates it (only the fields you include change). ` +
+        `To RENAME an item, add "renameFrom": "its current name" alongside the new "name" — a bare new name would create a duplicate. ` +
+        `When a rename changes a name other items refer to (a story's castNames/scenes, a scene's locationName, lorebookNames), re-emit those fields with the new name too. ` +
+        `Give new items complete fields. Never re-emit unchanged items.\n`
       : `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n`) +
     `The JSON must be valid. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
 
