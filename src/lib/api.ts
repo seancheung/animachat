@@ -30,4 +30,14 @@ export function price(v: unknown): number | null {
   return v == null || v === "" || !Number.isFinite(n) || n < 0 ? null : n;
 }
 
+/** Content-Disposition for a download named after user text. Keeps unicode letters/digits;
+ *  headers are latin-1 only, so the unicode name rides in RFC 5987 filename* with an
+ *  ascii fallback. */
+export function attachmentDisposition(rawName: string, ext: string): string {
+  const safe =
+    rawName.replace(/[^\p{L}\p{N}-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "chat";
+  const ascii = safe.replace(/[^\x20-\x7e]+/g, "-").replace(/^-+|-+$/g, "") || "chat";
+  return `attachment; filename="${ascii}.${ext}"; filename*=UTF-8''${encodeURIComponent(safe)}.${ext}`;
+}
+
 export type IdParams = { params: Promise<{ id: string }> };

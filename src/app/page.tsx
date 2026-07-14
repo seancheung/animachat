@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -15,6 +15,7 @@ import {
   ScrollText,
   Search,
   Trash2,
+  Upload,
   UserRound,
   VenetianMask,
 } from "lucide-react";
@@ -410,6 +411,7 @@ export default function HomePage() {
   const [wizard, setWizard] = useState(false);
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("");
+  const importRef = useRef<HTMLInputElement>(null);
   const { data: searchResults } = useSWR<any[]>(q.trim() ? `/api/search?q=${encodeURIComponent(q)}` : null, api.get);
 
   const folders = useMemo(() => [...new Set((chats ?? []).map((c) => c.folder).filter(Boolean))].sort(), [chats]);
@@ -426,10 +428,37 @@ export default function HomePage() {
             value={q}
             onChange={setQ}
           />
+          <Button
+            variant="secondary"
+            className="whitespace-nowrap"
+            title="Import a chat archive (.zip)"
+            onClick={() => importRef.current?.click()}
+          >
+            <Upload /> Import
+          </Button>
           <Button className="whitespace-nowrap" onClick={() => setWizard(true)}>
             <Plus /> New chat
           </Button>
         </div>
+
+        <input
+          ref={importRef}
+          type="file"
+          hidden
+          accept=".zip"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (!f) return;
+            const fd = new FormData();
+            fd.append("file", f);
+            const res = await fetch("/api/chats/import", { method: "POST", body: fd });
+            const data = await res.json();
+            if (!res.ok) return toast.error(data?.error ?? "Import failed");
+            await mutate();
+            router.push(`/chat/${data.chat.id}`);
+          }}
+        />
 
         {folders.length > 0 && (
           <ToggleGroup className="gap-1.5" value={folder} onChange={(v) => setFolder(v ?? "")}>

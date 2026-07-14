@@ -1309,6 +1309,18 @@ function ChatDrawer({
           </Button>
         </div>
       </Field>
+      <Field
+        label="Export chat"
+        hint="a self-contained archive (messages, swipes, save states, playthrough assets) — re-import it from the chat list"
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/archive`), "chat.zip")}
+        >
+          <Download /> Archive (.zip)
+        </Button>
+      </Field>
     </div>
   );
 }
