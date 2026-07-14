@@ -175,10 +175,12 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
       <Field label="Image prompt" hint="text-to-image prompt for the background — generate the art elsewhere, upload it above">
         <Textarea className="w-full h-20" value={form.imagePrompt ?? ""} onChange={(v) => setForm({ ...form, imagePrompt: v })} />
       </Field>
-      <Field
-        label="Chat style"
-        hint="colors the VN stage & floating chat panel while this place is active — governed by the scene/location styling switch in Settings; bubble text auto-contrasts with the bubble color when unset"
-      >
+      <Collapsible bordered title={`Chat style${style.enabled === true ? " — enabled" : ""}`}>
+        <div className="text-xs text-content-400 mb-2">
+          colors the VN stage & floating chat panel while this place is active — governed by the
+          scene/location styling switch in Settings; message text auto-contrasts with its background
+          when unset
+        </div>
         <div className="space-y-2">
         <Checkbox
           value={style.enabled === true}
@@ -187,15 +189,15 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
         />
         <div className={cn("flex items-center gap-4 flex-wrap", style.enabled !== true && "opacity-40 pointer-events-none")}>
           <ColorSwatch label="Stage bg" value={style.stageBg} onChange={(v) => setStyle({ stageBg: v })} />
-          <ColorSwatch label="Panel" value={style.panelBg} onChange={(v) => setStyle({ panelBg: v })} />
-          <ColorSwatch label="Bubbles" value={style.messageBg} onChange={(v) => setStyle({ messageBg: v })} />
-          <ColorSwatch label="Bubble text" value={style.messageFg} onChange={(v) => setStyle({ messageFg: v })} />
+          <ColorSwatch label="Panel bg" value={style.panelBg} onChange={(v) => setStyle({ panelBg: v })} />
+          <ColorSwatch label="Message bg" value={style.messageBg} onChange={(v) => setStyle({ messageBg: v })} />
+          <ColorSwatch label="Message text" value={style.messageFg} onChange={(v) => setStyle({ messageFg: v })} />
           <ColorSwatch label="Panel text" value={style.panelFg} onChange={(v) => setStyle({ panelFg: v })} />
           <ColorSwatch label="Accent" value={style.accent} onChange={(v) => setStyle({ accent: v })} />
           <ColorSwatch label="Accent text" value={style.accentFg} onChange={(v) => setStyle({ accentFg: v })} />
         </div>
         </div>
-      </Field>
+      </Collapsible>
     </>
   );
 }
