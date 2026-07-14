@@ -201,6 +201,9 @@ export const POST = handler(async (req: Request) => {
           if (emit) send({ type: "text", text: emit });
           visible = buf.slice(0, idx);
           inFields = true;
+          // the fields block is held back until it parses — tell the client the
+          // assistant is now writing into the form, not stalled
+          send({ type: "drafting" });
           return;
         }
         // hold back a tail that could be a partial "<fields>"

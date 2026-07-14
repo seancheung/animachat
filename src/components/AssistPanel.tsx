@@ -41,6 +41,8 @@ export function AssistPanel({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  // the assistant is writing the held-back fields block (tool-calling into the form)
+  const [drafting, setDrafting] = useState(false);
   const [refs, setRefs] = useState<LibraryRef[]>([]);
   const [files, setFiles] = useState<TextFile[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -51,7 +53,7 @@ export function AssistPanel({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, drafting]);
 
   async function send() {
     const text = input.trim();
@@ -75,7 +77,10 @@ export function AssistPanel({
           if (ev.type === "text") {
             acc += ev.text;
             setMessages([...history, { role: "assistant", content: acc }]);
+          } else if (ev.type === "drafting") {
+            setDrafting(true);
           } else if (ev.type === "fields" && ev.fields) {
+            setDrafting(false);
             onFields(ev.fields);
             acc += acc ? "\n\n✦ Applied to the form." : "✦ Applied to the form.";
             setMessages([...history, { role: "assistant", content: acc }]);
@@ -92,6 +97,7 @@ export function AssistPanel({
       ]);
     } finally {
       setBusy(false);
+      setDrafting(false);
     }
   }
 
@@ -119,6 +125,11 @@ export function AssistPanel({
             <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
           </div>
         ))}
+        {drafting && (
+          <div className="text-xs text-content-400 px-1 animate-pulse">
+            ✦ writing into the form…
+          </div>
+        )}
       </div>
       {(refs.length > 0 || files.length > 0) && (
         <div className="flex flex-wrap gap-1 pt-2">
