@@ -54,7 +54,12 @@ const getters: Record<BundleItemType, (id: string) => any> = {
 export function assetIdsOf(type: BundleItemType, data: any): string[] {
   switch (type) {
     case "character":
-      return [data.avatarAsset, data.typingSfxAsset, ...Object.values(data.sprites ?? {})].filter(Boolean);
+      return [
+        data.avatarAsset,
+        data.typingSfxAsset,
+        ...Object.values(data.sprites ?? {}),
+        ...Object.values(data.spriteSfx ?? {}),
+      ].filter(Boolean);
     case "location":
     case "scene":
       return [data.artworkAsset, data.bgmAsset, data.ambientAsset].filter(Boolean);

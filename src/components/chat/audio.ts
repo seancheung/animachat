@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { assetUrl } from "@/lib/ui";
+import type { Character } from "@/lib/types";
 
 /** One looping audio layer with fade-crossfade on source change. */
 function useAudioLayer(url: string | null, volume: number, enabled: boolean) {
@@ -115,7 +117,44 @@ export function useBlip() {
 }
 
 /** Per-channel trims, so the two sliders sit at comparable loudness at the same value. */
-export const MIX = { bgm: 0.6, ambient: 0.35, blip: 0.5 };
+export const MIX = { bgm: 0.6, ambient: 0.35, blip: 0.5, emote: 0.8 };
+
+/**
+ * One-shot expression SFX (laughter, sigh…): plays when a character's DISPLAYED emotion
+ * changes to one that has an SFX uploaded — never on the initial render (opening a chat
+ * replays no sounds), and never when the emotion stays the same between messages.
+ * Rides the sound-effects channel; browsing the backlog replays them with the sprites.
+ */
+export function useEmotionSfx({
+  characters,
+  emotions,
+  volume,
+  muted,
+}: {
+  /** the characters on stage — off-stage emotion changes make no sound */
+  characters: Character[];
+  /** characterId -> displayed emotion */
+  emotions: Record<string, string>;
+  volume: number;
+  muted: boolean;
+}) {
+  const prev = useRef<Record<string, string> | null>(null);
+  useEffect(() => {
+    const last = prev.current;
+    prev.current = { ...emotions };
+    if (!last || muted) return;
+    for (const c of characters) {
+      const emo = emotions[c.id];
+      if (!emo || last[c.id] === emo) continue;
+      // older playthrough snapshots predate spriteSfx — fail-soft
+      const url = assetUrl(c.spriteSfx?.[emo] ?? null);
+      if (!url) continue;
+      const el = new Audio(url);
+      el.volume = Math.max(0, Math.min(1, volume * MIX.emote));
+      void el.play().catch(() => {});
+    }
+  }, [characters, emotions, volume, muted]);
+}
 
 /**
  * Two channels: music (the scene/location BGM) and sound effects (the ambient loop —

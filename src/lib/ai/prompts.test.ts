@@ -26,6 +26,7 @@ function makeCharacter(id: string, name: string): Character {
     exampleDialogue: `"Welcome, traveler."`,
     imagePrompt: "",
     sprites: {},
+    spriteSfx: {},
     customExpressions: [],
     typingSfxAsset: null,
     tags: [],

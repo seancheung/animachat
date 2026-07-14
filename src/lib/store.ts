@@ -179,6 +179,7 @@ const characterFromRow = (r: Row): Character => ({
   exampleDialogue: r.example_dialogue,
   imagePrompt: r.image_prompt,
   sprites: J.parse(r.sprites, {}),
+  spriteSfx: J.parse(r.sprite_sfx, {}),
   customExpressions: J.parse(r.custom_expressions, []),
   typingSfxAsset: r.typing_sfx_asset,
   trackRelationship: !!r.track_relationship,
@@ -208,6 +209,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     exampleDialogue: "",
     imagePrompt: "",
     sprites: {},
+    spriteSfx: {},
     customExpressions: [],
     typingSfxAsset: null,
     trackRelationship: true,
@@ -220,10 +222,10 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
   });
   getDb()
     .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,tags,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@trackRel,@idle,@tags,@created,@updated)
+      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,tags,created_at,updated_at)
+       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@spriteSfx,@custom,@sfx,@trackRel,@idle,@tags,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, description=@description, greeting=@greeting,
-         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx,
+         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, sprite_sfx=@spriteSfx, custom_expressions=@custom, typing_sfx_asset=@sfx,
          track_relationship=@trackRel, idle_motion=@idle, tags=@tags, updated_at=@updated`
     )
     .run({
@@ -235,6 +237,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
       example: m.exampleDialogue,
       imagePrompt: m.imagePrompt,
       sprites: J.str(m.sprites),
+      spriteSfx: J.str(m.spriteSfx),
       custom: J.str(m.customExpressions),
       sfx: m.typingSfxAsset,
       trackRel: m.trackRelationship ? 1 : 0,

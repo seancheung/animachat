@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS characters (
   example_dialogue TEXT NOT NULL DEFAULT '',
   image_prompt TEXT NOT NULL DEFAULT '',
   sprites TEXT NOT NULL DEFAULT '{}',
+  sprite_sfx TEXT NOT NULL DEFAULT '{}',
   custom_expressions TEXT NOT NULL DEFAULT '[]',
   typing_sfx_asset TEXT,
   track_relationship INTEGER NOT NULL DEFAULT 1,

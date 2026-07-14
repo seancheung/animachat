@@ -28,7 +28,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { MIX, useBlip, useChatAudio } from "@/components/chat/audio";
+import { MIX, useBlip, useChatAudio, useEmotionSfx } from "@/components/chat/audio";
 import { useTypewriter } from "@/components/chat/typewriter";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
@@ -317,6 +317,10 @@ export default function ChatPage() {
     }
     return map;
   }, [timeline, streaming, browseIdx, echoing]);
+
+  // one-shot expression SFX on the sfx channel — follows the DISPLAYED emotion, so it
+  // fires when the streamed <emo> tag lands, on swipes, and while browsing the backlog
+  useEmotionSfx({ characters: stageCharacters, emotions, volume: sfxVolume, muted });
 
   // Esc leaves picture mode — the way out when the corner buttons are invisible.
   // Capture phase: the drawer's dismiss handler (floating-ui) takes Escape on the document

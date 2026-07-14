@@ -63,12 +63,26 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
     onSaved
   );
   const sprites: Record<string, string> = form.sprites ?? {};
+  const spriteSfx: Record<string, string> = form.spriteSfx ?? {};
   const customs: CustomExpression[] = form.customExpressions ?? [];
   const setSprite = (emotion: string, assetId: string | null) => {
     const next = { ...sprites };
     if (assetId) next[emotion] = assetId;
     else delete next[emotion];
     setForm({ ...form, sprites: next });
+  };
+  const setSfx = (emotion: string, assetId: string | null) => {
+    const next = { ...spriteSfx };
+    if (assetId) next[emotion] = assetId;
+    else delete next[emotion];
+    setForm({ ...form, spriteSfx: next });
+  };
+  /** rename/remove a custom expression: its sprite AND its SFX follow the key */
+  const rekey = (map: Record<string, string>, from: string, to: string | null) => {
+    const next = { ...map };
+    if (to && next[from]) next[to] = next[from];
+    delete next[from];
+    return next;
   };
 
   return (
@@ -104,12 +118,16 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
         </Field>
       )}
 
-      <Field label="Expression sprites (2:3)" hint="all optional — neutral is the fallback; missing expressions fall back to neutral, then the placeholder">
+      <Field
+        label="Expression sprites (2:3)"
+        hint="all optional — neutral is the fallback; missing expressions fall back to neutral, then the placeholder. The audio slot under each is a one-shot SFX (laughter, sigh…) played when the character switches to that expression"
+      >
         <div className="grid grid-cols-4 gap-2">
           {EMOTIONS.map((emo) => (
             <div key={emo}>
               <AssetInput kind="image" ratio={2 / 3} value={sprites[emo] ?? null} onChange={(v) => setSprite(emo, v)} />
               <div className="text-center text-xs text-content-300 mt-0.5">{emo}</div>
+              <AssetInput kind="audio" value={spriteSfx[emo] ?? null} onChange={(v) => setSfx(emo, v)} />
             </div>
           ))}
         </div>
@@ -132,12 +150,12 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
                     const next = [...customs];
                     const oldName = next[i].name;
                     next[i] = { ...next[i], name };
-                    const s = { ...sprites };
-                    if (s[oldName]) {
-                      s[name] = s[oldName];
-                      delete s[oldName];
-                    }
-                    setForm({ ...form, customExpressions: next, sprites: s });
+                    setForm({
+                      ...form,
+                      customExpressions: next,
+                      sprites: rekey(sprites, oldName, name),
+                      spriteSfx: rekey(spriteSfx, oldName, name),
+                    });
                   }}
                 />
                 <Input
@@ -150,16 +168,22 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
                     setForm({ ...form, customExpressions: next });
                   }}
                 />
+                <div className="w-40">
+                  <AssetInput kind="audio" value={spriteSfx[c.name] ?? null} onChange={(v) => setSfx(c.name, v)} />
+                </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 shape="square"
-                onClick={() => {
-                  const s = { ...sprites };
-                  delete s[c.name];
-                  setForm({ ...form, customExpressions: customs.filter((_, k) => k !== i), sprites: s });
-                }}
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    customExpressions: customs.filter((_, k) => k !== i),
+                    sprites: rekey(sprites, c.name, null),
+                    spriteSfx: rekey(spriteSfx, c.name, null),
+                  })
+                }
               >
                 <X />
               </Button>

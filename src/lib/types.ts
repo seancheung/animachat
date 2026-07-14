@@ -43,6 +43,9 @@ export interface Character {
   imagePrompt: string;
   /** emotion name -> asset id */
   sprites: Record<string, string>;
+  /** emotion name -> audio asset id; a one-shot SFX (laughter, sigh…) played on the
+      VN stage when the character switches to that expression */
+  spriteSfx: Record<string, string>;
   customExpressions: CustomExpression[];
   typingSfxAsset: string | null;
   /** affinity/relationship tracking with personas (global per character) */
