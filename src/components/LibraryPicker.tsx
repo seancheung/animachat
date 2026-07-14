@@ -10,6 +10,7 @@ import {
   Paperclip,
   UserRound,
   VenetianMask,
+  X,
 } from "lucide-react";
 import { Modal } from "@/components/app";
 import Button from "@/components/ui/button";
@@ -80,12 +81,7 @@ export function LibraryPicker({
   const keyOf = (r: { type: string; id: string }) => `${r.type}:${r.id}`;
   const q = query.trim().toLowerCase();
   const matches = (all ?? []).filter((i) => !q || i.name.toLowerCase().includes(q)).slice(0, MAX_MATCHES);
-  // selected items ride along so their tags (and checkmarks) always resolve to names
-  const withSelected = [
-    ...matches,
-    ...selection.filter((r) => !matches.some((m) => keyOf(m) === keyOf(r))),
-  ];
-  const options: MultiComboboxOption<string>[] = withSelected.map((i) => ({
+  const options: MultiComboboxOption<string>[] = matches.map((i) => ({
     value: keyOf(i),
     label: i.name,
   }));
@@ -97,6 +93,7 @@ export function LibraryPicker({
         <MultiCombobox
           className="w-full"
           placeholder="Search the library…"
+          hideTags
           value={selection.map(keyOf)}
           options={options}
           loading={open && !all}
@@ -124,6 +121,32 @@ export function LibraryPicker({
             );
           }}
         />
+        {selection.length > 0 && (
+          <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+            {selection.map((r) => {
+              const Icon = libraryTypeIcon(r.type);
+              return (
+                <div
+                  key={keyOf(r)}
+                  className="flex items-center gap-2 rounded-md bg-base-200 px-2.5 py-1.5 text-sm"
+                >
+                  <Icon size={13} className="shrink-0 text-content-400" />
+                  <span className="flex-1 truncate">{r.name}</span>
+                  <span className="shrink-0 text-[10px] text-content-400">{r.type}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    shape="square"
+                    title="Remove"
+                    onClick={() => onChange(selection.filter((x) => keyOf(x) !== keyOf(r)))}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           {footer ?? (
             <Button variant="secondary" onClick={onClose}>
