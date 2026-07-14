@@ -13,6 +13,8 @@ import { MessageText } from "./MessageText";
 interface Msg {
   role: "user" | "assistant";
   content: string;
+  /** this reply wrote fields into the form — shown as a styled block under the text */
+  applied?: boolean;
 }
 
 interface TextFile {
@@ -79,6 +81,9 @@ export function AssistPanel({
     const history: Msg[] = [...messages, { role: "user", content: text }];
     setMessages([...history, { role: "assistant", content: "" }]);
     let acc = "";
+    let applied = false;
+    const show = () =>
+      setMessages([...history, { role: "assistant", content: acc.trim(), applied }]);
     try {
       await streamSse(
         "/api/assist",
@@ -92,17 +97,17 @@ export function AssistPanel({
         (ev) => {
           if (ev.type === "text") {
             acc += ev.text;
-            setMessages([...history, { role: "assistant", content: acc }]);
+            show();
           } else if (ev.type === "drafting") {
             setDrafting(true);
           } else if (ev.type === "fields" && ev.fields) {
             setDrafting(false);
             onFields(ev.fields);
-            acc += acc ? "\n\n✦ Applied to the form." : "✦ Applied to the form.";
-            setMessages([...history, { role: "assistant", content: acc }]);
+            applied = true;
+            show();
           } else if (ev.type === "error") {
             acc += `\n⚠ ${ev.message}`;
-            setMessages([...history, { role: "assistant", content: acc }]);
+            show();
           }
         }
       );
@@ -139,6 +144,11 @@ export function AssistPanel({
             }
           >
             <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
+            {m.applied && (
+              <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-2 py-1 text-xs text-primary-400">
+                ✦ Applied to the form
+              </div>
+            )}
             {m.role === "user" && onRestore && !busy && (
               <button
                 type="button"
@@ -152,7 +162,7 @@ export function AssistPanel({
           </div>
         ))}
         {drafting && (
-          <div className="text-xs text-content-400 px-1 animate-pulse">
+          <div className="inline-flex items-center gap-1.5 rounded-md border border-base-400 bg-base-300/40 px-2 py-1 text-xs text-content-400 animate-pulse">
             ✦ writing into the form…
           </div>
         )}
