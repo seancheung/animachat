@@ -146,7 +146,14 @@ function ColorSwatch({
           type="color"
           value={value ?? "#888888"}
           onChange={(e) => onChange(e.target.value)}
-          className={"h-8 w-10 rounded-md border border-base-400 bg-transparent cursor-pointer" + (value ? "" : " opacity-35")}
+          className={cn(
+            // the native swatch pseudo-elements keep their own padding/corners — flatten
+            // them so the circle is the color, not a rounded box around a square
+            "size-6 shrink-0 cursor-pointer appearance-none overflow-hidden rounded-full border border-base-400 bg-transparent",
+            "[&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-none",
+            "[&::-moz-color-swatch]:rounded-full [&::-moz-color-swatch]:border-none",
+            !value && "opacity-35"
+          )}
         />
       </Tooltip>
       {value != null && (
