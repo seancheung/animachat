@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  destination TEXT NOT NULL DEFAULT '',
+  secrets TEXT NOT NULL DEFAULT '[]',
   character_ids TEXT NOT NULL DEFAULT '[]',
   scenes TEXT NOT NULL DEFAULT '[]',
   lorebook_ids TEXT NOT NULL DEFAULT '[]',

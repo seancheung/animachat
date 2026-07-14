@@ -60,6 +60,7 @@ const TASK_LABELS: Record<string, string> = {
   chat: "Chat generation",
   narrator: "Narrator",
   orchestrator: "Group-chat orchestration",
+  director: "Story direction (playthroughs)",
   memory: "Summarization & memory",
   assist: "Co-writing assistant",
   impersonate: "Impersonate",

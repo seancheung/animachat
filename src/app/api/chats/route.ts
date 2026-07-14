@@ -65,9 +65,11 @@ export const POST = handler(async (req: Request) => {
     const characters = story.characterIds
       .map(getCharacter)
       .filter((c): c is Character => !!c);
-    const scenes = story.scenes.flatMap(({ sceneId: sid, cast }) => {
+    const scenes = story.scenes.flatMap(({ sceneId: sid, cast, goal, obstacles, exit }) => {
       const scene = getScene(sid);
-      return scene ? [{ scene, cast: cast.filter((id) => story.characterIds.includes(id)) }] : [];
+      return scene
+        ? [{ scene, cast: cast.filter((id) => story.characterIds.includes(id)), goal, obstacles, exit }]
+        : [];
     });
     const locations = [
       ...new Set(scenes.map(({ scene }) => scene.locationId).filter((id): id is string => !!id)),
@@ -78,6 +80,8 @@ export const POST = handler(async (req: Request) => {
     storySnapshot = {
       name: story.name,
       description: story.description,
+      destination: story.destination,
+      secrets: story.secrets,
       characters,
       scenes,
       locations,

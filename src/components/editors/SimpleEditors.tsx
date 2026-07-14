@@ -17,7 +17,7 @@ import { toast } from "@/components/ui/toast";
 import Tooltip from "@/components/ui/tooltip";
 import { api, uid } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story } from "@/lib/types";
+import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story, StoryScene, StorySecret } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -259,7 +259,8 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
   const { data: characters } = useSWR<any[]>("/api/characters", api.get);
   const { data: lorebooks } = useSWR<Lorebook[]>("/api/lorebooks", api.get);
   const cast: string[] = form.characterIds ?? [];
-  const storyScenes: { sceneId: string; cast: string[] }[] = form.scenes ?? [];
+  const storyScenes: StoryScene[] = form.scenes ?? [];
+  const secrets: StorySecret[] = form.secrets ?? [];
   const lorebookIds: string[] = form.lorebookIds ?? [];
   const charName = (cid: string) => characters?.find((c) => c.id === cid)?.name ?? "?";
 
@@ -292,8 +293,18 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
     };
     setForm({ ...form, scenes: next });
   };
+  const setSceneField = (i: number, key: "goal" | "obstacles" | "exit", v: string) => {
+    const next = [...storyScenes];
+    next[i] = { ...next[i], [key]: v };
+    setForm({ ...form, scenes: next });
+  };
+  const setSecret = (i: number, patch: Partial<StorySecret>) => {
+    const next = [...secrets];
+    next[i] = { ...next[i], ...patch };
+    setForm({ ...form, secrets: next });
+  };
 
-  // the co-writer links cast/scenes/lorebooks by NAME — resolve against the library (fail-soft)
+  // the co-writer links cast/scenes/lorebooks/secret-holders by NAME — resolve against the library (fail-soft)
   const mapAssistFields = (partial: any) => {
     const byName = (list: any[] | undefined, n: unknown) =>
       list?.find((x) => x.name.trim().toLowerCase() === String(n ?? "").trim().toLowerCase())?.id;
@@ -302,19 +313,38 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       out.characterIds = partial.castNames.map((n: unknown) => byName(characters, n)).filter(Boolean);
       delete out.castNames;
     }
+    const roster: string[] = out.characterIds ?? cast;
     if (Array.isArray(partial.scenes)) {
-      const roster: string[] = out.characterIds ?? cast;
       out.scenes = partial.scenes
         .map((e: any) => {
-          if (e?.sceneId) return { sceneId: e.sceneId, cast: e.cast ?? [] }; // already id-shaped
+          const contract = {
+            goal: typeof e?.goal === "string" ? e.goal : "",
+            obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
+            exit: typeof e?.exit === "string" ? e.exit : "",
+          };
+          if (e?.sceneId) return { sceneId: e.sceneId, cast: e.cast ?? [], ...contract }; // already id-shaped
           const sceneId = byName(scenes, e?.sceneName);
           if (!sceneId) return null;
           const who = (Array.isArray(e?.castNames) ? e.castNames : [])
             .map((n: unknown) => byName(characters, n))
             .filter((cid: string | undefined): cid is string => !!cid && roster.includes(cid));
-          return { sceneId, cast: who };
+          return { sceneId, cast: who, ...contract };
         })
         .filter(Boolean);
+    }
+    if (Array.isArray(partial.secrets)) {
+      out.secrets = partial.secrets
+        .filter((s: any) => s && typeof s === "object")
+        .map((s: any) => ({
+          id: typeof s.id === "string" && s.id ? s.id : crypto.randomUUID(),
+          title: String(s.title ?? ""),
+          content: String(s.content ?? ""),
+          knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])
+            .map((n: unknown) => byName(characters, n))
+            .filter((cid: string | undefined): cid is string => !!cid && roster.includes(cid))
+            .concat(Array.isArray(s.knownBy) ? s.knownBy.filter((cid: string) => roster.includes(cid)) : []),
+          revealHint: String(s.revealHint ?? ""),
+        }));
     }
     if (Array.isArray(partial.lorebookNames)) {
       out.lorebookIds = partial.lorebookNames.map((n: unknown) => byName(lorebooks, n)).filter(Boolean);
@@ -335,8 +365,11 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
-      <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot; placeholders like [char_name], [user_name] work here">
+      <Field label="Premise" hint="the situation as play opens — spoiler-free (everyone sees it); author truths and pressures, not an event script; placeholders like [char_name], [user_name] work here">
         <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
+      </Field>
+      <Field label="Destination" hint="one line naming where the story is headed and what 'the end' means — narrator & director only; empty = ending left to the table">
+        <Input className="w-full" value={form.destination ?? ""} onChange={(v) => setForm({ ...form, destination: v })} />
       </Field>
       <Collapsible bordered title={`Cast (in order)${cast.length ? ` — ${cast.length}` : ""}`}>
         <div className="text-xs text-content-400 mb-2">
@@ -389,6 +422,12 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
                   ))}
                 </div>
               )}
+              {/* the scene contract — narrator/director-only dramaturgy; all optional */}
+              <div className="pl-5 space-y-1">
+                <Input className="w-full" placeholder="goal — what this scene is for…" value={entry.goal ?? ""} onChange={(v) => setSceneField(i, "goal", v)} />
+                <Input className="w-full" placeholder="obstacles — what stands in the way…" value={entry.obstacles ?? ""} onChange={(v) => setSceneField(i, "obstacles", v)} />
+                <Input className="w-full" placeholder="advance when — the narrator's cue to move on…" value={entry.exit ?? ""} onChange={(v) => setSceneField(i, "exit", v)} />
+              </div>
             </div>
           ))}
           <Combobox
@@ -397,7 +436,10 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
             onChange={(v) =>
               v &&
               !storyScenes.some((s) => s.sceneId === v) &&
-              setForm({ ...form, scenes: [...storyScenes, { sceneId: v, cast: [...cast] }] })
+              setForm({
+                ...form,
+                scenes: [...storyScenes, { sceneId: v, cast: [...cast], goal: "", obstacles: "", exit: "" }],
+              })
             }
             options={
               scenes
@@ -406,6 +448,51 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
             }
             placeholder="+ add scene…"
           />
+        </div>
+      </Collapsible>
+      <Collapsible bordered title={`Secrets${secrets.length ? ` — ${secrets.length}` : ""}`}>
+        <div className="text-xs text-content-400 mb-2">
+          the story&apos;s hidden truths — holders guard them, everyone else can&apos;t see them, the narrator reveals
+          them when the fiction earns it
+        </div>
+        <div className="space-y-2">
+          {secrets.map((s, i) => (
+            <div key={s.id} className="bg-base-200 rounded-md px-3 py-2 text-sm space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Input className="flex-1" placeholder="title — the secret's short handle…" value={s.title} onChange={(v) => setSecret(i, { title: v })} />
+                <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, secrets: secrets.filter((_, k) => k !== i) })}><X /></Button>
+              </div>
+              <Textarea className="w-full h-16" placeholder="the truth itself…" value={s.content} onChange={(v) => setSecret(i, { content: v })} />
+              {cast.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="text-xs text-content-400">known by:</span>
+                  {cast.map((cid) => (
+                    <Checkbox
+                      key={cid}
+                      value={s.knownBy.includes(cid)}
+                      onChange={(v) =>
+                        setSecret(i, { knownBy: v ? [...s.knownBy, cid] : s.knownBy.filter((x) => x !== cid) })
+                      }
+                      label={charName(cid)}
+                    />
+                  ))}
+                </div>
+              )}
+              <Input className="w-full" placeholder="wants to surface when… (reveal hint, optional)" value={s.revealHint} onChange={(v) => setSecret(i, { revealHint: v })} />
+            </div>
+          ))}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              setForm({
+                ...form,
+                secrets: [...secrets, { id: crypto.randomUUID(), title: "", content: "", knownBy: [], revealHint: "" }],
+              })
+            }
+          >
+            + add secret
+          </Button>
         </div>
       </Collapsible>
       <Field label="Lorebooks" hint="attached to every playthrough of this story">

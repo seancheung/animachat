@@ -15,7 +15,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 - **Provider:** display name, type (`anthropic` | `openai-compatible`), base URL, API key.
 - **Model:** model ID, display name, **context window size** (tokens, user-entered — the hard ceiling), optional **pricing** (USD per million input / cache-read / cache-write / output tokens, user-entered — powers cost tracking; all empty = unpriced, an empty cache price = that leg billed as input, which suits providers that don't discount or surcharge it), optional **custom request body** (JSON) that is deep-merged into outgoing requests, user values winning over app defaults (e.g. `{"thinking":{"type":"disabled"}}`). Invalid JSON is flagged on save, not at chat time.
 - API keys are managed in the in-app settings UI (stored in the database).
-- **Per-task models:** a task→model map in settings — chat generation, narrator, group-chat orchestration, summarization & fact extraction, co-writing assistant, impersonate, title generation, novel rewrite (future tasks slot in). Every task defaults to "inherit" the global default model.
+- **Per-task models:** a task→model map in settings — chat generation, narrator, group-chat orchestration, story direction (the playthrough director), summarization & fact extraction, co-writing assistant, impersonate, title generation, novel rewrite (future tasks slot in). Every task defaults to "inherit" the global default model.
 - **Resolution order:** per-character model (group chats) → per-chat model → task's assigned model → global default.
 
 ## Entities
@@ -57,8 +57,13 @@ All world-building entities are reusable across chats. The library page has a pe
 - **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced). Chat style resolves the same way, per field.
 
 ### Story
-- A full storyline: description (premise & arc), an ordered **cast** (characters), an ordered sequence of **scenes**, and optional **lorebooks**.
+
+- **Design principle — author situations, not plots.** A story records what is *true* — who people are, what they want, what they hide, what pressures bear on them, and where it is all headed — never a scripted sequence of events. The player's freedom breaks sequences ("the betrayal lands in scene 4" assumes the player walks the path); it cannot break truths ("Kael will betray whoever holds the medallion" survives anything the player does). Play is the discovery of those truths under those pressures: it *feels* like plot and secrets without ever fighting the player. Every story field below is an instrument of that principle, and the AI co-writer is steered to author in it (see AI assist).
+- A full storyline: **premise** (the description — the situation as play opens, spoiler-free), an ordered **cast** (characters), an ordered sequence of **scenes**, optional **lorebooks** — plus the design layer:
+- **Destination** — a single authored line naming where the story is headed and what "the end" means ("ends when the medallion reaches the sea — reconciled or estranged"). Visible to the narrator and the director only; it steers the ending without scripting the route. Optional — an empty destination leaves the ending to the table.
+- **Secrets** — the story's hidden truths. Each secret: a short **title** (its handle), the **content** (the truth itself), **known by** (which cast members hold it — possibly none: a truth of the world nobody on stage knows), and an optional **reveal hint** (guidance on when/how it wants to surface: "when someone sees her scar"). Secrets power dramatic irony with real knowledge boundaries — see Knowledge & secrets under Story direction. Distinct from lorebooks: a lorebook is public background knowledge triggered by keywords; a secret is a guarded truth with an authored reveal moment.
 - **Per-scene cast:** each scene entry lists which cast members are on stage when the scene opens (a subset of the roster). This staging lives on the story→scene relation, not on the reusable scene entity — the same scene can appear in different stories with different casts.
+- **Scene contracts:** each scene entry also carries three optional story-specific fields — **goal** (what this scene is *for* dramatically), **obstacles** (what stands in the way, what resists), and **exit condition** (what being "done" looks like — the narrator's cue to advance). The reusable scene's own setup remains the audience-visible *situation*; the contract is the scene's private job description, seen by the narrator and the director only. All three empty = a scene with no job, played freely.
 - Cast order drives `[charN_name]` in playthroughs; the "play as" picker offers the cast.
 
 ### Library integrity (deletion protection)
@@ -136,10 +141,11 @@ flowchart TD
     Route -- otherwise --> Single{"exactly one present character
     and narrator disabled?"}
     Single -- yes --> That["that character (no orchestrator call)"]
-    Single -- no --> Orch["orchestrator picks the next speaker
-    among present characters + narrator — prefers whoever
-    was addressed; narration only when it helps
-    (nobody on stage → narrator)"]
+    Single -- no --> Orch["casual/immersive: orchestrator picks the
+    next speaker — prefers whoever was addressed,
+    narration only when it helps (nobody on stage → narrator).
+    story: the DIRECTOR picks 1-2 speakers instead
+    (see Story direction)"]
 
     Narr --> Q["speaker queue"]
     Regen --> Q
@@ -194,10 +200,100 @@ Optional in casual and immersive chats; **required in playthroughs**, where it i
 
 - **Triggers:** auto — narrates when it would help (scene-setting, transitions, plot advancement); also summonable on demand via a button (the user's only pacing lever in a playthrough — there is no manual scene control).
 - **Suggested actions:** after narrating, offers 2–4 in-character choices rendered as buttons; clicking sends as the user's message (pre-formatted in the chat's convention/POV). Free-text input always remains available. Suppressed on a concluding message and after the story has ended.
-- **Scene progression (playthroughs):** the narrator alone advances the story to the next scene via `<next-scene/>`. There is no manual switching in any mode.
+- **Scene progression (playthroughs):** the narrator alone advances the story to the next scene via `<next-scene/>`. There is no manual switching in any mode. The narrator sees the current scene's **contract** (goal / obstacles / exit condition) and works it: steering play toward the goal, keeping obstacles in the way, and advancing when the exit condition is genuinely met — not before the scene has done its job, not long after. A scene without a contract advances on judgment, as before.
+- **Secrets & reveals (playthroughs):** the narrator knows every secret and its reveal hint — it foreshadows and steers toward reveal moments but never states an unrevealed secret outright. When the fiction genuinely uncovers one (the hint's moment arrives, a holder confesses, evidence surfaces), the narrator discloses it in the narration and marks it with `<reveal>Title</reveal>` — from then on the secret is established truth in everyone's context. Reveals are stage events like everything else: forked timelines restore exactly which secrets were out. See Story direction for the full knowledge model.
 - **Stage presence (playthroughs):** a scene opens with its per-scene cast on stage; mid-scene the narrator may bring roster members on with `<enter>Name</enter>` or send them off with `<leave>Name</leave>` (describing it in the narration too). Only present characters speak, are drawn on stage, get prompt sheets, or can be @mentioned; the narrator sees the full roster (on/off stage) so it can stage entrances — including reacting to the user wishing someone were there. The played character is exempt (the user always speaks).
 - **The ending (playthroughs):** when the story reaches its resolution — typically in the final scene, where `<next-scene/>` is unavailable — the narrator concludes it with `<the-end/>`. The playthrough shows a completed "The End" state (badge in the chat list, header, timeline) and the prompt context flips to a free-form **epilogue**: the chat is not locked, characters and narrator still respond knowing the story is over, but no more scene advances, staging, or suggested actions. There is no manual "end story" button; the user can always ask the narrator in-fiction to wrap up.
-- **All stage state derives from the timeline:** scene changes, enter/leave, and the ending are events stored as metadata on narrator messages, folded over visible history (`computeStage`). Forks therefore restore the scene, its background/BGM, who was on stage, and the un-ended state automatically; there is no free-floating stage field to go stale. Forking from before the finale yields an alternate-ending playthrough for free.
+- **All stage state derives from the timeline:** scene changes, enter/leave, reveals, and the ending are events stored as metadata on narrator messages, folded over visible history (`computeStage`). Forks therefore restore the scene, its background/BGM, who was on stage, which secrets were out, and the un-ended state automatically; there is no free-floating stage field to go stale. Forking from before the finale yields an alternate-ending playthrough for free.
+
+## Story direction (playthroughs)
+
+How a playthrough turns authored truths into directed play. Three layers, each with one job:
+
+- **The story** (authored) supplies the truths: premise, cast, secrets with knowledge boundaries, scene contracts, a destination. It never scripts events — see the design principle under Story.
+- **The director** (an AI task, story mode only) is the invisible pacing hand: on every routed turn it decides *who acts next* so that the scene's contract gets served. It is a **routing decision, not a voice** — it never writes prose, never appears in the timeline, and never passes hidden instructions to speakers; everything that touches the fiction flows through visible, editable, event-sourced messages. In story mode it replaces the general-purpose orchestrator (casual/immersive chats keep the orchestrator unchanged).
+- **The narrator** is the on-stage voice of the world: it works the scene contract, foreshadows secrets, stages the cast, and spends the story's irreversible moments (scene advances, reveals, the ending) as tags on its messages.
+
+### Knowledge & secrets
+
+Who knows what is enforced by **prompt construction**, not by asking models to be discreet:
+
+| Party | Sees |
+|---|---|
+| Director | Current scene contract, destination, secret titles + reveal state (not contents — it paces, it doesn't narrate) |
+| Narrator | Everything: destination, full contracts, all secrets with contents, holders and reveal hints; revealed ones marked |
+| Character who holds a secret | That secret, framed as private guarded knowledge (deflect, don't announce — same discipline as anti-recitation) |
+| Character who doesn't | Nothing — the secret is simply absent from their prompt; a model cannot leak what it never saw |
+| The player | Secrets their played cast member holds (shown in the chat settings drawer); every revealed secret |
+
+A **reveal** flips a secret from guarded to established: the narrator's `<reveal>Title</reveal>` (title matched fail-soft against the snapshot's secrets, like `<enter>` names) records a stage event; from the next turn on, the secret's content appears in every participant's prompt as established truth. Because reveals are events folded from the timeline, a fork from before a reveal genuinely un-reveals it — alternate playthroughs where the secret keeps another turn of life.
+
+### The director
+
+Runs where the orchestrator would (auto-routed turns only — mentions, the Narrate button, forced speakers and regenerates stay deterministic, no model call). One small JSON decision on the `director` task model, aimed by a dashboard the orchestrator never had:
+
+- The current scene's **goal** and **exit condition**, and the **destination**.
+- **Pacing signals** derived from the timeline: how many turns since the narrator last spoke, whether the scene just opened or has clearly served its goal.
+- Its rule of thumb, opposite to the orchestrator's narrator-shyness: characters carry conversation and relationship beats; the narrator is preferred when the scene needs an outside event, has drifted from its goal, has met its exit condition, or a reveal moment is ripe.
+- It may return a **short sequence** — up to two speakers (e.g. `["narrator","Mira"]`): the world moves, then someone reacts, in one flowing turn. Each queued reply rebuilds context, so the second speaker sees the first's message. Malformed output falls back to the first valid name, then to normal routing — fail-soft like every tag.
+
+### Playthrough turn workflow
+
+```mermaid
+flowchart TD
+    U["user acts: send text / pick option / Narrate / Continue"] --> R{"deterministic route?"}
+    R -- "Narrate button" --> N
+    R -- "@mentions resolve" --> C
+    R -- "auto" --> D["DIRECTOR (story mode)
+    dashboard: scene goal + exit + destination,
+    turns since narration, reveal ripeness
+    → picks 1-2 speakers"]
+
+    D -- "world must move /
+    exit met / reveal ripe" --> N["NARRATOR
+    sees: destination, scene contract,
+    ALL secrets + hints (revealed marked)"]
+    D -- "conversation carries" --> C["CHARACTER(S)
+    each sees: own sheet + own secrets only
+    (guarded) + revealed truths"]
+
+    N --> T["tags on the narrator message:
+    &lt;enter&gt;/&lt;leave&gt; staging
+    &lt;reveal&gt;Title&lt;/reveal&gt; secret → established
+    &lt;next-scene/&gt; when exit condition met
+    &lt;the-end/&gt; when the destination is reached
+    + &lt;options&gt; suggested actions"]
+    C --> M["character reply
+    (may &lt;mention&gt; to chain)"]
+
+    T --> F[("events fold over the timeline:
+    scene, presence, revealed set, ended
+    — forks restore all of it")]
+    M --> F
+    F --> P["prompts for the NEXT turn rebuild
+    from the folded state: new scene's contract,
+    updated knowledge boundaries"]
+    P -.-> U
+```
+
+Reading the loop in detail:
+
+1. **The user acts.** Free text, a suggested action, the Narrate button, or silence (Continue). Deterministic routes stay deterministic: the Narrate button summons the narrator directly, `@mentions` resolve by exact name — the director only decides genuinely undecided turns.
+2. **The director reads the room, not the transcript alone.** Its dashboard says what the scene is *for* (goal), when it's *done* (exit), where the story is *headed* (destination), and how long the world has sat still (turns since narration). It answers one question — who acts next — and may schedule a two-beat turn (narrator then reactor).
+3. **Speakers write under their knowledge boundaries.** The narrator, knowing everything, pushes toward the scene's goal and drops foreshadowing sized to the reveal hints. A secret-holder plays their scene *while guarding what only they know* — and a character outside the secret genuinely doesn't know it, so their surprise at the reveal is real, not performed.
+4. **Irreversible moments are spent as tags**, only by the narrator, only on the timeline: staging, reveals, scene advances, the end. Each is an event; nothing irreversible lives in mutable state.
+5. **The fold closes the loop.** Next turn's prompts rebuild from the folded timeline: a new scene brings a new contract and its opening cast; a reveal moves a secret from one character's guarded block into everyone's established truths; `<the-end/>` flips the whole chat into the epilogue register. Fork anywhere and every layer — stage, knowledge, pacing signals — restores to that moment.
+
+The result: authored truths, improvised events. What the story *guarantees* is that its truths hold and its destination pulls; *when and how* everything surfaces belongs to play.
+
+### Phase 2 (designed, not yet implemented)
+
+Next steps for future sessions, in intended order:
+
+1. **Offstage pressures** — an optional per-scene-contract line naming what moves *elsewhere* while the scene plays ("the rival's men search the docks tonight"). The narrator treats them as the world's momentum: they advance between scenes and surface as consequences, so the world stops waiting for the player. Pure prompt material — no counters, no mechanics.
+2. **"Previously on…" recaps** — reopening a playthrough after a long gap offers a short narrator-voiced recap assembled from the rolling summary + revealed secrets + current scene contract. Mode-agnostic variant for long casual chats later.
+3. **Expression fallback graph** — sprite resolution walks nearest-neighbor emotion edges (flustered → embarrassed → surprised → neutral) instead of jumping straight to neutral. Presentation-only; benefits every mode.
+4. **Escalation valve (only if playtesting demands it):** if the narrator proves too lenient grading its own exit conditions, scene-advance judgment moves into the background memory pass (a referee separate from the prose it grades). Not built until real playthroughs show the need — every layer added to direction is a tax on every turn.
 
 ## Visual-novel presentation
 
@@ -249,12 +345,13 @@ All inline tags that may appear in AI chat output. The stream parser strips them
 | `<enter>Name</enter>` | Narrator | Inline | Bring a roster member on stage mid-scene. Name resolved fail-soft against the cast; recorded as a stage event. |
 | `<leave>Name</leave>` | Narrator | Inline | Send a present character off stage. Same resolution and storage as `<enter>`. |
 | `<the-end/>` | Narrator | Trailing | Conclude the playthrough. Recorded as a stage event; suppresses that message's options. |
+| `<reveal>Title</reveal>` | Narrator | Inline | Establish a story secret as revealed truth. Title resolved fail-soft against the snapshot's secrets; recorded as a stage event — from the next turn the secret enters every participant's prompt. |
 
 Parser rules:
 - Tags are parsed from the stream incrementally: prefix tags are consumed before display begins; trailing tags are held back once an opening `<options>`/`<next-scene`/`<the-end` is detected at the tail.
 - **Malformed or unknown tags:** fail soft. A broken `<emo>` → message falls back to `neutral` and full text is shown; a broken `<options>` block → its raw text is dropped or shown as prose; an `<enter>`/`<leave>` name matching nobody is ignored; never an error state.
 - **One emotion per message: the first `<emo>` wins.** Models sometimes drop a stray second tag mid-message; it is stripped from the text and ignored everywhere (stored message and live stage alike), so the sprite never swaps mid-message and snaps back.
-- Staging tags (`<next-scene/>`, `<enter>`, `<leave>`, `<the-end/>`) only take effect on narrator messages in a playthrough, and never after the story has ended.
+- Staging tags (`<next-scene/>`, `<enter>`, `<leave>`, `<reveal>`, `<the-end/>`) only take effect on narrator messages in a playthrough, and never after the story has ended.
 - Tag names are English regardless of the chat language; only the payload (option text) follows the language setting.
 - Stored metadata (emotion, options, stage events) is user-editable via message editing.
 - Future tags must be added to this list and follow the same prefix/trailing + fail-soft rules.
@@ -267,6 +364,7 @@ Parser rules:
 - While a reply streams, the Send button becomes a **Stop** — stopping keeps the partial text (a reply that never produced anything is dropped from the conversation) and re-enables the input. Closing the editor or dialog mid-reply cancels the request the same way; nothing keeps generating for a form nobody can see.
 - **Rewind:** every user message in the panel has a rewind button — it rolls the conversation *and* the draft form/items back to the state before that message was sent, putting the message text back in the input for a redo. Session drafts only; nothing touches saved records until Save.
 - **Reference attachments:** a picker in the input toolbar attaches library items (characters, personas, locations, scenes, stories, lorebooks) to the conversation — a search-as-you-type multi-combobox over the whole library (capped result list; nothing enumerates every item), shared with the export dialog; their sheets are sent as read-only background context with every message, so new content can build on the existing cast and world (e.g. a scene written for specific characters). Items that no longer exist are skipped silently.
+- **Story design steering:** when the conversation authors a story (the story editor's panel and the library Guide alike), the assistant follows the situations-not-plots principle (see Story): it writes premises as webs of tension, characters with wants and hidden truths, secrets with holders and reveal hints, scene contracts as jobs (goal / obstacles / exit) rather than event scripts, and a destination instead of an ending sequence — and it pushes back when asked to script beats ("then in scene 3 she betrays him"), converting them into truths and pressures that make the moment likely instead.
 - **Image prompts** the assistant writes are strictly visual (what a camera sees — no names, personality, backstory or lore) and always in English regardless of the language setting, unless explicitly asked otherwise; they never mention aspect ratio. Character sprite prompts cover physical appearance, outfit, pose and framing/view distance, ending on a solid flat single-color background — never environment or scenery.
 - **Library guide:** a Guide button on the library page opens a batch co-writing dialog — the assistant creates/updates any number of items across all types in one conversation, shown on the left as editable forms (removable per item). Attached `.txt`/`.md` files are sent as source material (truncated past a size cap) so items can be extracted from a novel or notes. Nothing persists until Save, which stores the whole batch in dependency order — scenes link to locations, and stories to their cast, scene sequence (with per-scene casts) and lorebooks, all by name, against the batch or the existing library. The story editor's own assist panel writes the same name-based links, resolved into the form as the assistant fills it.
 - Follows the global language setting.

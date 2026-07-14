@@ -125,12 +125,39 @@ export interface StoryScene {
   sceneId: string;
   /** roster members (character ids) on stage when the scene opens — subset of the story's characterIds */
   cast: string[];
+  /** scene contract (story-specific, narrator/director-only; all optional — empty = no job, played freely) */
+  /** what this scene is FOR dramatically */
+  goal: string;
+  /** what stands in the way, what resists */
+  obstacles: string;
+  /** what "done" looks like — the narrator's cue to <next-scene/> */
+  exit: string;
+}
+
+/**
+ * A hidden truth of the story. Knowledge boundaries are enforced by prompt
+ * construction: holders get it as guarded private knowledge, everyone else
+ * never sees it — until the narrator's <reveal>Title</reveal> establishes it.
+ */
+export interface StorySecret {
+  id: string;
+  /** short handle — the <reveal> tag's payload */
+  title: string;
+  /** the truth itself */
+  content: string;
+  /** cast members (character ids) who hold it; may be empty (nobody on stage knows) */
+  knownBy: string[];
+  /** authored guidance on when/how it wants to surface */
+  revealHint: string;
 }
 
 export interface Story {
   id: string;
   name: string;
   description: string;
+  /** one authored line naming where the story is headed; empty = ending left to the table */
+  destination: string;
+  secrets: StorySecret[];
   /** ordered roster — drives [charN_name] in playthroughs and the play-as picker */
   characterIds: string[];
   scenes: StoryScene[];
@@ -195,10 +222,12 @@ export type ChatMode = "casual" | "immersive" | "story";
 export interface StorySnapshot {
   name: string;
   description: string;
+  destination: string;
+  secrets: StorySecret[];
   /** full sheets in roster order (includes the played character, if any) */
   characters: Character[];
-  /** ordered scene sequence; cast = character ids on stage when the scene opens */
-  scenes: { scene: Scene; cast: string[] }[];
+  /** ordered scene sequence; cast = character ids on stage when the scene opens; goal/obstacles/exit = the scene contract */
+  scenes: { scene: Scene; cast: string[]; goal: string; obstacles: string; exit: string }[];
   /** locations referenced by the scenes */
   locations: Location[];
   lorebooks: Lorebook[];
@@ -247,6 +276,8 @@ export interface SceneEvent {
   enter?: string[];
   /** <leave>: character ids sent off stage mid-scene */
   leave?: string[];
+  /** <reveal>: story secret ids established as revealed truth */
+  reveal?: string[];
   /** <the-end/>: the playthrough concluded */
   theEnd?: boolean;
 }
@@ -305,6 +336,7 @@ export type AiTask =
   | "chat"
   | "narrator"
   | "orchestrator"
+  | "director"
   | "memory"
   | "assist"
   | "impersonate"
@@ -315,6 +347,7 @@ export const AI_TASKS: AiTask[] = [
   "chat",
   "narrator",
   "orchestrator",
+  "director",
   "memory",
   "assist",
   "impersonate",

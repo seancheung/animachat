@@ -11,6 +11,7 @@ import { ensureMemoryCaughtUp, runMemoryPass } from "@/lib/ai/memory";
 import {
   buildCharacterRequest,
   buildContext,
+  buildDirectorRequest,
   buildNarratorRequest,
   buildOrchestratorRequest,
   buildTitleRequest,
@@ -68,15 +69,58 @@ function matchCharacter(ctx: ChatContext, name: string): Character | null {
   );
 }
 
-async function pickDefaultSpeaker(ctx: ChatContext): Promise<Speaker> {
+/** Loose title match for narrator <reveal> payloads — fail-soft (null on no match). */
+function matchSecret(ctx: ChatContext, title: string) {
+  const t = title.trim().toLowerCase();
+  if (!t) return null;
+  const secrets = ctx.snapshot?.secrets ?? [];
+  return (
+    secrets.find((s) => s.title.toLowerCase() === t) ??
+    secrets.find((s) => s.title.toLowerCase().startsWith(t)) ??
+    null
+  );
+}
+
+async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
   if (ctx.present.length === 1 && !ctx.chat.narratorEnabled) {
-    return { role: "character", character: ctx.present[0] };
+    return [{ role: "character", character: ctx.present[0] }];
   }
   if (ctx.present.length === 0) {
-    if (ctx.chat.narratorEnabled) return { role: "narrator", character: null };
+    if (ctx.chat.narratorEnabled) return [{ role: "narrator", character: null }];
     throw new Error("Nobody is on stage to reply");
   }
-  // group chat and/or narrator: ask the orchestrator
+
+  // story mode: the DIRECTOR routes — contract-aware, may schedule narrator + reactor
+  if (ctx.chat.mode === "story" && ctx.snapshot) {
+    const modelRef = resolveModel("director", ctx.chat);
+    const req = buildDirectorRequest(ctx, modelRef);
+    const raw = await callLlm({
+      modelRef,
+      system: req.system,
+      messages: req.messages,
+      maxTokens: 120,
+      feature: "director",
+      chatId: ctx.chat.id,
+    });
+    const parsed = extractJson<{ next?: string | string[] }>(raw);
+    const names = Array.isArray(parsed?.next) ? parsed.next : parsed?.next ? [parsed.next] : [];
+    const out: Speaker[] = [];
+    for (const n of names.slice(0, 2)) {
+      if (n === "narrator") out.push({ role: "narrator", character: null });
+      else {
+        const c = ctx.present.find((x) => x.id === n);
+        if (c) out.push({ role: "character", character: c });
+      }
+    }
+    // a doubled speaker adds nothing — keep the first occurrence only
+    if (out.length === 2 && out[0].role === out[1].role && out[0].character?.id === out[1].character?.id)
+      out.pop();
+    if (out.length) return out;
+    // malformed decision: the narrator can always carry a story turn
+    return [{ role: "narrator", character: null }];
+  }
+
+  // casual/immersive group chat and/or narrator: ask the orchestrator
   const modelRef = resolveModel("orchestrator", ctx.chat);
   const req = buildOrchestratorRequest(ctx, modelRef);
   const raw = await callLlm({
@@ -89,9 +133,9 @@ async function pickDefaultSpeaker(ctx: ChatContext): Promise<Speaker> {
   });
   const parsed = extractJson<{ next?: string }>(raw);
   const next = parsed?.next;
-  if (next === "narrator" && ctx.chat.narratorEnabled) return { role: "narrator", character: null };
+  if (next === "narrator" && ctx.chat.narratorEnabled) return [{ role: "narrator", character: null }];
   const c = ctx.present.find((x) => x.id === next);
-  return { role: "character", character: c ?? ctx.present[0] };
+  return [{ role: "character", character: c ?? ctx.present[0] }];
 }
 
 /**
@@ -114,7 +158,7 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
     if (addressed.length)
       return addressed.map((c) => ({ role: "character" as const, character: c }));
   }
-  return [await pickDefaultSpeaker(ctx)];
+  return pickDefaultSpeakers(ctx);
 }
 
 function nextSceneId(ctx: ChatContext): string | null {
@@ -267,6 +311,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         let sawTheEnd = false;
         const enters: string[] = [];
         const leaves: string[] = [];
+        const reveals: string[] = [];
         const parser = new TagStreamParser();
 
         const handleEvents = (events: TagEvent[]) => {
@@ -286,6 +331,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             } else if (ev.type === "enter" || ev.type === "leave") {
               // narrator-only staging; resolved to ids at save time (fail-soft)
               (ev.type === "enter" ? enters : leaves).push(ev.name);
+            } else if (ev.type === "reveal") {
+              // narrator-only; resolved against snapshot secrets at save time (fail-soft)
+              reveals.push(ev.name);
             }
           }
         };
@@ -339,6 +387,10 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             const leaveIds = resolve(leaves);
             if (enterIds.length) ev.enter = enterIds;
             if (leaveIds.length) ev.leave = leaveIds;
+            const revealIds = [
+              ...new Set(reveals.map((t) => matchSecret(turnCtx, t)?.id).filter((x): x is string => !!x)),
+            ];
+            if (revealIds.length) ev.reveal = revealIds;
             if (sawTheEnd) {
               ev.theEnd = true;
               options = null; // no suggested actions under "The End"

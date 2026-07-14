@@ -242,8 +242,13 @@ export async function importBundle(
     fields.scenes = (fields.scenes ?? []).flatMap((e) => {
       const sceneId = idMap.get(e.sceneId);
       if (!sceneId) return [];
-      return [{ sceneId, cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[] }];
+      return [{ ...e, sceneId, cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[] }];
     });
+    // secrets travel with the story; their holders are cast members — remap like the cast
+    fields.secrets = (fields.secrets ?? []).map((s) => ({
+      ...s,
+      knownBy: (s.knownBy ?? []).map((cid) => idMap.get(cid)).filter(Boolean) as string[],
+    }));
     fields.lorebookIds = (fields.lorebookIds ?? [])
       .map((lid) => idMap.get(lid))
       .filter(Boolean) as string[];

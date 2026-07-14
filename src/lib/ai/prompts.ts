@@ -35,6 +35,7 @@ import type {
   Pov,
   Scene,
   Settings,
+  StorySecret,
   StorySnapshot,
 } from "@/lib/types";
 import { EMOTIONS } from "@/lib/types";
@@ -255,6 +256,33 @@ function povRules(pov: Pov, personaName: string, selfName: string | null): strin
   }
 }
 
+/* ---------------- story design layer (playthroughs) ----------------
+ * Knowledge boundaries are enforced by prompt construction, not by discretion:
+ * the narrator sees everything, a secret's holders see their own, everyone else
+ * sees nothing until a <reveal> event establishes it. */
+
+/** The story→scene entry (contract + opening cast) for the current scene. */
+function currentSceneEntry(ctx: ChatContext) {
+  return ctx.snapshot?.scenes.find((s) => s.scene.id === ctx.stage.sceneId) ?? null;
+}
+
+/** Snapshot secrets — pre-feature snapshots simply have none. */
+function storySecrets(ctx: ChatContext): StorySecret[] {
+  return ctx.snapshot?.secrets ?? [];
+}
+
+function isRevealed(ctx: ChatContext, s: StorySecret): boolean {
+  return ctx.stage.revealed.includes(s.id);
+}
+
+/** Secrets already out in the open — established truth for every participant. */
+function revealedTruthsBlock(ctx: ChatContext): string {
+  const open = storySecrets(ctx).filter((s) => isRevealed(ctx, s));
+  return open.length
+    ? ctx.sub(`TRUTHS NOW IN THE OPEN (revealed during this story — everyone knows):\n${open.map((s) => `- ${s.content}`).join("\n")}`)
+    : "";
+}
+
 function worldBlock(ctx: ChatContext): string {
   const parts: string[] = [];
   if (ctx.snapshot) {
@@ -364,6 +392,18 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     ...character.customExpressions.map((e) => `${e.name} (${ctx.sub(e.description, character.name)})`),
   ].join(", ");
 
+  // story secrets: holders carry theirs as guarded private knowledge; secrets this
+  // character doesn't hold are simply absent — a model can't leak what it never saw
+  const mySecrets = storySecrets(ctx).filter((s) => !isRevealed(ctx, s) && s.knownBy.includes(character.id));
+  const secretBlock = mySecrets.length
+    ? ctx.sub(
+        `SECRETS ${character.name.toUpperCase()} KEEPS (private — nobody else in the story knows, ${personaName} included):\n` +
+          mySecrets.map((s) => `- ${s.content}`).join("\n") +
+          `\nGuard them: never announce, explain or confirm one — deflect, redirect, let the strain show instead. One may come out only if the scene truly forces it from ${character.name}, and even then reluctantly, in character, at real cost.`,
+        character.name
+      )
+    : "";
+
   const system = [
     `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
     `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description, character.name)}`,
@@ -386,6 +426,8 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
           .filter(Boolean)
           .join("\n")
       : "",
+    secretBlock,
+    revealedTruthsBlock(ctx),
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts
           .map((f) => `- ${f.content}`)
@@ -435,11 +477,48 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
       (offStage.length ? `\nCAST OFF STAGE (can be brought in): ${offStage.map((c) => c.name).join(", ")}` : "")
     : "";
 
+  // the story design layer — the narrator is the one voice that knows all of it
+  const entry = currentSceneEntry(ctx);
+  const contractBlock =
+    ctx.snapshot && entry && (entry.goal || entry.obstacles || entry.exit)
+      ? ctx.sub(
+          `THIS SCENE'S JOB (private direction — serve it, never announce it):` +
+            (entry.goal ? `\n- Goal: ${entry.goal}` : "") +
+            (entry.obstacles ? `\n- Obstacles to keep in the way: ${entry.obstacles}` : "") +
+            (entry.exit ? `\n- The scene is done when: ${entry.exit}` : "")
+        )
+      : "";
+  const destinationBlock = ctx.snapshot?.destination
+    ? ctx.sub(`WHERE THE STORY IS HEADED (private — steer toward it, never announce it): ${ctx.snapshot.destination}`)
+    : "";
+  const secrets = storySecrets(ctx);
+  const secretsBlock = secrets.length
+    ? ctx.sub(
+        `THE STORY'S SECRETS (you know them all; others know only what is marked):\n` +
+          secrets
+            .map((s) => {
+              if (isRevealed(ctx, s)) return `- "${s.title}" [REVEALED — established truth]: ${s.content}`;
+              const holders = s.knownBy
+                .map((id) => ctx.snapshot!.characters.find((c) => c.id === id)?.name)
+                .filter(Boolean);
+              return (
+                `- "${s.title}": ${s.content} (held by: ${holders.join(", ") || "nobody on stage"})` +
+                (s.revealHint ? ` — wants to surface: ${s.revealHint}` : "")
+              );
+            })
+            .join("\n") +
+          `\nNever state an unrevealed secret outright — foreshadow it, let its pressure show in the world and the holders.`
+      )
+    : "";
+
   const stagingRules =
     ctx.snapshot && !ctx.ended
       ? `You direct the stage. To bring a cast member on, append <enter>Name</enter>; to send one off, append <leave>Name</leave> — always also describing the arrival or departure in the narration itself. Only cast members listed above can enter.\n` +
+        (secrets.some((s) => !isRevealed(ctx, s))
+          ? `When the fiction genuinely uncovers a secret (its moment arrives, a holder confesses, evidence surfaces), state it plainly in the narration and append <reveal>Title</reveal> with the secret's exact title — from then on it is established truth everyone knows. If a secret already came out in play unmarked, mark it on your next turn.\n`
+          : "") +
         (nextSceneInfo
-          ? `If the current scene has clearly run its course, move the story to the next scene: write the transition and append <next-scene/> on its own line.\n`
+          ? `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story to the next scene: write the transition and append <next-scene/> on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
           : "") +
         `When the story reaches its natural resolution${finalScene ? " (this is the FINAL scene — <next-scene/> is not available)" : ""}, conclude it: write the closing narration and append <the-end/> on its own line. A concluding message needs no suggested actions.\n`
       : "";
@@ -450,6 +529,9 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
     castBlock,
     worldBlock(ctx),
     personaBlock(ctx),
+    contractBlock,
+    destinationBlock,
+    secretsBlock,
     nextSceneInfo,
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
@@ -486,6 +568,61 @@ export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel)
     `Pick "narrator" only when narration would genuinely help (scene-setting, a lull, a transition).` +
     ` Respond with ONLY a JSON object: {"next": "<candidate id>"}`;
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho responds next?` }] };
+}
+
+/**
+ * Story-mode speaker routing: the DIRECTOR. Replaces the orchestrator in playthroughs —
+ * same tiny JSON decision, but aimed by the story's design layer (scene contract,
+ * destination, secret ripeness, pacing). A routing decision, not a voice: it never
+ * writes prose and never passes hidden instructions to speakers. It sees secret
+ * TITLES and reveal state only, never contents — it paces, it doesn't narrate.
+ */
+export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
+  const window = verbatimWindow(ctx, model).slice(-12);
+  const transcript = window
+    .map((m) => renderMessageLine(ctx, m) ?? "")
+    .filter(Boolean)
+    .join("\n");
+  const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`);
+  candidates.push(`"narrator" = the narrator, the world's voice`);
+
+  const entry = currentSceneEntry(ctx);
+  const idx = ctx.snapshot ? ctx.snapshot.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId) : -1;
+  // pacing signal: how long the world has sat still
+  let sinceNarrator = 0;
+  for (let i = ctx.messages.length - 1; i >= 0; i--) {
+    const role = ctx.messages[i].role;
+    if (role === "narrator") break;
+    if (role !== "marker") sinceNarrator++;
+  }
+  const unrevealed = storySecrets(ctx).filter((s) => !isRevealed(ctx, s));
+  const state = ctx.sub(
+    [
+      entry
+        ? `Current scene: ${entry.scene.name}${idx !== -1 ? ` (${idx + 1} of ${ctx.snapshot!.scenes.length})` : ""}`
+        : "",
+      entry?.goal ? `Scene goal: ${entry.goal}` : "",
+      entry?.exit ? `The scene should advance when: ${entry.exit}` : "",
+      ctx.snapshot?.destination ? `The story is headed toward: ${ctx.snapshot.destination}` : "",
+      unrevealed.length
+        ? `Unrevealed secrets in play: ${unrevealed.map((s) => `"${s.title}"`).join(", ")}`
+        : "",
+      `Messages since the narrator last spoke: ${sinceNarrator}`,
+      ctx.ended ? `The story has concluded — this is a free-form epilogue; pacing pressure is off.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+
+  const system =
+    `You are the invisible director of a story playthrough. Decide who acts next — you never write prose.\n` +
+    `Candidates:\n${candidates.join("\n")}\n` +
+    `STORY STATE:\n${state}\n` +
+    `Rules: characters carry conversation and relationship beats — prefer whoever was addressed or has the most natural reaction. ` +
+    `Prefer the narrator when the scene needs an outside event to move, play has drifted from the scene's goal, the advance condition looks met, a secret's moment is ripe, or nobody else fits. ` +
+    `You may schedule TWO speakers when the world should move and someone should react to it — the narrator first, then the character. ` +
+    `Respond with ONLY a JSON object: {"next": ["<candidate id>"]} or {"next": ["narrator", "<candidate id>"]}`;
+  return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho acts next?` }] };
 }
 
 export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {

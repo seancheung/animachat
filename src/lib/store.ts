@@ -16,6 +16,7 @@ import type {
   SceneEvent,
   Settings,
   Story,
+  StoryScene,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 
@@ -438,12 +439,23 @@ export function deleteScene(id: string) {
 
 /* ---------------- stories ---------------- */
 
+/** Normalize a scene entry — rows/imports predating scene contracts lack the fields. */
+const storySceneEntry = (e: Partial<StoryScene>): StoryScene => ({
+  sceneId: e.sceneId ?? "",
+  cast: e.cast ?? [],
+  goal: e.goal ?? "",
+  obstacles: e.obstacles ?? "",
+  exit: e.exit ?? "",
+});
+
 const storyFromRow = (r: Row): Story => ({
   id: r.id,
   name: r.name,
   description: r.description,
+  destination: r.destination ?? "",
+  secrets: J.parse(r.secrets, []),
   characterIds: J.parse(r.character_ids, []),
-  scenes: J.parse(r.scenes, []),
+  scenes: (J.parse(r.scenes, []) as Partial<StoryScene>[]).map(storySceneEntry),
   lorebookIds: J.parse(r.lorebook_ids, []),
   tags: J.parse(r.tags, []),
   createdAt: r.created_at,
@@ -465,6 +477,8 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     id: existing?.id ?? x.id ?? uid(),
     name: "Untitled story",
     description: "",
+    destination: "",
+    secrets: [],
     characterIds: [],
     scenes: [],
     lorebookIds: [],
@@ -474,16 +488,19 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     ...existing,
     ...x,
   });
+  m.scenes = m.scenes.map(storySceneEntry);
   getDb()
     .prepare(
-      `INSERT INTO stories (id,name,description,character_ids,scenes,lorebook_ids,tags,created_at,updated_at)
-       VALUES (@id,@name,@description,@chars,@scenes,@lore,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, tags=@tags, updated_at=@updated`
+      `INSERT INTO stories (id,name,description,destination,secrets,character_ids,scenes,lorebook_ids,tags,created_at,updated_at)
+       VALUES (@id,@name,@description,@destination,@secrets,@chars,@scenes,@lore,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, destination=@destination, secrets=@secrets, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       description: m.description,
+      destination: m.destination,
+      secrets: J.str(m.secrets),
       chars: J.str(m.characterIds),
       scenes: J.str(m.scenes),
       lore: J.str(m.lorebookIds),

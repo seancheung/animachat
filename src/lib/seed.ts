@@ -115,11 +115,43 @@ export function seedPresets() {
     name: "The Alchemist's Debt",
     description:
       "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice pulls [user_name] into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
+    destination:
+      "Ends at dawn, when the Guild's collectors knock — with Mira's debt settled, dodged, or paid in something worse than coin.",
+    secrets: [
+      {
+        id: crypto.randomUUID(),
+        title: "Kael's own debt",
+        content:
+          "Kael owes the Ashen Guild too — his calm is a professional's, from years of managing collectors. He answered the notice hoping to settle both debts with one job, and he recognizes the grey gloves on sight.",
+        knownBy: [kael.id],
+        revealHint: "When the Guild is named to his face, or when Mira's debt comes out in the open.",
+      },
+      {
+        id: crypto.randomUUID(),
+        title: "What sleeps in the cellar",
+        content:
+          "The locked cellar sits on old temple stone where moonmilk has been forming for years. Mira has been farming it in secret — enough to clear any debt, and enough to hang her under the Alchemists' Concord if a soul finds out.",
+        knownBy: [mira.id],
+        revealHint: "If anyone gets below with a light, or the collectors force Mira to show what her debt bought.",
+      },
+    ],
     characterIds: [mira.id, kael.id],
     // Kael enters the first scene mid-story if the narrator wills it — only Mira opens it
     scenes: [
-      { sceneId: scene1.id, cast: [mira.id] },
-      { sceneId: scene2.id, cast: [mira.id, kael.id] },
+      {
+        sceneId: scene1.id,
+        cast: [mira.id],
+        goal: "Get [user_name] entangled in Mira's problem — the job accepted, or refused in a way that won't stick.",
+        obstacles: "Mira is too proud to say what the debt really is; Kael watches from his corner, measuring everyone.",
+        exit: "Someone commits to helping before dawn — and the only way forward is whatever Mira keeps locked below.",
+      },
+      {
+        sceneId: scene2.id,
+        cast: [mira.id, kael.id],
+        goal: "Force the night's truths into the open and make the party choose what dawn finds them holding.",
+        obstacles: "The moonmilk is unstable, the Concord's law is absolute, and the Guild's collectors are already walking up the river road.",
+        exit: "Dawn arrives — the knock at the door decides how the story ends.",
+      },
     ],
     lorebookIds: [lorebook.id],
   });

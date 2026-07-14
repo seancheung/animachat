@@ -75,6 +75,18 @@ describe("TagStreamParser", () => {
     }
   });
 
+  it("parses reveal titles, stripped from text, across chunk boundaries", () => {
+    const events = run(["The truth lands. <rev", "eal>Kael's debt</reveal>Silence follows."]);
+    expect(events.find((e) => e.type === "reveal")).toEqual({ type: "reveal", name: "Kael's debt" });
+    expect(textOf(events)).toBe("The truth lands. Silence follows.");
+  });
+
+  it("fails soft on an unclosed reveal tag", () => {
+    const events = run(["<reveal>Kael's debt"]);
+    expect(events.some((e) => e.type === "reveal")).toBe(false);
+    expect(textOf(events)).toBe("<reveal>Kael's debt");
+  });
+
   it("parses the-end with and without self-closing slash", () => {
     expect(run(["fin <the-end/>"]).some((e) => e.type === "theEnd")).toBe(true);
     expect(run(["fin <the-end >"]).some((e) => e.type === "theEnd")).toBe(true);
@@ -89,6 +101,10 @@ describe("TagStreamParser", () => {
 });
 
 describe("parseTagged", () => {
+  it("collects reveal titles", () => {
+    expect(parseTagged("A. <reveal>What sleeps below</reveal> B.").reveal).toEqual(["What sleeps below"]);
+  });
+
   it("extracts everything in one shot", () => {
     const r = parseTagged(
       '<emo>sad</emo>Some prose.<enter>Kael</enter><next-scene/><the-end/><options><o>A</o></options>'

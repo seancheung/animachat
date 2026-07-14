@@ -38,7 +38,10 @@ const TEXT_FIELDS: Record<string, { key: string; label: string; rows: number }[]
     { key: "setup", label: "Setup", rows: 4 },
     { key: "imagePrompt", label: "Image prompt", rows: 2 },
   ],
-  story: [{ key: "description", label: "Description", rows: 3 }],
+  story: [
+    { key: "description", label: "Premise", rows: 3 },
+    { key: "destination", label: "Destination", rows: 1 },
+  ],
   lorebook: [{ key: "description", label: "Description", rows: 2 }],
 };
 
@@ -120,9 +123,27 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
                 const cast = (Array.isArray(e?.castNames) ? e.castNames : [])
                   .map((n: unknown) => charIds.get(norm(n)))
                   .filter((cid: any) => cid && payload.characterIds.includes(cid));
-                return { sceneId, cast };
+                return {
+                  sceneId,
+                  cast,
+                  goal: typeof e?.goal === "string" ? e.goal : "",
+                  obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
+                  exit: typeof e?.exit === "string" ? e.exit : "",
+                };
               })
               .filter(Boolean);
+            // secret holders link by name, like the cast
+            payload.secrets = (Array.isArray(payload.secrets) ? payload.secrets : [])
+              .filter((s: any) => s && typeof s === "object")
+              .map((s: any) => ({
+                id: typeof s.id === "string" && s.id ? s.id : crypto.randomUUID(),
+                title: String(s.title ?? ""),
+                content: String(s.content ?? ""),
+                knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])
+                  .map((n: unknown) => charIds.get(norm(n)))
+                  .filter((cid: any) => cid && payload.characterIds.includes(cid)),
+                revealHint: String(s.revealHint ?? ""),
+              }));
             payload.lorebookIds = (Array.isArray(payload.lorebookNames) ? payload.lorebookNames : [])
               .map((n: unknown) => loreIds.get(norm(n)))
               .filter(Boolean);

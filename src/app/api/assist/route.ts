@@ -39,9 +39,11 @@ const FIELD_DOCS: Record<string, string> = {
     `"imagePrompt": string (text-to-image prompt for the background artwork of this scene — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
   story:
-    `"name": string; "description": string (premise and arc of the story); ` +
+    `"name": string; "description": string (the PREMISE — the situation as play opens, spoiler-free: everyone sees it; put hidden truths in secrets, not here); ` +
+    `"destination": string (one line naming where the story is headed and what "the end" means — seen only by the narrator; steers the ending without scripting the route); ` +
+    `"secrets": [{"title": "short handle", "content": "the hidden truth", "knownByNames": ["cast", "names", "who", "hold", "it"], "revealHint": "when/how it wants to surface"}] (the story's hidden truths — knownByNames may be empty for a truth nobody on stage knows); ` +
     `"castNames": ["ordered", "character", "names"] (the story's cast — characters in the library or this batch, linked by name on save; order matters); ` +
-    `"scenes": [{"sceneName": string, "castNames": ["who", "opens", "the scene"]}] (ordered scene sequence — each castNames is the subset of the story cast on stage when that scene opens; linked by name on save); ` +
+    `"scenes": [{"sceneName": string, "castNames": ["who", "opens", "the scene"], "goal": "what the scene is FOR dramatically", "obstacles": "what resists", "exit": "what done looks like — the cue to advance"}] (ordered scene sequence with each scene's contract; goal/obstacles/exit are optional but give the scene a job); ` +
     `"lorebookNames": ["lorebook", "names"] (optional — attached to every playthrough of the story)`,
   lorebook:
     `"name": string; "description": string; ` +
@@ -108,8 +110,17 @@ function referenceText(ref: { type: string; id: string }): string | null {
         .filter(Boolean);
       return (
         `STORY "${st.name}"\n${st.description}` +
+        (st.destination ? `\nDestination: ${st.destination}` : "") +
         (cast.length ? `\nCast in order: ${cast.join(", ")}` : "") +
-        (scenes.length ? `\nScenes in order: ${scenes.join(" → ")}` : "")
+        (scenes.length ? `\nScenes in order: ${scenes.join(" → ")}` : "") +
+        (st.secrets.length
+          ? `\nSecrets:\n${st.secrets
+              .map((s) => {
+                const who = s.knownBy.map((cid) => getCharacter(cid)?.name).filter(Boolean);
+                return `- "${s.title}": ${s.content} (held by: ${who.join(", ") || "nobody"})`;
+              })
+              .join("\n")}`
+          : "")
       );
     }
     case "lorebook": {
@@ -165,6 +176,14 @@ export const POST = handler(async (req: Request) => {
     `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
     `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
     `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n` +
+    (isLibrary || body.entityType === "story"
+      ? `STORY DESIGN PRINCIPLE — author situations, not plots. A story records what is TRUE and under what PRESSURE, never a sequence of events: the player's freedom breaks sequences, it cannot break truths.\n` +
+        `- The premise is the situation as play opens — a web of wants, debts and tensions, spoiler-free. Hidden truths belong in secrets, never in the premise.\n` +
+        `- Secrets carry the drama: give each a holder (or none), a truth that stays true whatever the player does, and a reveal hint naming the KIND of moment that surfaces it — not a scheduled scene.\n` +
+        `- Scene contracts are jobs, not scripts: a goal (what the scene is for), obstacles (what resists), an exit condition (what done looks like). Never "then X happens" — write what pulls and what blocks, and let play find the path.\n` +
+        `- The destination names where the story is headed, not the route or the twists.\n` +
+        `- If the user asks to script a beat ("then in scene 3 she betrays him"), don't put it in a scene or the premise — convert it into the truths and pressures that make that moment likely (a secret with a reveal hint, a motive in a character sheet, an obstacle), and say that's what you did.\n\n`
+      : "") +
     (isLibrary || ["character", "location", "scene"].includes(body.entityType)
       ? `IMAGE PROMPT RULES — every "imagePrompt" field is fed directly to a text-to-image generator:\n` +
         `- STRICTLY VISUAL: describe only what a camera would capture. Never include names, placeholder tags, personality, feelings, backstory, or lore — translate such traits into visible details instead (e.g. "a battle-worn veteran" → "scratched armor, a faded scar across the brow").\n` +

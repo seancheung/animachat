@@ -4,6 +4,7 @@
  *   <options><o>..</o>...</options>  (narrator, trailing)
  *   <next-scene/>              (narrator, trailing)
  *   <enter>name</enter> / <leave>name</leave>  (narrator, inline — stage presence)
+ *   <reveal>title</reveal>     (narrator, inline — story secret established as truth)
  *   <the-end/>                 (narrator, trailing — playthrough concluded)
  *
  * Everything fails soft: malformed/unclosed tags flush as plain text.
@@ -16,9 +17,10 @@ export type TagEvent =
   | { type: "nextScene" }
   | { type: "enter"; name: string }
   | { type: "leave"; name: string }
+  | { type: "reveal"; name: string }
   | { type: "theEnd" };
 
-const OPENERS = ["<emo>", "<options>", "<next-scene", "<enter>", "<leave>", "<the-end"];
+const OPENERS = ["<emo>", "<options>", "<next-scene", "<enter>", "<leave>", "<reveal>", "<the-end"];
 const MAX_EMO = 120;
 const MAX_OPTIONS = 4000;
 const MAX_NEXT_SCENE = 40;
@@ -110,7 +112,7 @@ export class TagStreamParser {
       return b.length > MAX_OPTIONS || final ? "not-a-tag" : "hold";
     }
 
-    for (const tag of ["enter", "leave"] as const) {
+    for (const tag of ["enter", "leave", "reveal"] as const) {
       const open = `<${tag}>`;
       if (b.startsWith(open)) {
         const closeTag = `</${tag}>`;
@@ -152,6 +154,7 @@ export function parseTagged(text: string): {
   nextScene: boolean;
   enter: string[];
   leave: string[];
+  reveal: string[];
   theEnd: boolean;
 } {
   const parser = new TagStreamParser();
@@ -162,6 +165,7 @@ export function parseTagged(text: string): {
   let nextScene = false;
   const enter: string[] = [];
   const leave: string[] = [];
+  const reveal: string[] = [];
   let theEnd = false;
   for (const ev of events) {
     if (ev.type === "text") content += ev.text;
@@ -170,7 +174,8 @@ export function parseTagged(text: string): {
     else if (ev.type === "nextScene") nextScene = true;
     else if (ev.type === "enter") enter.push(ev.name);
     else if (ev.type === "leave") leave.push(ev.name);
+    else if (ev.type === "reveal") reveal.push(ev.name);
     else if (ev.type === "theEnd") theEnd = true;
   }
-  return { content: content.trim(), emotion, options, nextScene, enter, leave, theEnd };
+  return { content: content.trim(), emotion, options, nextScene, enter, leave, reveal, theEnd };
 }

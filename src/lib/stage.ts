@@ -10,6 +10,8 @@ export interface StageState {
   locationId: string | null;
   /** story mode: character ids on stage (never includes the played character); null = everyone (casual/immersive) */
   present: string[] | null;
+  /** story mode: ids of story secrets established as revealed truth (<reveal>) */
+  revealed: string[];
   /** story mode: the playthrough has concluded (<the-end/>) */
   ended: boolean;
 }
@@ -51,6 +53,7 @@ export function computeStage(
     sceneId: startSceneId,
     locationId: chat.locationId ?? chatScene(chat, startSceneId, lib)?.locationId ?? null,
     present: castOf(startSceneId),
+    revealed: [],
     ended: false,
   };
   for (const m of messages) {
@@ -68,6 +71,7 @@ export function computeStage(
       for (const id of ev.leave ?? []) cur.delete(id);
       state.present = [...cur];
     }
+    for (const id of ev.reveal ?? []) if (!state.revealed.includes(id)) state.revealed.push(id);
     if (ev.theEnd) state.ended = true;
   }
   return state;

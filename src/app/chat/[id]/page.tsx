@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Clapperboard,
   Download,
+  Eye,
   MapPin,
   PanelRight,
   ScrollText,
@@ -20,6 +21,7 @@ import {
   Settings2,
   SkipForward,
   Square,
+  VenetianMask,
   Volume2,
   VolumeX,
   Wand2,
@@ -1462,6 +1464,41 @@ function ChatDrawer({
           </div>
         </Field>
       )}
+      {/* the player's knowledge: what their played character holds, and what's out in the open */}
+      {chat.mode === "story" &&
+        (() => {
+          const secrets: any[] = chat.storySnapshot?.secrets ?? [];
+          const revealed: string[] = data.stage?.revealed ?? [];
+          const mine = secrets.filter(
+            (s) => chat.personaCharacterId && s.knownBy.includes(chat.personaCharacterId) && !revealed.includes(s.id)
+          );
+          const open = secrets.filter((s) => revealed.includes(s.id));
+          if (!mine.length && !open.length) return null;
+          return (
+            <Field label="Secrets" hint="what you know that others don't — and what the story has revealed">
+              <div className="space-y-1.5">
+                {mine.map((s) => (
+                  <div key={s.id} className="panel p-2.5 text-xs space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-sm text-content-100">
+                      <VenetianMask size={13} /> {s.title}
+                      <Badge variant="secondary" rounded className="ml-auto">only you know</Badge>
+                    </div>
+                    <div className="text-content-300">{s.content}</div>
+                  </div>
+                ))}
+                {open.map((s) => (
+                  <div key={s.id} className="panel p-2.5 text-xs space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-sm text-content-100">
+                      <Eye size={13} /> {s.title}
+                      <Badge rounded className="ml-auto">revealed</Badge>
+                    </div>
+                    <div className="text-content-300">{s.content}</div>
+                  </div>
+                ))}
+              </div>
+            </Field>
+          );
+        })()}
       {chat.mode === "immersive" && (data.stage?.scene || data.stage?.location) && (
         <Field label="Setting (fixed)">
           <div className="flex gap-1.5">

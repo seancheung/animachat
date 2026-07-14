@@ -2,7 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildCharacterRequest, computeStage, resolveStageAssets, type ChatContext } from "./prompts";
+import {
+  buildCharacterRequest,
+  buildDirectorRequest,
+  buildNarratorRequest,
+  computeStage,
+  resolveStageAssets,
+  type ChatContext,
+} from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
 import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
@@ -111,7 +118,7 @@ function makeCtx(messages: Message[], characters: Character[]): ChatContext {
     persona: null,
     playedCharacter: null,
     snapshot: null,
-    stage: { sceneId: null, locationId: null, present: null, ended: false },
+    stage: { sceneId: null, locationId: null, present: null, revealed: [], ended: false },
     scene: null,
     location: null,
     ended: false,
@@ -138,6 +145,7 @@ const stageOf = (sceneId: string | null, locationId: string | null) => ({
   sceneId,
   locationId,
   present: null,
+  revealed: [],
   ended: false,
 });
 
@@ -187,10 +195,12 @@ describe("computeStage (playthrough presence & ending)", () => {
   const snapshot: StorySnapshot = {
     name: "Test story",
     description: "",
+    destination: "",
+    secrets: [],
     characters: [makeCharacter("c1", "Mira"), makeCharacter("c2", "Kael")],
     scenes: [
-      { scene: makeScene("s1", "Opening"), cast: ["c1"] },
-      { scene: makeScene("s2", "Finale"), cast: ["c1", "c2"] },
+      { scene: makeScene("s1", "Opening"), cast: ["c1"], goal: "", obstacles: "", exit: "" },
+      { scene: makeScene("s2", "Finale"), cast: ["c1", "c2"], goal: "", obstacles: "", exit: "" },
     ],
     locations: [],
     lorebooks: [],
@@ -242,6 +252,89 @@ describe("computeStage (playthrough presence & ending)", () => {
     const msgs = [narratorEvent(0, { sceneId: "s2" }), narratorEvent(1, { theEnd: true })];
     expect(computeStage(playChat, msgs).ended).toBe(true);
     expect(computeStage(playChat, msgs, 0).ended).toBe(false);
+  });
+
+  it("folds reveal events, and rewinding before a reveal un-reveals it", () => {
+    const msgs = [narratorEvent(0, { enter: ["c2"] }), narratorEvent(1, { reveal: ["sec1"] })];
+    expect(computeStage(playChat, msgs).revealed).toEqual(["sec1"]);
+    expect(computeStage(playChat, msgs, 0).revealed).toEqual([]);
+  });
+});
+
+describe("story knowledge boundaries (secrets & reveals)", () => {
+  const mira = makeCharacter("c1", "Mira");
+  const kael = makeCharacter("c2", "Kael");
+  const secret = {
+    id: "sec1",
+    title: "Kael's own debt",
+    content: "Kael owes the Ashen Guild too.",
+    knownBy: ["c2"],
+    revealHint: "when the Guild is named to his face",
+  };
+
+  function storyCtx(revealed: string[]): ChatContext {
+    const snapshot: StorySnapshot = {
+      name: "Test story",
+      description: "A night of debts.",
+      destination: "Ends at dawn when the collectors knock.",
+      secrets: [secret],
+      characters: [mira, kael],
+      scenes: [
+        {
+          scene: makeScene("s1", "Opening"),
+          cast: ["c1", "c2"],
+          goal: "Entangle the user in the debt",
+          obstacles: "Mira's pride",
+          exit: "someone commits to helping",
+        },
+      ],
+      locations: [],
+      lorebooks: [],
+    };
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira, kael]);
+    return {
+      ...ctx,
+      chat: { ...chat, mode: "story", narratorEnabled: true, storySnapshot: snapshot },
+      snapshot,
+      stage: { sceneId: "s1", locationId: null, present: ["c1", "c2"], revealed, ended: false },
+    };
+  }
+
+  it("only the holder carries an unrevealed secret; others never see it", () => {
+    const ctx = storyCtx([]);
+    const kaelReq = buildCharacterRequest(ctx, kael, modelRef);
+    expect(kaelReq.system).toContain("SECRETS KAEL KEEPS");
+    expect(kaelReq.system).toContain("Kael owes the Ashen Guild too.");
+    const miraReq = buildCharacterRequest(ctx, mira, modelRef);
+    expect(miraReq.system).not.toContain("Kael owes the Ashen Guild too.");
+  });
+
+  it("a revealed secret becomes open truth for everyone and leaves the guarded block", () => {
+    const ctx = storyCtx(["sec1"]);
+    const miraReq = buildCharacterRequest(ctx, mira, modelRef);
+    expect(miraReq.system).toContain("TRUTHS NOW IN THE OPEN");
+    expect(miraReq.system).toContain("Kael owes the Ashen Guild too.");
+    const kaelReq = buildCharacterRequest(ctx, kael, modelRef);
+    expect(kaelReq.system).not.toContain("SECRETS KAEL KEEPS");
+  });
+
+  it("the narrator sees the contract, destination, and all secrets with hints", () => {
+    const req = buildNarratorRequest(storyCtx([]), modelRef);
+    expect(req.system).toContain("THIS SCENE'S JOB");
+    expect(req.system).toContain("Entangle the user in the debt");
+    expect(req.system).toContain("The scene is done when: someone commits to helping");
+    expect(req.system).toContain("WHERE THE STORY IS HEADED");
+    expect(req.system).toContain("Kael owes the Ashen Guild too.");
+    expect(req.system).toContain("when the Guild is named to his face");
+    expect(req.system).toContain("<reveal>Title</reveal>");
+  });
+
+  it("the director sees secret titles and the contract, never secret contents", () => {
+    const req = buildDirectorRequest(storyCtx([]), modelRef);
+    expect(req.system).toContain(`"Kael's own debt"`);
+    expect(req.system).toContain("Scene goal: Entangle the user in the debt");
+    expect(req.system).toContain("headed toward: Ends at dawn");
+    expect(req.system).not.toContain("Kael owes the Ashen Guild too.");
   });
 });
 
