@@ -14,7 +14,7 @@ import InputNumber from "@/components/ui/input-number";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import Tooltip from "@/components/ui/tooltip";
-import { api } from "@/lib/ui";
+import { api, uid } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story } from "@/lib/types";
 
@@ -427,7 +427,7 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
             onClick={() =>
               setForm({
                 ...form,
-                entries: [...entries, { id: crypto.randomUUID(), title: "", keywords: [], content: "", scanDepth: 8 }],
+                entries: [...entries, { id: uid(), title: "", keywords: [], content: "", scanDepth: 8 }],
               })
             }
           >
