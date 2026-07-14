@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, FileUp, Paperclip, SendHorizontal, Undo2, X } from "lucide-react";
+import { FileText, FileUp, Paperclip, SendHorizontal, Square, Undo2, X } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
@@ -53,6 +53,10 @@ export function AssistPanel({
   const [pickerOpen, setPickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // dismissing the dialog (or closing the editor) mid-reply cancels the request with it:
+  // the server stops generating and nothing keeps writing into a form nobody can see
+  useEffect(() => () => abortRef.current?.abort(), []);
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
   // draft state as it was BEFORE the user message at that index was sent — rewinds
@@ -84,6 +88,8 @@ export function AssistPanel({
     let applied = false;
     const show = () =>
       setMessages([...history, { role: "assistant", content: acc.trim(), applied }]);
+    const abort = new AbortController();
+    abortRef.current = abort;
     try {
       await streamSse(
         "/api/assist",
@@ -109,14 +115,21 @@ export function AssistPanel({
             acc += `\n⚠ ${ev.message}`;
             show();
           }
-        }
+        },
+        abort.signal
       );
     } catch (e) {
-      setMessages([
-        ...history,
-        { role: "assistant", content: `⚠ ${e instanceof Error ? e.message : String(e)}` },
-      ]);
+      if (abort.signal.aborted) {
+        // stopped: keep whatever arrived; a reply that never got a word in is dropped
+        if (!acc.trim() && !applied) setMessages(history);
+      } else {
+        setMessages([
+          ...history,
+          { role: "assistant", content: `⚠ ${e instanceof Error ? e.message : String(e)}` },
+        ]);
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
       setDrafting(false);
     }
@@ -235,9 +248,21 @@ export function AssistPanel({
           </Button>
         )}
         <span className="flex-1" />
-        <Button size="sm" shape="square" title="Send (Enter)" onClick={send} disabled={busy || !input.trim()}>
-          <SendHorizontal />
-        </Button>
+        {busy ? (
+          <Button
+            variant="danger"
+            size="sm"
+            shape="square"
+            title="Stop (keeps what's written)"
+            onClick={() => abortRef.current?.abort()}
+          >
+            <Square />
+          </Button>
+        ) : (
+          <Button size="sm" shape="square" title="Send (Enter)" onClick={send} disabled={!input.trim()}>
+            <SendHorizontal />
+          </Button>
+        )}
       </InputBox>
       <LibraryPicker
         open={pickerOpen}

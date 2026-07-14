@@ -162,6 +162,8 @@ export default function ChatPage() {
     () => () => {
       abortRef.current?.abort();
       draftAbortRef.current?.abort();
+      // a fork navigates chat→chat without unmounting — the next chat gets its own opener
+      openedRef.current = false;
     },
     [id]
   );
@@ -370,7 +372,9 @@ export default function ChatPage() {
       }
       const abort = new AbortController();
       abortRef.current = abort;
-      // Stop reveals the rest at once, VN skip-style, instead of leaving it half-typed
+      // Stop on a fully-arrived reply reveals the rest at once, VN skip-style; a reply
+      // still streaming is incomplete — the server discards it, and the flushed text
+      // clears with the streaming view
       abort.signal.addEventListener("abort", () => typewriter.flush());
       try {
         await streamSse(
@@ -767,6 +771,8 @@ export default function ChatPage() {
           userEcho={userEcho}
           personaName={personaName}
           busy={locked}
+          generating={busy}
+          stopGenerating={() => abortRef.current?.abort()}
           drafting={drafting}
           stopDrafting={() => draftAbortRef.current?.abort()}
           inputRef={inputRef}
@@ -870,6 +876,8 @@ function DialogueLayout({
   userEcho,
   personaName,
   busy,
+  generating,
+  stopGenerating,
   drafting,
   stopDrafting,
   inputRef,
@@ -1107,7 +1115,11 @@ function DialogueLayout({
               {data.chat.narratorEnabled && (
                 <Button variant="ghost" size="sm" shape="square" title="Summon the narrator" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
               )}
-              <Button size="sm" shape="square" title="Send (Enter)" disabled={busy || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
+              {generating ? (
+                <Button variant="danger" size="sm" shape="square" title="Stop generating" onClick={stopGenerating}><Square /></Button>
+              ) : (
+                <Button size="sm" shape="square" title="Send (Enter)" disabled={busy || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
+              )}
             </MentionInputBox>
           </div>
         )}

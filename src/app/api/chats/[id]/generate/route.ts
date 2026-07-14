@@ -213,7 +213,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         } catch {
-          /* client disconnected — keep going so the message still gets saved */
+          /* client disconnected — don't crash the stream task; the abort signal ends the loop */
         }
       };
 
@@ -316,7 +316,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         }
 
         content = content.trim();
-        if (content) {
+        // an interrupted reply (Stop, closed page, provider error) is incomplete —
+        // discard it rather than save a half-written message to the timeline
+        if (content && !failed) {
           // stage events come only from the narrator, and never once the story has ended
           let sceneEvent: SceneEvent | null = null;
           if (speaker.role === "narrator" && turnCtx.snapshot && !turnCtx.ended) {
