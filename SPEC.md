@@ -183,7 +183,7 @@ Shared convention for AI and user:
 Configurable: global default + per-chat override. Conventions:
 1. **User 1st person, characters 3rd** — user writes "I…", characters write about themselves by name.
 2. **All 3rd person** — co-written novel style.
-3. **2nd-person VN** — narrator/characters address the user as "you"; user writes 1st person.
+3. **2nd-person VN** — narrator/characters address the user as "you" ("you" always means the user); characters write their own actions/narration in 3rd person by name; user writes 1st person.
 
 Character and narrator prompts adapt; narrator's suggested actions are written in the user's POV so they can be sent as-is. A chat's POV is chosen at creation and cannot change afterwards.
 

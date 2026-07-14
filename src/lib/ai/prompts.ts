@@ -247,7 +247,11 @@ function povRules(pov: Pov, personaName: string, selfName: string | null): strin
     case "third":
       return `Everyone writes in third person, like co-authoring a novel. Refer to the user's character as ${personaName}.`;
     case "vn2nd":
-      return `Address the user directly as "you", visual-novel style. Describe what "you" see, hear and feel. The user writes in first person.`;
+      return `Address the user directly as "you", visual-novel style. Describe what "you" see, hear and feel — "you" always means the user, nobody else. ${
+        selfName
+          ? `Write ${selfName}'s own actions and narration in third person, by name ("${selfName}").`
+          : `Write characters' actions in third person, by name.`
+      } The user writes in first person.`;
   }
 }
 
