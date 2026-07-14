@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { AssistPanel } from "@/components/AssistPanel";
@@ -87,6 +87,32 @@ export function useEditor<T extends { id?: string }>(
   return { form, setForm, save, saving };
 }
 
+const parseTags = (s: string) => s.split(",").map((t) => t.trim()).filter(Boolean);
+
+/** Library tags, edited as comma-separated text (same convention as the chat drawer). */
+export function TagsField({ value, onChange }: { value: string[] | undefined; onChange: (tags: string[]) => void }) {
+  const joined = (value ?? []).join(", ");
+  const [text, setText] = useState(joined);
+  // external form replacement (assist rewind/restore) refreshes the input;
+  // the user's own keystrokes already match and are left alone
+  useEffect(() => {
+    setText((cur) => (parseTags(cur).join(", ") === joined ? cur : joined));
+  }, [joined]);
+  return (
+    <Field label="Tags" hint="comma-separated — for grouping & filtering in the library">
+      <Input
+        className="w-full"
+        placeholder="e.g. fantasy, main-cast"
+        value={text}
+        onChange={(v) => {
+          setText(v);
+          onChange(parseTags(v));
+        }}
+      />
+    </Field>
+  );
+}
+
 export function PersonaEditor({ initial, onSaved }: { initial: Partial<Persona>; onSaved: () => void }) {
   const { form, setForm, save, saving } = useEditor(initial, "/api/personas", onSaved);
   return (
@@ -97,6 +123,7 @@ export function PersonaEditor({ initial, onSaved }: { initial: Partial<Persona>;
       <Field label="Description" hint="who you are in the roleplay — characters see this; placeholders like [char_name] work here">
         <Textarea className="w-full h-40" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }
@@ -183,6 +210,7 @@ export function LocationEditor({ initial, onSaved }: { initial: Partial<Location
         <Textarea className="w-full h-32" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }
@@ -210,6 +238,7 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
         />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }
@@ -381,6 +410,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
           {lorebooks?.length === 0 && <span className="text-xs text-content-400">none yet</span>}
         </div>
       </Field>
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }
@@ -439,6 +469,7 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
           </Button>
         </div>
       </Field>
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }

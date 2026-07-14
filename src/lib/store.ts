@@ -183,6 +183,7 @@ const characterFromRow = (r: Row): Character => ({
   typingSfxAsset: r.typing_sfx_asset,
   trackRelationship: !!r.track_relationship,
   idleMotion: !!r.idle_motion,
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -211,6 +212,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     typingSfxAsset: null,
     trackRelationship: true,
     idleMotion: true,
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -218,11 +220,11 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
   });
   getDb()
     .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@trackRel,@idle,@created,@updated)
+      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,tags,created_at,updated_at)
+       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@custom,@sfx,@trackRel,@idle,@tags,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, description=@description, greeting=@greeting,
          example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, custom_expressions=@custom, typing_sfx_asset=@sfx,
-         track_relationship=@trackRel, idle_motion=@idle, updated_at=@updated`
+         track_relationship=@trackRel, idle_motion=@idle, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -237,6 +239,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
       sfx: m.typingSfxAsset,
       trackRel: m.trackRelationship ? 1 : 0,
       idle: m.idleMotion ? 1 : 0,
+      tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -253,6 +256,7 @@ const personaFromRow = (r: Row): Persona => ({
   id: r.id,
   name: r.name,
   description: r.description,
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -272,6 +276,7 @@ export function savePersona(p: Partial<Persona> & { id?: string }): Persona {
     id: existing?.id ?? p.id ?? uid(),
     name: "You",
     description: "",
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -279,10 +284,10 @@ export function savePersona(p: Partial<Persona> & { id?: string }): Persona {
   });
   getDb()
     .prepare(
-      `INSERT INTO personas (id,name,description,created_at,updated_at) VALUES (@id,@name,@description,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, updated_at=@updated`
+      `INSERT INTO personas (id,name,description,tags,created_at,updated_at) VALUES (@id,@name,@description,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, tags=@tags, updated_at=@updated`
     )
-    .run({ id: m.id, name: m.name, description: m.description, created: m.createdAt, updated: m.updatedAt });
+    .run({ id: m.id, name: m.name, description: m.description, tags: J.str(m.tags), created: m.createdAt, updated: m.updatedAt });
   return getPersona(m.id)!;
 }
 
@@ -301,6 +306,7 @@ const locationFromRow = (r: Row): Location => ({
   bgmAsset: r.bgm_asset,
   ambientAsset: r.ambient_asset,
   stageStyle: J.parse(r.stage_style, null),
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -325,6 +331,7 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
     bgmAsset: null,
     ambientAsset: null,
     stageStyle: null,
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -332,9 +339,9 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
   });
   getDb()
     .prepare(
-      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,created_at,updated_at)
-       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@style,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, updated_at=@updated`
+      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@style,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -345,6 +352,7 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
       bgm: m.bgmAsset,
       amb: m.ambientAsset,
       style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
+      tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -367,6 +375,7 @@ const sceneFromRow = (r: Row): Scene => ({
   bgmAsset: r.bgm_asset,
   ambientAsset: r.ambient_asset,
   stageStyle: J.parse(r.stage_style, null),
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -392,6 +401,7 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
     bgmAsset: null,
     ambientAsset: null,
     stageStyle: null,
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -399,9 +409,9 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
   });
   getDb()
     .prepare(
-      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,created_at,updated_at)
-       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@style,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, updated_at=@updated`
+      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@style,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -413,6 +423,7 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
       bgm: m.bgmAsset,
       amb: m.ambientAsset,
       style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
+      tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -432,6 +443,7 @@ const storyFromRow = (r: Row): Story => ({
   characterIds: J.parse(r.character_ids, []),
   scenes: J.parse(r.scenes, []),
   lorebookIds: J.parse(r.lorebook_ids, []),
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -454,6 +466,7 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     characterIds: [],
     scenes: [],
     lorebookIds: [],
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -461,9 +474,9 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
   });
   getDb()
     .prepare(
-      `INSERT INTO stories (id,name,description,character_ids,scenes,lorebook_ids,created_at,updated_at)
-       VALUES (@id,@name,@description,@chars,@scenes,@lore,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, updated_at=@updated`
+      `INSERT INTO stories (id,name,description,character_ids,scenes,lorebook_ids,tags,created_at,updated_at)
+       VALUES (@id,@name,@description,@chars,@scenes,@lore,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -472,6 +485,7 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
       chars: J.str(m.characterIds),
       scenes: J.str(m.scenes),
       lore: J.str(m.lorebookIds),
+      tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
     });
@@ -514,6 +528,7 @@ const lorebookFromRow = (r: Row): Lorebook => ({
   name: r.name,
   description: r.description,
   entries: J.parse(r.entries, []),
+  tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -534,6 +549,7 @@ export function saveLorebook(x: Partial<Lorebook> & { id?: string }): Lorebook {
     name: "Untitled lorebook",
     description: "",
     entries: [],
+    tags: [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
     ...existing,
@@ -541,14 +557,15 @@ export function saveLorebook(x: Partial<Lorebook> & { id?: string }): Lorebook {
   });
   getDb()
     .prepare(
-      `INSERT INTO lorebooks (id,name,description,entries,created_at,updated_at) VALUES (@id,@name,@description,@entries,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, entries=@entries, updated_at=@updated`
+      `INSERT INTO lorebooks (id,name,description,entries,tags,created_at,updated_at) VALUES (@id,@name,@description,@entries,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, entries=@entries, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
       name: m.name,
       description: m.description,
       entries: J.str(m.entries),
+      tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
     });

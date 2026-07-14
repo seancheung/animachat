@@ -60,21 +60,28 @@ export default function LibraryPage() {
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"updated" | "created" | "name">("updated");
+  const [tagFilter, setTagFilter] = useState("");
 
   const type = TYPES.find((t) => t.key === tab)!;
   const { data: items, mutate } = useSWR<any[]>(type.endpoint, api.get);
   const Editor = EDITORS[tab];
   const Card = LIBRARY_CARDS[tab];
 
+  const allTags = useMemo(
+    () => [...new Set((items ?? []).flatMap((i) => i.tags ?? []) as string[])].sort((a, b) => a.localeCompare(b)),
+    [items]
+  );
+
   const shown = useMemo(() => {
     let list = items ?? [];
     const q = query.trim().toLowerCase();
     if (q)
       list = list.filter((i) =>
-        [i.name, i.description, i.setup].some(
+        [i.name, i.description, i.setup, (i.tags ?? []).join(" ")].some(
           (t) => typeof t === "string" && t.toLowerCase().includes(q)
         )
       );
+    if (tagFilter) list = list.filter((i) => (i.tags ?? []).includes(tagFilter));
     const by: Record<typeof sort, (a: any, b: any) => number> = {
       name: (a, b) => String(a.name).localeCompare(String(b.name)),
       created: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
@@ -82,7 +89,7 @@ export default function LibraryPage() {
         (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0),
     };
     return [...list].sort(by[sort]);
-  }, [items, query, sort]);
+  }, [items, query, sort, tagFilter]);
 
   async function exportItems(ids: { type: string; id: string }[]) {
     const res = await fetch("/api/export", {
@@ -114,7 +121,10 @@ export default function LibraryPage() {
             className="flex-1 mr-8"
             items={TYPES.map((t) => ({ value: t.key, label: t.label }))}
             value={tab}
-            onChange={setTab}
+            onChange={(v) => {
+              setTab(v);
+              setTagFilter(""); // tags are per-type — a filter can't carry across tabs
+            }}
           />
           <Button variant="secondary" onClick={() => importRef.current?.click()}>
             <Upload /> Import
@@ -157,6 +167,19 @@ export default function LibraryPage() {
               ]}
             />
           </div>
+          {allTags.length > 0 && (
+            <div className="w-44">
+              <Select
+                className="w-full"
+                value={tagFilter}
+                onChange={setTagFilter}
+                options={[
+                  { value: "", label: "All tags" },
+                  ...allTags.map((t) => ({ value: t, label: t })),
+                ]}
+              />
+            </div>
+          )}
         </div>
 
         {items?.length === 0 && (
@@ -166,7 +189,9 @@ export default function LibraryPage() {
           </EmptyState>
         )}
         {items && items.length > 0 && shown.length === 0 && (
-          <EmptyState>Nothing matches “{query.trim()}”.</EmptyState>
+          <EmptyState>
+            Nothing matches {query.trim() ? `“${query.trim()}”` : `the tag “${tagFilter}”`}.
+          </EmptyState>
         )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">

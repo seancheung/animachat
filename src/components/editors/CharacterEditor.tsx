@@ -12,7 +12,7 @@ import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
 import { api } from "@/lib/ui";
 import { EMOTIONS, type Character, type CustomExpression } from "@/lib/types";
-import { EditorShell, useEditor } from "./SimpleEditors";
+import { EditorShell, TagsField, useEditor } from "./SimpleEditors";
 
 const PLACEHOLDER_HINT =
   "placeholders work here: [char_name], [char2_name], [user_name], [loc_name], [scene_name], [story_name]";
@@ -178,6 +178,8 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
       <div className="w-56">
         <AssetInput label="Typing sound override" kind="audio" value={form.typingSfxAsset ?? null} onChange={(v) => setForm({ ...form, typingSfxAsset: v })} />
       </div>
+
+      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }

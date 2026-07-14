@@ -28,6 +28,7 @@ function makeCharacter(id: string, name: string): Character {
     sprites: {},
     customExpressions: [],
     typingSfxAsset: null,
+    tags: [],
     trackRelationship: false,
     idleMotion: true,
     createdAt: 0,
@@ -175,6 +176,7 @@ function makeScene(id: string, name: string): Scene {
     bgmAsset: null,
     ambientAsset: null,
     stageStyle: null,
+    tags: [],
     createdAt: 0,
     updatedAt: 0,
   };

@@ -14,6 +14,7 @@ import {
 import { mutate } from "swr";
 import { Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
+import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { EMOTIONS } from "@/lib/types";
@@ -60,6 +61,15 @@ function CardShell({
       <div className="p-2.5">
         <div className="font-medium text-sm truncate">{item.name}</div>
         <div className="text-xs text-content-300 line-clamp-2 h-8">{sub}</div>
+        {item.tags?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {item.tags.map((t: string) => (
+              <Badge key={t} variant="secondary" rounded>
+                {t}
+              </Badge>
+            ))}
+          </div>
+        )}
         <div className="flex gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
           {extraActions}
           <Button variant="ghost" size="sm" shape="square" title="Export" onClick={onExport}>

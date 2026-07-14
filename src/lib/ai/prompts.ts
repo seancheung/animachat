@@ -177,6 +177,7 @@ export function buildContext(chatId: string, messagesOverride?: Message[]): Chat
         id: playedCharacter.id,
         name: playedCharacter.name,
         description: playedCharacter.description,
+        tags: [],
         createdAt: playedCharacter.createdAt,
         updatedAt: playedCharacter.updatedAt,
       }

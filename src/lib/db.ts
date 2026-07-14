@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS characters (
   typing_sfx_asset TEXT,
   track_relationship INTEGER NOT NULL DEFAULT 1,
   idle_motion INTEGER NOT NULL DEFAULT 1,
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS personas (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS locations (
   bgm_asset TEXT,
   ambient_asset TEXT,
   stage_style TEXT,
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -86,6 +89,7 @@ CREATE TABLE IF NOT EXISTS scenes (
   bgm_asset TEXT,
   ambient_asset TEXT,
   stage_style TEXT,
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS stories (
   character_ids TEXT NOT NULL DEFAULT '[]',
   scenes TEXT NOT NULL DEFAULT '[]',
   lorebook_ids TEXT NOT NULL DEFAULT '[]',
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -104,6 +109,7 @@ CREATE TABLE IF NOT EXISTS lorebooks (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   entries TEXT NOT NULL DEFAULT '[]',
+  tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

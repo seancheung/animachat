@@ -49,6 +49,8 @@ export interface Character {
   trackRelationship: boolean;
   /** subtle breathing idle motion on the VN stage */
   idleMotion: boolean;
+  /** free-form labels for grouping & filtering in the library */
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -57,6 +59,7 @@ export interface Persona {
   id: string;
   name: string;
   description: string;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -94,6 +97,7 @@ export interface Location {
   bgmAsset: string | null;
   ambientAsset: string | null;
   stageStyle: StageStyle | null;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -109,6 +113,7 @@ export interface Scene {
   bgmAsset: string | null;
   ambientAsset: string | null;
   stageStyle: StageStyle | null;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -127,6 +132,7 @@ export interface Story {
   characterIds: string[];
   scenes: StoryScene[];
   lorebookIds: string[];
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -145,6 +151,7 @@ export interface Lorebook {
   name: string;
   description: string;
   entries: LorebookEntry[];
+  tags: string[];
   createdAt: number;
   updatedAt: number;
 }
