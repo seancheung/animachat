@@ -48,6 +48,7 @@ export default function LibraryPage() {
   const [editing, setEditing] = useState<any | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -143,13 +144,21 @@ export default function LibraryPage() {
               Cancel
             </Button>
             <Button
-              disabled={!exportSel.length}
+              disabled={!exportSel.length || exporting}
               onClick={async () => {
-                await exportItems(exportSel.map(({ type, id }) => ({ type, id })));
-                setExportOpen(false);
+                setExporting(true);
+                try {
+                  await exportItems(exportSel.map(({ type, id }) => ({ type, id })));
+                  setExportOpen(false);
+                } finally {
+                  setExporting(false);
+                }
               }}
             >
-              <Download /> Export {exportSel.length || ""} item{exportSel.length === 1 ? "" : "s"}
+              <Download />{" "}
+              {exporting
+                ? "Exporting…"
+                : `Export ${exportSel.length || ""} item${exportSel.length === 1 ? "" : "s"}`}
             </Button>
           </>
         }
