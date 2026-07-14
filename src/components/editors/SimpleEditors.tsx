@@ -41,7 +41,10 @@ export function EditorShell({
   mapAssistFields?: (partial: any) => any;
 }) {
   return (
-    <div className={assist ? "grid grid-cols-[1fr_320px] gap-4 h-[70vh]" : ""}>
+    // the explicit minmax(0,1fr) row pins both columns to the 70vh box — an implicit auto
+    // row would grow to the form's full height, pushing content (unscrollably) past the
+    // dialog and letting focus-scroll drag the whole overlay around
+    <div className={assist ? "grid grid-cols-[1fr_320px] grid-rows-[minmax(0,1fr)] gap-4 h-[70vh]" : ""}>
       <div className="space-y-3 overflow-y-auto pr-1 min-h-0">
         {children}
         <div className="pt-2">

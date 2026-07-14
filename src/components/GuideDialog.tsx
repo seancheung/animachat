@@ -154,7 +154,8 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <Modal open={open} onClose={onClose} title="Library guide" wide dismissable={false}>
-      <div className="grid grid-cols-[1fr_320px] gap-4 h-[70vh]">
+      {/* minmax(0,1fr) row: keep both columns inside the 70vh box (see EditorShell) */}
+      <div className="grid grid-cols-[1fr_320px] grid-rows-[minmax(0,1fr)] gap-4 h-[70vh]">
         <div className="flex flex-col min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
             {items.length === 0 ? (
