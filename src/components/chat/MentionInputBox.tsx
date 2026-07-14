@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState, type ComponentProps, type KeyboardEvent } from "react";
+import { Fragment, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent } from "react";
 import { AtSign } from "lucide-react";
 import { InputBox } from "@/components/app";
+import { splitAtMentions } from "@/lib/mentions";
 import { cn } from "@/utils/cn";
 
 /** The @-trigger before the caret: "@" plus a partial name (no whitespace/@ inside). */
@@ -31,6 +32,27 @@ export function MentionInputBox({
     return ["all", ...mentionNames].filter((n) => n.toLowerCase().startsWith(q)).slice(0, 8);
   }, [query, mentionNames]);
   const open = candidates.length > 0;
+
+  // chip highlighting: a styled mirror of the text goes behind the (transparent-text)
+  // textarea — only when something actually matches, so the placeholder stays native
+  const backdrop = useMemo(() => {
+    const parts = splitAtMentions(value, mentionNames);
+    if (!parts.some((p) => p.mention)) return undefined;
+    return (
+      <>
+        {parts.map((p, i) =>
+          p.mention ? (
+            <span key={i} className="input-mention">
+              {p.text}
+            </span>
+          ) : (
+            <Fragment key={i}>{p.text}</Fragment>
+          )
+        )}
+        {"​" /* keeps a trailing empty line the same height as the textarea's */}
+      </>
+    );
+  }, [value, mentionNames]);
 
   const syncTrigger = (text: string) => {
     const el = innerRef.current;
@@ -106,6 +128,7 @@ export function MentionInputBox({
       )}
       <InputBox
         {...rest}
+        backdrop={backdrop}
         value={value}
         onChange={(v) => {
           onChange(v);

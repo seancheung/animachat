@@ -41,6 +41,32 @@ export function mentionsToPlain(text: string): string {
   return text.replace(MENTION_TAG_RE, (_t, name) => (name === undefined ? "@all" : `@${name}`));
 }
 
+/** Split PLAIN input text on word-anchored exact @Name/@all runs (pre-send form) —
+ *  drives the input's chip highlighting; the matched text keeps its typed characters
+ *  so an overlay renders with identical glyph metrics. */
+export function splitAtMentions(
+  text: string,
+  names: string[]
+): { mention: boolean; text: string }[] {
+  const pattern = ["all", ...names]
+    .filter((n) => n.trim())
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRe)
+    .join("|");
+  if (!pattern || !text.includes("@")) return [{ mention: false, text }];
+  const re = new RegExp(`(^|\\s)(@(?:${pattern}))(?![\\p{L}\\p{N}_])`, "giu");
+  const parts: { mention: boolean; text: string }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    const start = m.index + m[1].length;
+    if (start > last) parts.push({ mention: false, text: text.slice(last, start) });
+    parts.push({ mention: true, text: m[2] });
+    last = start + m[2].length;
+  }
+  if (last < text.length) parts.push({ mention: false, text: text.slice(last) });
+  return parts;
+}
+
 export type MentionPart = { type: "text"; text: string } | { type: "mention"; name: string | null };
 
 /** Split text into plain segments and mention chips (name null = everyone) for rendering. */

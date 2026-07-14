@@ -38,6 +38,14 @@ body {
   font-weight: 500;
 }
 
+/* chip highlighting inside the chat input's backdrop mirror: color/background only —
+   any metric change (padding, weight) would desync it from the textarea's glyphs */
+.input-mention {
+  color: var(--color-primary-500);
+  background-color: color-mix(in srgb, var(--color-primary-500) 14%, transparent);
+  border-radius: 0.25rem;
+}
+
 /* chat bubbles (character speech & the fullscreen-VN dialogue box).
    Tint overridable per scene/location via --bubble-color; bubbles are solid.
    The VN dialogue box (.vn-dialog) mixes the same tint with the chat-panel

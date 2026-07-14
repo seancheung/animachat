@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mentionsToPlain, parseMentions, splitMentions, tagMentions } from "./mentions";
+import { mentionsToPlain, parseMentions, splitAtMentions, splitMentions, tagMentions } from "./mentions";
 
 describe("tagMentions", () => {
   const names = ["Mira", "Mira Belle", "Kael"];
@@ -45,6 +45,22 @@ describe("mentionsToPlain", () => {
     expect(mentionsToPlain("<mention>Mira Belle</mention> and <mention/> — go")).toBe(
       "@Mira Belle and @all — go"
     );
+  });
+});
+
+describe("splitAtMentions", () => {
+  it("marks exact @names and @all in plain input, leaves the rest", () => {
+    expect(splitAtMentions("hey @Mira and @all, @nobody", ["Mira"])).toEqual([
+      { mention: false, text: "hey " },
+      { mention: true, text: "@Mira" },
+      { mention: false, text: " and " },
+      { mention: true, text: "@all" },
+      { mention: false, text: ", @nobody" },
+    ]);
+  });
+
+  it("passes through when nothing can match", () => {
+    expect(splitAtMentions("plain text", [])).toEqual([{ mention: false, text: "plain text" }]);
   });
 });
 

@@ -74,6 +74,7 @@ export function InputBox({
   textareaClassName,
   className,
   children,
+  backdrop,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -86,7 +87,11 @@ export function InputBox({
   className?: string;
   /** toolbar content; use a flex-1 spacer to split left/right groups */
   children?: ReactNode;
+  /** styled mirror of `value` rendered behind a transparent-text textarea (chip
+   *  highlighting); it must reproduce the text with identical glyph metrics */
+  backdrop?: ReactNode;
 }) {
+  const backdropRef = useRef<HTMLDivElement>(null);
   return (
     <div
       className={cn(
@@ -95,18 +100,36 @@ export function InputBox({
         className
       )}
     >
-      <textarea
-        ref={textareaRef}
-        className={cn(
-          "block w-full h-14 resize-none bg-transparent px-3 pt-2 pb-0.5 text-content-100 text-sm outline-none disabled:opacity-40",
-          textareaClassName
+      <div className="relative">
+        {backdrop != null && (
+          <div
+            ref={backdropRef}
+            aria-hidden
+            className={cn(
+              "absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-3 pt-2 pb-0.5 text-content-100 text-sm pointer-events-none",
+              textareaClassName
+            )}
+          >
+            {backdrop}
+          </div>
         )}
-        placeholder={placeholder}
-        disabled={disabled}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-      />
+        <textarea
+          ref={textareaRef}
+          className={cn(
+            "block w-full h-14 resize-none bg-transparent px-3 pt-2 pb-0.5 text-content-100 text-sm outline-none disabled:opacity-40",
+            backdrop != null && "relative text-transparent [caret-color:var(--color-content-100)]",
+            textareaClassName
+          )}
+          placeholder={placeholder}
+          disabled={disabled}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          onScroll={(e) => {
+            if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
+        />
+      </div>
       <div className="flex items-center gap-1 px-1.5 pb-1.5">{children}</div>
     </div>
   );
