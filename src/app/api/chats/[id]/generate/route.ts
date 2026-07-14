@@ -11,7 +11,6 @@ import { ensureMemoryCaughtUp, runMemoryPass } from "@/lib/ai/memory";
 import {
   buildCharacterRequest,
   buildContext,
-  buildMentionResolveRequest,
   buildNarratorRequest,
   buildOrchestratorRequest,
   buildTitleRequest,
@@ -41,36 +40,19 @@ interface Speaker {
   character: Character | null;
 }
 
-/** "@name" at a word start in CHARACTER replies (characters chain turns with plain
- *  @mentions; the user's mentions arrive as <mention> tags instead). Emails don't count. */
-const MENTION_RE = /(^|\s)@\S/;
-const ALL_RE = /(^|\s)@all\b/i;
-
-/** Hard cap on AI turns per request — characters chaining @mentions can't loop forever
+/** Hard cap on AI turns per request — characters chaining mentions can't loop forever
  *  (lifted while the chat's infinite-mentions override is on). */
 const MAX_TURNS = 8;
 
-/** Ask the orchestrator model which characters a message's @mentions address. */
-async function resolveMentions(
-  ctx: ChatContext,
-  text: string,
-  author?: Character | null
-): Promise<Character[]> {
-  const modelRef = resolveModel("orchestrator", ctx.chat);
-  const req = buildMentionResolveRequest(ctx, text, author);
-  const raw = await callLlm({
-    modelRef,
-    system: req.system,
-    messages: req.messages,
-    maxTokens: 120,
-    feature: "orchestrator",
-    chatId: ctx.chat.id,
-  });
-  const parsed = extractJson<{ speakers?: string[] }>(raw);
+/** Present characters a text's <mention> tags address — exact name match, in order,
+ *  deduped, optionally excluding the author (self-mentions never pass the turn). */
+function mentionedPresent(ctx: ChatContext, text: string, exceptId?: string): Character[] {
+  const mentions = parseMentions(text);
+  if (mentions.all) return ctx.present.filter((c) => c.id !== exceptId);
   const out: Character[] = [];
-  for (const id of parsed?.speakers ?? []) {
-    const c = ctx.present.find((x) => x.id === id);
-    if (c && !out.includes(c)) out.push(c);
+  for (const n of mentions.names) {
+    const c = ctx.present.find((x) => x.name.toLowerCase() === n.toLowerCase());
+    if (c && c.id !== exceptId && !out.includes(c)) out.push(c);
   }
   return out;
 }
@@ -128,18 +110,9 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
   if (text && ctx.present.length > 0) {
     // the user's mentions arrive as <mention> tags (written by tagMentions on append) —
     // resolved deterministically by exact name; anything unresolved falls through
-    const mentions = parseMentions(text);
-    if (mentions.all) {
-      return ctx.present.map((c) => ({ role: "character" as const, character: c }));
-    }
-    if (mentions.names.length) {
-      const addressed = mentions.names
-        .map((n) => ctx.present.find((c) => c.name.toLowerCase() === n.toLowerCase()))
-        .filter((c): c is Character => !!c)
-        .filter((c, i, arr) => arr.indexOf(c) === i);
-      if (addressed.length)
-        return addressed.map((c) => ({ role: "character" as const, character: c }));
-    }
+    const addressed = mentionedPresent(ctx, text);
+    if (addressed.length)
+      return addressed.map((c) => ({ role: "character" as const, character: c }));
   }
   return [await pickDefaultSpeaker(ctx, body)];
 }
@@ -397,17 +370,10 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         }
         if (failed) break;
 
-        // characters can pass the turn by @mentioning each other (never themselves);
-        // the MAX_TURNS cap and no back-to-back repeats keep it finite
+        // characters pass the turn with <mention> tags (never themselves, and mentions
+        // of the user resolve to nobody); MAX_TURNS and no back-to-back repeats keep it finite
         if (!regenTarget && speaker.role === "character" && content && turnCtx.present.length > 1) {
-          let chained: Character[] = [];
-          if (ALL_RE.test(content)) {
-            chained = turnCtx.present.filter((c) => c.id !== speaker.character!.id);
-          } else if (MENTION_RE.test(content)) {
-            chained = (await resolveMentions(turnCtx, content, speaker.character).catch(() => [])).filter(
-              (c) => c.id !== speaker.character!.id
-            );
-          }
+          const chained = mentionedPresent(turnCtx, content, speaker.character!.id);
           for (const c of chained) {
             if (!infinite && turns + queue.length >= MAX_TURNS) break;
             if (queue[queue.length - 1]?.character?.id === c.id) continue;

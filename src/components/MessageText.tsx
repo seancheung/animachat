@@ -3,12 +3,27 @@
 import { Fragment, useMemo } from "react";
 import { splitMentions } from "@/lib/mentions";
 
+/** Hide a half-arrived <mention> tag at the streaming tail so raw markup never flashes
+ *  during the typewriter reveal (it completes into a chip a few characters later). */
+function hidePartialMentionTail(text: string): string {
+  const lastOpen = text.lastIndexOf("<mention");
+  if (lastOpen !== -1) {
+    const rest = text.slice(lastOpen);
+    if (!/^<mention\s*\/>/.test(rest) && !/^<mention>[^<]*<\/mention>/.test(rest))
+      return text.slice(0, lastOpen);
+  }
+  const lt = text.lastIndexOf("<");
+  if (lt > text.lastIndexOf(">") && "<mention".startsWith(text.slice(lt))) return text.slice(0, lt);
+  return text;
+}
+
 /**
  * Renders roleplay prose: *actions* italic/tinted, "dialogue" prominent,
  * <mention> tags as highlighted @chips.
  * In chat messages a single asterisk means action, not markdown emphasis.
  */
-export function MessageText({ text, streaming }: { text: string; streaming?: boolean }) {
+export function MessageText({ text: rawText, streaming }: { text: string; streaming?: boolean }) {
+  const text = streaming ? hidePartialMentionTail(rawText) : rawText;
   const parts = useMemo(() => {
     const tokens: { kind: "action" | "quote" | "plain" | "mention"; text: string }[] = [];
     const re = /(\*[^*\n]+\*?)|("[^"\n]*"?)|(“[^”\n]*”?)/g;
