@@ -34,7 +34,7 @@ import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
 import { MessageText } from "@/components/MessageText";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Field } from "@/components/app";
+import { Field, Modal } from "@/components/app";
 import { MentionInputBox } from "@/components/chat/MentionInputBox";
 import { confirmDialog } from "@/components/confirm";
 import Alert from "@/components/ui/alert";
@@ -578,8 +578,8 @@ export default function ChatPage() {
         textareaRef={inputRef}
         placeholder={
           characters.length > 1
-            ? `Write as ${personaName}… (*asterisks* for actions, @ to address characters)`
-            : `Write as ${personaName}… (*asterisks* for actions)`
+            ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
+            : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
         }
         value={input}
         disabled={locked}
@@ -1093,7 +1093,11 @@ function DialogueLayout({
               mentionNames={mentionNames ?? []}
               textareaRef={inputRef}
               textareaClassName="h-10"
-              placeholder={`Write as ${personaName}…`}
+              placeholder={
+                mentionNames?.length
+                  ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
+                  : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
+              }
               value={input}
               disabled={busy}
               onChange={setInput}
@@ -1130,6 +1134,149 @@ function DialogueLayout({
 
 /* ================= chat settings drawer ================= */
 
+function NovelExportDialog({ chatId, open, onClose }: { chatId: string; open: boolean; onClose: () => void }) {
+  const [mode, setMode] = useState<"plain" | "rewrite">("plain");
+  const [voice, setVoice] = useState<"third" | "first">("third");
+  const [progress, setProgress] = useState<string | null>(null);
+  const [notices, setNotices] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // closing the dialog aborts a running rewrite — nothing keeps generating unseen
+  const close = () => {
+    abortRef.current?.abort();
+    setProgress(null);
+    setNotices([]);
+    setError(null);
+    onClose();
+  };
+
+  async function exportAs(format: "md" | "epub") {
+    setError(null);
+    setNotices([]);
+    if (mode === "plain") {
+      downloadBlob(await fetch(`/api/chats/${chatId}/novel?format=${format}`), `chat.${format}`);
+      return;
+    }
+    const abort = new AbortController();
+    abortRef.current = abort;
+    setProgress("Starting…");
+    try {
+      let finished = false;
+      await streamSse(
+        `/api/chats/${chatId}/novel`,
+        { format, voice },
+        (ev) => {
+          if (ev.type === "progress")
+            setProgress(
+              `Rewriting chapter ${ev.chapter}/${ev.total}` +
+                (ev.title ? ` — ${ev.title}` : "") +
+                (ev.parts > 1 ? ` (part ${ev.part}/${ev.parts})` : "") +
+                "…"
+            );
+          else if (ev.type === "notice")
+            setNotices((n) => [...n, `One section kept the plain transcript: ${ev.message}`]);
+          else if (ev.type === "done") {
+            const blob =
+              ev.format === "epub"
+                ? new Blob([Uint8Array.from(atob(ev.data), (c) => c.charCodeAt(0))], {
+                    type: "application/epub+zip",
+                  })
+                : new Blob([ev.data], { type: "text/markdown" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = ev.filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            finished = true;
+          }
+        },
+        abort.signal
+      );
+      if (!finished) throw new Error("The rewrite ended before producing a file.");
+    } catch (e) {
+      if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      abortRef.current = null;
+      setProgress(null);
+    }
+  }
+
+  const busy = progress !== null;
+  return (
+    <Modal open={open} onClose={close} title="Export as novel">
+      <div className="space-y-4">
+        <Field label="Mode">
+          <SegmentedControl
+            className="w-full"
+            size="sm"
+            value={mode}
+            onChange={(v) => setMode(v)}
+            items={[
+              { value: "plain", label: "Plain transcript" },
+              {
+                value: "rewrite",
+                label: (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Wand2 size={13} /> AI rewrite
+                  </span>
+                ),
+              },
+            ]}
+          />
+          <div className="text-xs text-content-400 pt-1">
+            {mode === "plain"
+              ? "instant — a speaker-labeled script with chapter headings"
+              : "the novelize task model rewrites the chat into book prose, chapter by chapter"}
+          </div>
+        </Field>
+        {mode === "rewrite" && (
+          <Field label="Narrative voice">
+            <SegmentedControl
+              className="w-full"
+              size="sm"
+              value={voice}
+              onChange={(v) => setVoice(v)}
+              items={[
+                { value: "third", label: "Third person" },
+                { value: "first", label: "First person" },
+              ]}
+            />
+          </Field>
+        )}
+        {error && (
+          <Alert variant="error" className="py-2">
+            {error}
+          </Alert>
+        )}
+        {notices.length > 0 && (
+          <div className="text-xs text-content-400 space-y-0.5">
+            {notices.map((n, i) => (
+              <div key={i}>{n}</div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => exportAs("md")}>
+            <Download /> Markdown
+          </Button>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => exportAs("epub")}>
+            <Download /> EPUB
+          </Button>
+          {busy && (
+            <>
+              <span className="text-xs text-content-300 flex-1 truncate">{progress}</span>
+              <Button variant="danger" size="sm" onClick={() => abortRef.current?.abort()}>
+                <Square /> Stop
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function ChatDrawer({
   data,
   muted,
@@ -1144,6 +1291,7 @@ function ChatDrawer({
   const [title, setTitle] = useState(chat.title);
   const [folder, setFolder] = useState(chat.folder);
   const [tags, setTags] = useState(chat.tags.join(", "));
+  const [novelOpen, setNovelOpen] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -1312,23 +1460,11 @@ function ChatDrawer({
           ))}
         </div>
       </Field>
-      <Field label="Export as novel">
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=md`), "chat.md")}
-          >
-            <Download /> Markdown
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={async () => downloadBlob(await fetch(`/api/chats/${chat.id}/novel?format=epub`), "chat.epub")}
-          >
-            <Download /> EPUB
-          </Button>
-        </div>
+      <Field label="Export as novel" hint="a plain speaker-labeled transcript, or an AI rewrite into book prose">
+        <Button variant="secondary" size="sm" onClick={() => setNovelOpen(true)}>
+          <Download /> Export…
+        </Button>
+        <NovelExportDialog chatId={chat.id} open={novelOpen} onClose={() => setNovelOpen(false)} />
       </Field>
       <Field
         label="Export chat"

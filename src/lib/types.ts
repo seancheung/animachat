@@ -315,7 +315,8 @@ export type AiTask =
   | "memory"
   | "assist"
   | "impersonate"
-  | "title";
+  | "title"
+  | "novelize";
 
 export const AI_TASKS: AiTask[] = [
   "chat",
@@ -325,6 +326,7 @@ export const AI_TASKS: AiTask[] = [
   "assist",
   "impersonate",
   "title",
+  "novelize",
 ];
 
 export interface Settings {

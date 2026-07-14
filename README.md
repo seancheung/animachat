@@ -30,6 +30,7 @@ Two tiers cover everything: a **creative** model for the prose you'll actually r
 | Group-chat orchestration | Utility | Tiny JSON decisions, called before every auto turn — keep it fast & cheap |
 | Impersonate | Utility | Drafts 1–3 sentences in your voice |
 | Title generation | Utility | Six words |
+| Novel rewrite (export) | Creative | Rewrites a chat into book prose on export — read-quality matters |
 
 Picks per provider (as of July 2026 — lineups move fast, check your provider's docs; context window in parentheses, enter it when adding the model):
 
@@ -78,7 +79,7 @@ Provider setup (`Settings → Add provider`):
 | **Chat** | Three modes — casual, immersive (fixed scene/location), **playthrough** (a self-contained snapshot run of a story; play as a cast member). Streaming with inline tag parsing, in-place edits (no branching), regenerate-as-swipes, group chats with LLM turn orchestration + force-speaker, impersonate, per-chat language & POV (user-1st / all-3rd / VN-2nd) |
 | **Narrator** | Optional (required in playthroughs, where it directs); speaks first; auto or summoned; 2–4 suggested actions as buttons; advances scenes via `<next-scene/>`, stages the cast via `<enter>`/`<leave>`, concludes via `<the-end/>` — all event-sourced from the timeline, so rewinds restore scene, presence, art and BGM |
 | **Memory** | Rolling summarization (background, chunked, tunable budget/share/threshold in Settings → Advanced), per-character extracted facts, persona↔character affinity tracking with a relationship card |
-| **Organization** | Save states (rewind or fork), folders & tags, full-text search, auto titles, novel export (Markdown / EPUB), token usage & cost dashboard by feature/model (enter per-model $/Mtok prices, incl. cache read/write — applied retroactively to logged usage) |
+| **Organization** | Save states (rewind or fork), folders & tags, full-text search, auto titles, novel export (Markdown / EPUB — plain transcript, or an AI rewrite into book prose), token usage & cost dashboard by feature/model (enter per-model $/Mtok prices, incl. cache read/write — applied retroactively to logged usage) |
 
 ## Structured tags (AI output)
 

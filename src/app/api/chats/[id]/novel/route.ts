@@ -1,116 +1,35 @@
-import JSZip from "jszip";
-import { attachmentDisposition, bad, handler, type IdParams } from "@/lib/api";
-import { chatScene } from "@/lib/ai/prompts";
-import { mentionsToPlain } from "@/lib/mentions";
-import { getChat, getCharacter, getPersona, listMessages } from "@/lib/store";
-import type { Chat, Message } from "@/lib/types";
+import { attachmentDisposition, bad, handler, safeFilename, type IdParams } from "@/lib/api";
+import { AiConfigError, callLlm, resolveModel, type ResolvedModel } from "@/lib/ai/client";
+import { buildContext, type ChatContext } from "@/lib/ai/prompts";
+import {
+  buildNovelizeSystem,
+  chunkByTokens,
+  novelizeUserMessage,
+  splitChapters,
+  toEpub,
+  toMarkdown,
+  transcriptForModel,
+  transcriptMd,
+  type NovelVoice,
+} from "@/lib/novel";
+import { getChat, listMessages } from "@/lib/store";
 
-function speakerOf(chat: Chat, m: Message): string {
-  if (m.role === "user") {
-    const played = chat.personaCharacterId
-      ? chat.storySnapshot?.characters.find((c) => c.id === chat.personaCharacterId)
-      : null;
-    return played?.name ?? (chat.personaId ? getPersona(chat.personaId)?.name ?? "You" : "You");
-  }
-  if (m.role === "narrator") return "";
-  return (
-    chat.storySnapshot?.characters.find((c) => c.id === m.characterId)?.name ??
-    getCharacter(m.characterId ?? "")?.name ??
-    chat.nameSnapshots[m.characterId ?? ""] ??
-    "???"
-  );
-}
+export const dynamic = "force-dynamic";
 
-function toMarkdown(chat: Chat): string {
-  const lines: string[] = [`# ${chat.title}`, ""];
-  for (const m of listMessages(chat.id)) {
-    const content = mentionsToPlain(m.variants[m.activeVariant]?.content ?? "");
-    // a narrator message that advances the story opens a new chapter
-    if (m.sceneEvent?.sceneId) {
-      const s = chatScene(chat, m.sceneEvent.sceneId);
-      lines.push(`---`, "", `## ${s?.name ?? "New scene"}`, "");
-    }
-    if (m.role === "marker" || !content) continue;
-    if (m.role === "narrator") lines.push(`*${content.replace(/^\*|\*$/g, "")}*`, "");
-    else lines.push(`**${speakerOf(chat, m)}:** ${content}`, "");
-    if (m.sceneEvent?.theEnd) lines.push(`---`, "", `## The End`, "");
-  }
-  return lines.join("\n");
-}
+/** ~tokens of transcript per rewrite call; chapters larger than this go in parts */
+const CHUNK_TOKENS = 3500;
+/** rewritten prose is roughly transcript-sized; generous headroom on top */
+const REWRITE_MAX_TOKENS = 6000;
+/** rewritten tail resent with the next chunk for continuity */
+const TAIL_CHARS = 600;
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function mdToXhtml(md: string): string {
-  return md
-    .split("\n\n")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => {
-      if (p.startsWith("# ")) return `<h1>${esc(p.slice(2))}</h1>`;
-      if (p.startsWith("## ")) return `<h2>${esc(p.slice(3))}</h2>`;
-      if (p === "---") return "<hr/>";
-      let html = esc(p);
-      html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>");
-      return `<p>${html}</p>`;
-    })
-    .join("\n");
-}
-
-async function toEpub(chat: Chat, md: string): Promise<Buffer> {
-  const zip = new JSZip();
-  const title = esc(chat.title);
-  zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
-  zip.file(
-    "META-INF/container.xml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-</container>`
-  );
-  zip.file(
-    "OEBPS/content.opf",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="bookid">urn:uuid:${chat.id}</dc:identifier>
-    <dc:title>${title}</dc:title>
-    <dc:language>en</dc:language>
-    <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z/, "Z")}</meta>
-  </metadata>
-  <manifest>
-    <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-  </manifest>
-  <spine><itemref idref="chapter"/></spine>
-</package>`
-  );
-  zip.file(
-    "OEBPS/nav.xhtml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head><title>${title}</title></head>
-<body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">${title}</a></li></ol></nav></body></html>`
-  );
-  zip.file(
-    "OEBPS/chapter.xhtml",
-    `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head><title>${title}</title></head>
-<body>
-${mdToXhtml(md)}
-</body></html>`
-  );
-  return zip.generateAsync({ type: "nodebuffer" });
-}
-
+/** Plain transcript export (instant, no AI). */
 export const GET = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
   const chat = getChat(id);
   if (!chat) return bad("Chat not found", 404);
   const format = new URL(req.url).searchParams.get("format") === "epub" ? "epub" : "md";
-  const md = toMarkdown(chat);
+  const md = toMarkdown(chat, listMessages(chat.id));
   if (format === "md") {
     return new Response(md, {
       headers: {
@@ -124,6 +43,121 @@ export const GET = handler(async (req: Request, { params }: IdParams) => {
     headers: {
       "content-type": "application/epub+zip",
       "content-disposition": attachmentDisposition(chat.title, "epub"),
+    },
+  });
+});
+
+interface RewriteBody {
+  format?: "md" | "epub";
+  /** narrative voice: third-person past (default) or first person from the persona */
+  voice?: NovelVoice;
+}
+
+/**
+ * AI-rewrite export: the `novelize` task model turns the transcript into novel prose,
+ * chapter by chapter (scene advances are the chapter boundaries). SSE: `progress` per
+ * rewrite call, `notice` when a part falls back to the plain transcript (fail-soft),
+ * then one `done` carrying the finished file (epub as base64). Closing the connection aborts.
+ */
+export const POST = handler(async (req: Request, { params }: IdParams) => {
+  const { id } = await params;
+  const chat = getChat(id);
+  if (!chat) return bad("Chat not found", 404);
+  const body = (await req.json().catch(() => ({}))) as RewriteBody;
+  const format = body.format === "epub" ? "epub" : "md";
+  const voice: NovelVoice = body.voice === "first" ? "first" : "third";
+
+  let ctx: ChatContext;
+  let modelRef: ResolvedModel;
+  try {
+    ctx = buildContext(id);
+    modelRef = resolveModel("novelize", chat);
+  } catch (e) {
+    return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 400);
+  }
+
+  const chapters = splitChapters(chat, ctx.messages);
+  const system = buildNovelizeSystem(ctx, voice);
+  const encoder = new TextEncoder();
+  const abort = new AbortController();
+  req.signal.addEventListener("abort", () => abort.abort());
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        } catch {
+          /* client disconnected — the abort signal ends the loop */
+        }
+      };
+
+      const lines: string[] = [`# ${chat.title}`, ""];
+      let tail = "";
+      for (let i = 0; i < chapters.length && !abort.signal.aborted; i++) {
+        const ch = chapters[i];
+        if (ch.title) lines.push(`---`, "", `## ${ch.title}`, "");
+        const parts = chunkByTokens(ch.messages, CHUNK_TOKENS);
+        for (let p = 0; p < parts.length && !abort.signal.aborted; p++) {
+          send({
+            type: "progress",
+            chapter: i + 1,
+            total: chapters.length,
+            title: ch.title,
+            part: p + 1,
+            parts: parts.length,
+          });
+          try {
+            const prose = (
+              await callLlm({
+                modelRef,
+                system,
+                messages: [
+                  { role: "user", content: novelizeUserMessage(tail, transcriptForModel(chat, parts[p])) },
+                ],
+                maxTokens: REWRITE_MAX_TOKENS,
+                feature: "novelize",
+                chatId: id,
+                signal: abort.signal,
+              })
+            ).trim();
+            if (!prose) throw new Error("the model returned nothing");
+            lines.push(prose, "");
+            tail = prose.slice(-TAIL_CHARS);
+          } catch (e) {
+            if (abort.signal.aborted) break;
+            // fail-soft: this part keeps the plain transcript rendering instead
+            send({ type: "notice", message: e instanceof Error ? e.message : String(e) });
+            lines.push(...transcriptMd(chat, parts[p]));
+          }
+        }
+      }
+
+      if (!abort.signal.aborted) {
+        const md = lines.join("\n");
+        const name = safeFilename(chat.title);
+        if (format === "md") send({ type: "done", format, filename: `${name}.md`, data: md });
+        else
+          send({
+            type: "done",
+            format,
+            filename: `${name}.epub`,
+            data: (await toEpub(chat, md)).toString("base64"),
+          });
+      }
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
     },
   });
 });

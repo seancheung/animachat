@@ -335,6 +335,7 @@ function formatRules(ctx: ChatContext, selfName: string | null): string {
   return [
     `Write in ${ctx.language}.`,
     `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
+    `The user types more loosely: only *asterisks* reliably mark their actions — their unmarked text is usually speech (they don't need quotes), but read it sensibly.`,
     povRules(ctx.pov, ctx.persona?.name ?? "the user", selfName),
   ].join("\n");
 }

@@ -15,7 +15,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 - **Provider:** display name, type (`anthropic` | `openai-compatible`), base URL, API key.
 - **Model:** model ID, display name, **context window size** (tokens, user-entered — the hard ceiling), optional **pricing** (USD per million input / cache-read / cache-write / output tokens, user-entered — powers cost tracking; all empty = unpriced, an empty cache price = that leg billed as input, which suits providers that don't discount or surcharge it), optional **custom request body** (JSON) that is deep-merged into outgoing requests, user values winning over app defaults (e.g. `{"thinking":{"type":"disabled"}}`). Invalid JSON is flagged on save, not at chat time.
 - API keys are managed in the in-app settings UI (stored in the database).
-- **Per-task models:** a task→model map in settings — chat generation, narrator, group-chat orchestration, summarization & fact extraction, co-writing assistant, impersonate, title generation (future tasks slot in). Every task defaults to "inherit" the global default model.
+- **Per-task models:** a task→model map in settings — chat generation, narrator, group-chat orchestration, summarization & fact extraction, co-writing assistant, impersonate, title generation, novel rewrite (future tasks slot in). Every task defaults to "inherit" the global default model.
 - **Resolution order:** per-character model (group chats) → per-chat model → task's assigned model → global default.
 
 ## Entities
@@ -175,7 +175,7 @@ Notes: each queued turn rebuilds the context, so later speakers see earlier repl
 Shared convention for AI and user:
 - `*actions*` in asterisks → rendered italic, muted (stage-direction style). In chat messages single-asterisk means action, not emphasis.
 - `"dialogue"` in quotes → normal, prominent text.
-- Plain user text is treated as dialogue; input helpers (shortcut/toolbar) wrap selection in asterisks.
+- **User messages: only asterisks are load-bearing.** Plain user text *defaults* to dialogue — the user never needs to type quotes (the input placeholder says so; quotes remain allowed and render as dialogue). This is a soft default, not a hard rule: model prompts state that unmarked user text is usually speech and only `*asterisks*` reliably mark actions, so hand-typed narrative like `I draw my sword` is still read sensibly. Nothing re-marks user text mechanically (not the renderer, not exports). Input helpers (shortcut/toolbar) wrap selection in asterisks.
 - Stored as plain text with the convention embedded; edits work on the raw text.
 
 ### Point of view
@@ -278,7 +278,7 @@ Parser rules:
 
 ## Token usage tracking
 
-- Every AI call records input/output tokens, tagged with provider, model, and feature (chat, narrator, orchestrator, memory, co-writing assistant, future features).
+- Every AI call records input/output tokens, tagged with provider, model, and feature (chat, narrator, orchestrator, memory, co-writing assistant, novel rewrite, future features).
 - **Cache reads and writes are logged separately** from full-price input: OpenAI-compatible providers cache automatically and report the discounted read portion (`cached_tokens` / DeepSeek's `prompt_cache_hit_tokens`) and — on models that surcharge writes, e.g. GPT-5.6+ — the written portion (`cache_write_tokens`); both are subsets of `prompt_tokens` and are split out of it. Models that don't report writes simply bill them as input, which matches their pricing. This matters here because every turn resends a long history prefix. The Anthropic client doesn't request caching, but reads (`cache_read_input_tokens`) and writes (`cache_creation_input_tokens`) are captured if a response ever reports them.
 - Usage dashboard in settings: breakdowns by provider/model/feature and totals over time (cache-read share shown in the totals).
 - **Cost tracking:** derived from the per-model prices (USD per million tokens) at report time — never stored per call. Prices therefore apply retroactively to the whole logged history, and editing a price recomputes it. Cache reads/writes bill at their own price, each falling back to the full input price when unset. Tokens from models with no prices set (or logged under a provider/model that no longer exists) are reported as **unpriced**, never as $0; cost figures are estimates (token counts fall back to local estimation when a provider omits usage).
@@ -290,7 +290,9 @@ Parser rules:
 - A story export pulls in its cast, scenes (with per-scene casts), the scenes' locations, and its lorebooks.
 - Import opens a **selection dialog** listing the bundle's contents (everything checked by default): checking an item auto-checks and locks its in-bundle dependencies (story → cast/scenes/lorebooks, scene → location); the server enforces the same dependency closure. Duplicate handling as before (references remapped, names deduped); only assets the imported items reference are written.
 - **Chat archive:** a chat can be exported as a self-contained zip (chat settings drawer) — messages with all swipe variants and stage events, save states, and (for playthroughs) the snapshot's assets; character display names are completed into the snapshot so the archive reads correctly without the library. Import from the chat-list page creates a **new** chat (fresh ids, checkpoints remapped); the rolling summary is not carried — memory re-summarizes on the next turn. Library references degrade fail-soft as usual.
-- **Novel export:** export a chat as clean formatted prose (markdown / EPUB), narrator text included, reading like a book chapter — scene advances become chapter headings, `<the-end/>` a closing "The End".
+- **Novel export:** export a chat as markdown / EPUB (chat settings drawer), in one of two modes chosen in the export dialog:
+  - **Plain transcript** (instant, no AI): speaker-labeled lines (`**Name:** …`), narrator text italicized, scene advances as chapter headings, `<the-end/>` a "The End" heading (epilogue messages follow it); mentions flattened to plain `@Name`.
+  - **AI rewrite:** the `novelize` task model rewrites the transcript into flowing book prose, chapter by chapter — scene advances are the chapter boundaries; an oversized chapter goes in parts, each call resending the tail of the prose so far for continuity. Fidelity rules: spoken lines keep their wording, actions and narrator text become narrative prose, speaker labels dissolve into attribution, nothing invented or dropped. Narrative voice is picked in the dialog (third-person past — default — or first person from the persona); output language follows the chat. Progress streams per rewrite call; closing the dialog (or Stop) aborts. A part whose rewrite fails keeps the plain transcript rendering (fail-soft, with a notice). No upfront cost estimate is shown; calls are tagged `novelize` in token tracking.
 - **Full backup/restore:** one-click export of the entire database + all assets as a single archive (distinct from entity bundles); restore from archive.
 - **Storage panel:** a settings group shows the uploads folder's file count & total size, with a prune button that deletes files nothing references (after a confirm showing count & size; unsaved editor uploads count as unused). References counted: characters, locations, scenes — **and playthrough snapshots**, so a finished playthrough keeps its sprites/art/BGM alive even after the library items are deleted.
 
