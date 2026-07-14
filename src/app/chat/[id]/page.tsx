@@ -34,7 +34,8 @@ import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
 import { MessageText } from "@/components/MessageText";
 import { ModelPicker } from "@/components/ModelPicker";
-import { Field, InputBox } from "@/components/app";
+import { Field } from "@/components/app";
+import { MentionInputBox } from "@/components/chat/MentionInputBox";
 import { confirmDialog } from "@/components/confirm";
 import Alert from "@/components/ui/alert";
 import Badge from "@/components/ui/badge";
@@ -564,11 +565,12 @@ export default function ChatPage() {
           )}
         </Alert>
       )}
-      <InputBox
+      <MentionInputBox
+        mentionNames={stageCharacters.length > 1 ? stageCharacters.map((c) => c.name) : []}
         textareaRef={inputRef}
         placeholder={
           characters.length > 1
-            ? `Write as ${personaName}… (*asterisks* for actions, @name/@all to address characters)`
+            ? `Write as ${personaName}… (*asterisks* for actions, @ to address characters)`
             : `Write as ${personaName}… (*asterisks* for actions)`
         }
         value={input}
@@ -606,7 +608,7 @@ export default function ChatPage() {
         ) : (
           <Button size="sm" shape="square" title="Send (Enter)" disabled={locked || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
         )}
-      </InputBox>
+      </MentionInputBox>
     </div>
   );
 
@@ -771,6 +773,7 @@ export default function ChatPage() {
           send={send}
           generate={generate}
           impersonate={impersonate}
+          mentionNames={stageCharacters.length > 1 ? stageCharacters.map((c) => c.name) : []}
         />
       )}
 
@@ -873,6 +876,7 @@ function DialogueLayout({
   send,
   generate,
   impersonate,
+  mentionNames,
 }: any) {
   const messages: Message[] = data.messages.filter((m: Message) => m.role !== "marker");
   // the backlog position is owned by the page (the stage follows it); null = the live end
@@ -1073,7 +1077,8 @@ function DialogueLayout({
         </div>
         {showInput && (
           <div className="mt-2 cursor-auto" onClick={(e) => e.stopPropagation()}>
-            <InputBox
+            <MentionInputBox
+              mentionNames={mentionNames ?? []}
               textareaRef={inputRef}
               textareaClassName="h-10"
               placeholder={`Write as ${personaName}…`}
@@ -1099,7 +1104,7 @@ function DialogueLayout({
                 <Button variant="ghost" size="sm" shape="square" title="Summon the narrator" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
               )}
               <Button size="sm" shape="square" title="Send (Enter)" disabled={busy || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
-            </InputBox>
+            </MentionInputBox>
           </div>
         )}
       </div>

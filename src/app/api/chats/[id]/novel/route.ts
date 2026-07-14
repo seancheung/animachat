@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { attachmentDisposition, bad, handler, type IdParams } from "@/lib/api";
 import { chatScene } from "@/lib/ai/prompts";
+import { mentionsToPlain } from "@/lib/mentions";
 import { getChat, getCharacter, getPersona, listMessages } from "@/lib/store";
 import type { Chat, Message } from "@/lib/types";
 
@@ -23,7 +24,7 @@ function speakerOf(chat: Chat, m: Message): string {
 function toMarkdown(chat: Chat): string {
   const lines: string[] = [`# ${chat.title}`, ""];
   for (const m of listMessages(chat.id)) {
-    const content = m.variants[m.activeVariant]?.content ?? "";
+    const content = mentionsToPlain(m.variants[m.activeVariant]?.content ?? "");
     // a narrator message that advances the story opens a new chapter
     if (m.sceneEvent?.sceneId) {
       const s = chatScene(chat, m.sceneEvent.sceneId);

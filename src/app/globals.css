@@ -24,6 +24,19 @@ body {
 .msg-quote {
   color: var(--color-content-100);
 }
+/* <mention> chips in user messages — messenger-style highlighted @name; the accent
+   var falls back per surface like other decorative accent text */
+.msg-mention {
+  color: var(--accent-on-bubble, var(--color-primary-500));
+  background-color: color-mix(
+    in srgb,
+    var(--accent-on-bubble, var(--color-primary-500)) 14%,
+    transparent
+  );
+  border-radius: 0.25rem;
+  padding: 0 0.25em;
+  font-weight: 500;
+}
 
 /* chat bubbles (character speech & the fullscreen-VN dialogue box).
    Tint overridable per scene/location via --bubble-color; bubbles are solid.

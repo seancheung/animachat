@@ -20,6 +20,7 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
+import { parseMentions, tagMentions } from "@/lib/mentions";
 import { appendMessage, getMessage, saveChat, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
@@ -40,7 +41,8 @@ interface Speaker {
   character: Character | null;
 }
 
-/** "@name" anywhere at a word start; emails ("a@b") don't count. */
+/** "@name" at a word start in CHARACTER replies (characters chain turns with plain
+ *  @mentions; the user's mentions arrive as <mention> tags instead). Emails don't count. */
 const MENTION_RE = /(^|\s)@\S/;
 const ALL_RE = /(^|\s)@all\b/i;
 
@@ -124,13 +126,19 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
   }
   const text = body.userText?.trim() ?? "";
   if (text && ctx.present.length > 0) {
-    if (ALL_RE.test(text)) {
+    // the user's mentions arrive as <mention> tags (written by tagMentions on append) —
+    // resolved deterministically by exact name; anything unresolved falls through
+    const mentions = parseMentions(text);
+    if (mentions.all) {
       return ctx.present.map((c) => ({ role: "character" as const, character: c }));
     }
-    if (MENTION_RE.test(text)) {
-      const mentioned = await resolveMentions(ctx, text);
-      if (mentioned.length) return mentioned.map((c) => ({ role: "character" as const, character: c }));
-      // no mention matched a character — fall through to normal orchestration
+    if (mentions.names.length) {
+      const addressed = mentions.names
+        .map((n) => ctx.present.find((c) => c.name.toLowerCase() === n.toLowerCase()))
+        .filter((c): c is Character => !!c)
+        .filter((c, i, arr) => arr.indexOf(c) === i);
+      if (addressed.length)
+        return addressed.map((c) => ({ role: "character" as const, character: c }));
     }
   }
   return [await pickDefaultSpeaker(ctx, body)];
@@ -172,9 +180,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id: chatId } = await params;
   const body = (await req.json()) as GenerateBody;
 
-  // append the user's message first so it's part of the context
+  // append the user's message first so it's part of the context — converting exact
+  // @Name/@all into <mention> tags against the on-stage cast (presence can't change
+  // from a user message, so resolving names pre-append is safe)
   if (body.userText?.trim()) {
-    appendMessage({ chatId, role: "user", content: body.userText.trim() });
+    const pre = buildContext(chatId);
+    body.userText = tagMentions(body.userText.trim(), pre.present.map((c) => c.name));
+    appendMessage({ chatId, role: "user", content: body.userText });
   }
 
   let ctx = buildContext(chatId);

@@ -1,25 +1,34 @@
 "use client";
 
 import { Fragment, useMemo } from "react";
+import { splitMentions } from "@/lib/mentions";
 
 /**
- * Renders roleplay prose: *actions* italic/tinted, "dialogue" prominent.
+ * Renders roleplay prose: *actions* italic/tinted, "dialogue" prominent,
+ * <mention> tags as highlighted @chips.
  * In chat messages a single asterisk means action, not markdown emphasis.
  */
 export function MessageText({ text, streaming }: { text: string; streaming?: boolean }) {
   const parts = useMemo(() => {
-    const tokens: { kind: "action" | "quote" | "plain"; text: string }[] = [];
+    const tokens: { kind: "action" | "quote" | "plain" | "mention"; text: string }[] = [];
     const re = /(\*[^*\n]+\*?)|("[^"\n]*"?)|(“[^”\n]*”?)/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text))) {
-      if (m.index > last) tokens.push({ kind: "plain", text: text.slice(last, m.index) });
-      const t = m[0];
-      if (t.startsWith("*")) tokens.push({ kind: "action", text: t.replace(/^\*|\*$/g, "") });
-      else tokens.push({ kind: "quote", text: t });
-      last = m.index + t.length;
+    for (const seg of splitMentions(text)) {
+      if (seg.type === "mention") {
+        tokens.push({ kind: "mention", text: `@${seg.name ?? "all"}` });
+        continue;
+      }
+      let last = 0;
+      let m: RegExpExecArray | null;
+      re.lastIndex = 0;
+      while ((m = re.exec(seg.text))) {
+        if (m.index > last) tokens.push({ kind: "plain", text: seg.text.slice(last, m.index) });
+        const t = m[0];
+        if (t.startsWith("*")) tokens.push({ kind: "action", text: t.replace(/^\*|\*$/g, "") });
+        else tokens.push({ kind: "quote", text: t });
+        last = m.index + t.length;
+      }
+      if (last < seg.text.length) tokens.push({ kind: "plain", text: seg.text.slice(last) });
     }
-    if (last < text.length) tokens.push({ kind: "plain", text: text.slice(last) });
     return tokens;
   }, [text]);
 
@@ -31,6 +40,8 @@ export function MessageText({ text, streaming }: { text: string; streaming?: boo
             <span className="msg-action">{p.text}</span>
           ) : p.kind === "quote" ? (
             <span className="msg-quote">{p.text}</span>
+          ) : p.kind === "mention" ? (
+            <span className="msg-mention">{p.text}</span>
           ) : (
             <span className="whitespace-pre-wrap">{p.text}</span>
           )}

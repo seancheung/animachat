@@ -1,4 +1,6 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
+import { buildContext } from "@/lib/ai/prompts";
+import { tagMentions } from "@/lib/mentions";
 import { appendMessage, getChat } from "@/lib/store";
 
 /** Append a user message. (Scene progression, presence and endings are narrator-driven —
@@ -9,6 +11,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   if (!chat) return bad("Chat not found", 404);
   const b = await req.json();
   if (typeof b.content !== "string" || !b.content.trim()) return bad("content required");
-  const msg = appendMessage({ chatId: id, role: "user", content: b.content.trim() });
+  const present = buildContext(id).present.map((c) => c.name);
+  const msg = appendMessage({ chatId: id, role: "user", content: tagMentions(b.content.trim(), present) });
   return ok({ message: msg });
 });

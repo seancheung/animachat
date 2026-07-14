@@ -1,4 +1,5 @@
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
+import { mentionsToPlain } from "../mentions";
 import { substitutePlaceholders } from "./placeholders";
 import {
   getChat,
@@ -225,7 +226,8 @@ export function buildContext(chatId: string, messagesOverride?: Message[]): Chat
 /* ---------------- helpers ---------------- */
 
 export function activeContent(m: Message): string {
-  return m.variants[m.activeVariant]?.content ?? "";
+  // mention tags are UI markup — models (prompts, summaries, lore scans) see plain @Name
+  return mentionsToPlain(m.variants[m.activeVariant]?.content ?? "");
 }
 
 export function activeEmotion(m: Message): string | null {
