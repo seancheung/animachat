@@ -110,12 +110,18 @@ export const GET = handler(async (req: Request, { params }: IdParams) => {
   if (!chat) return bad("Chat not found", 404);
   const format = new URL(req.url).searchParams.get("format") === "epub" ? "epub" : "md";
   const md = toMarkdown(chat);
-  const safe = chat.title.replace(/[^\w\d-]+/g, "-").slice(0, 60) || "chat";
+  // keep unicode letters/digits so non-ASCII titles survive as filenames; headers are
+  // latin-1 only, so the unicode name rides in RFC 5987 filename* with an ascii fallback
+  const safe =
+    chat.title.replace(/[^\p{L}\p{N}-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "chat";
+  const ascii = safe.replace(/[^\x20-\x7e]+/g, "-").replace(/^-+|-+$/g, "") || "chat";
+  const disposition = (ext: string) =>
+    `attachment; filename="${ascii}.${ext}"; filename*=UTF-8''${encodeURIComponent(safe)}.${ext}`;
   if (format === "md") {
     return new Response(md, {
       headers: {
         "content-type": "text/markdown; charset=utf-8",
-        "content-disposition": `attachment; filename="${safe}.md"`,
+        "content-disposition": disposition("md"),
       },
     });
   }
@@ -123,7 +129,7 @@ export const GET = handler(async (req: Request, { params }: IdParams) => {
   return new Response(new Uint8Array(epub), {
     headers: {
       "content-type": "application/epub+zip",
-      "content-disposition": `attachment; filename="${safe}.epub"`,
+      "content-disposition": disposition("epub"),
     },
   });
 });

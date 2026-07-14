@@ -87,7 +87,16 @@ export function download(url: string) {
 export async function downloadBlob(res: Response, fallbackName: string) {
   const blob = await res.blob();
   const cd = res.headers.get("content-disposition");
-  const name = cd?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+  // filename* (RFC 5987) carries unicode names; the plain filename is its ascii fallback
+  const star = cd?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  let name = cd?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+  if (star) {
+    try {
+      name = decodeURIComponent(star);
+    } catch {
+      /* malformed — keep the plain one */
+    }
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
