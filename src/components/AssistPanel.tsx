@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, FileUp, Paperclip, SendHorizontal, X } from "lucide-react";
+import { FileText, FileUp, Paperclip, SendHorizontal, Undo2, X } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
@@ -28,12 +28,15 @@ export function AssistPanel({
   entityType,
   fields,
   onFields,
+  onRestore,
   allowFiles = false,
   emptyHint,
 }: {
   entityType: string;
   fields: Record<string, unknown>;
   onFields: (partial: Record<string, unknown>) => void;
+  /** replace the whole draft state (rewind) — enables the rewind buttons when given */
+  onRestore?: (fields: Record<string, unknown>) => void;
   /** offer attaching .txt/.md files, sent as source material with every message */
   allowFiles?: boolean;
   emptyHint?: string;
@@ -50,16 +53,29 @@ export function AssistPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
+  // draft state as it was BEFORE the user message at that index was sent — rewinds
+  // restore the forms along with the conversation (session drafts only, nothing saved)
+  const snapshotsRef = useRef(new Map<number, Record<string, unknown>>());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, drafting]);
+
+  function rewind(i: number) {
+    if (busy) return;
+    const snap = snapshotsRef.current.get(i);
+    if (snap) onRestore?.(snap);
+    for (const k of [...snapshotsRef.current.keys()]) if (k > i) snapshotsRef.current.delete(k);
+    setMessages(messages.slice(0, i));
+    setInput(messages[i].content); // the rewound line is a starting point for a redo
+  }
 
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
     setBusy(true);
+    snapshotsRef.current.set(messages.length, structuredClone(fieldsRef.current));
     const history: Msg[] = [...messages, { role: "user", content: text }];
     setMessages([...history, { role: "assistant", content: "" }]);
     let acc = "";
@@ -118,11 +134,21 @@ export function AssistPanel({
             key={i}
             className={
               m.role === "user"
-                ? "text-sm bg-base-400/60 rounded-md px-3 py-2 ml-6"
+                ? "relative group text-sm bg-base-400/60 rounded-md px-3 py-2 ml-6"
                 : "text-sm px-1"
             }
           >
             <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
+            {m.role === "user" && onRestore && !busy && (
+              <button
+                type="button"
+                title="Rewind here — the conversation and the drafts roll back to before this message"
+                className="absolute -left-5 top-2.5 text-content-400 opacity-0 group-hover:opacity-70 hover:!opacity-100 cursor-pointer"
+                onClick={() => rewind(i)}
+              >
+                <Undo2 size={13} />
+              </button>
+            )}
           </div>
         ))}
         {drafting && (

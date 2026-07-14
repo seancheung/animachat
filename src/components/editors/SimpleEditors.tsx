@@ -58,6 +58,7 @@ export function EditorShell({
           entityType={entityType}
           fields={form}
           onFields={(partial) => setForm({ ...form, ...(mapAssistFields ? mapAssistFields(partial) : partial) })}
+          onRestore={setForm}
         />
       )}
     </div>

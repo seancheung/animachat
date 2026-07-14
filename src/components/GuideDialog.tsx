@@ -213,6 +213,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
           entityType="library"
           fields={{ items }}
           onFields={applyFields}
+          onRestore={(f) => setItems(Array.isArray(f.items) ? (f.items as GuideItem[]) : [])}
           allowFiles
           emptyHint="Tell me what to build — a single item or a whole cast. Attach a .txt/.md file (file button) to extract characters, places, scenes, stories or lore from it."
         />
