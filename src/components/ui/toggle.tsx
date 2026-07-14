@@ -98,7 +98,8 @@ export default function Toggle({
   return (
     <label
       className={cn(
-        "inline-flex",
+        // relative: anchor the sr-only input to the label (see checkbox.tsx)
+        "relative inline-flex",
         isDisabled ? "cursor-not-allowed opacity-40" : "cursor-pointer",
       )}
     >

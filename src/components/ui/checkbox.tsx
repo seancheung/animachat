@@ -4,8 +4,10 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, MinusIcon } from "lucide-react";
 import { cn } from "@/utils/cn";
 
+// relative: anchor the sr-only input to the label — unanchored it escapes unpositioned
+// scroll containers, and focusing it can scroll a dialog overlay right off the screen
 const variants = cva(
-  "inline-flex select-none items-center gap-2 text-content-100",
+  "relative inline-flex select-none items-center gap-2 text-content-100",
   {
     variants: {
       size: {
