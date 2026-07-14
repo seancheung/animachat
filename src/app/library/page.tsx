@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { Download, Plus, Sparkles, Upload } from "lucide-react";
 import { CharacterEditor } from "@/components/editors/CharacterEditor";
@@ -17,7 +17,9 @@ import { confirmDialog } from "@/components/confirm";
 import { GuideDialog } from "@/components/GuideDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
+import Input from "@/components/ui/input";
 import SegmentedControl from "@/components/ui/segmented-control";
+import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { api, downloadBlob } from "@/lib/ui";
 
@@ -52,10 +54,31 @@ export default function LibraryPage() {
   const [guideOpen, setGuideOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"updated" | "created" | "name">("updated");
+
   const type = TYPES.find((t) => t.key === tab)!;
   const { data: items, mutate } = useSWR<any[]>(type.endpoint, api.get);
   const Editor = EDITORS[tab];
   const Card = LIBRARY_CARDS[tab];
+
+  const shown = useMemo(() => {
+    let list = items ?? [];
+    const q = query.trim().toLowerCase();
+    if (q)
+      list = list.filter((i) =>
+        [i.name, i.description, i.setup].some(
+          (t) => typeof t === "string" && t.toLowerCase().includes(q)
+        )
+      );
+    const by: Record<typeof sort, (a: any, b: any) => number> = {
+      name: (a, b) => String(a.name).localeCompare(String(b.name)),
+      created: (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
+      updated: (a, b) =>
+        (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0),
+    };
+    return [...list].sort(by[sort]);
+  }, [items, query, sort]);
 
   async function exportItems(ids: { type: string; id: string }[]) {
     const res = await fetch("/api/export", {
@@ -109,15 +132,41 @@ export default function LibraryPage() {
           </Button>
         </div>
 
+        <div className="flex items-center gap-2">
+          <div className="w-64">
+            <Input
+              className="w-full"
+              placeholder={`Search ${type.label.toLowerCase()}…`}
+              value={query}
+              onChange={setQuery}
+            />
+          </div>
+          <div className="w-44">
+            <Select
+              className="w-full"
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: "updated", label: "Recently updated" },
+                { value: "created", label: "Newest first" },
+                { value: "name", label: "Name A–Z" },
+              ]}
+            />
+          </div>
+        </div>
+
         {items?.length === 0 && (
           <EmptyState>
             No {type.label.toLowerCase()} yet — create one, or import a bundle. The AI co-writer in
             the editor can help you flesh it out.
           </EmptyState>
         )}
+        {items && items.length > 0 && shown.length === 0 && (
+          <EmptyState>Nothing matches “{query.trim()}”.</EmptyState>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {items?.map((item) => (
+          {shown.map((item) => (
             <Card
               key={item.id}
               item={item}

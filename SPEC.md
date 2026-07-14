@@ -20,7 +20,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 
 ## Entities
 
-All world-building entities are reusable across chats.
+All world-building entities are reusable across chats. The library page has a per-type text search (name + description) and sorting (recently updated / newest / name).
 
 **Image aspect ratios:** character sprites **2:3**, character avatars **1:1**, location/scene artwork **16:9**. Uploads are stored as-is; images at other ratios are displayed with cover-fit. The upload tile itself is clickable (click to upload/replace, hover reveals a remove button).
 
