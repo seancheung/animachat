@@ -28,7 +28,7 @@ All world-building entities are reusable across chats.
 - Name, avatar (image upload, **1:1**, or auto-generated initials/color placeholder), **description** (personality, background, mannerisms, anything else), greeting, example dialogue.
 - **Anti-recitation:** in prompts, the sheet is framed as private background knowledge — the character is instructed never to quote or re-announce their own traits/backstory, and not to reuse distinctive phrases from earlier messages. Example dialogue seeds the voice early in a chat only: once the character has enough of their own replies in the verbatim window (~8), it is dropped from the prompt and their real messages anchor the style.
 - **Image prompt:** a stored text-to-image prompt describing the neutral sprite (co-writable by the AI assistant; for use with external image generators).
-- Avatars are used in the message list / character cards only — never on the VN stage.
+- Avatars are used in the message list / small character chips only — never on the VN stage. Library card covers prefer the neutral sprite (avatar, then placeholder, as fallbacks).
 - **Expression sprite set** (**2:3** portrait):
   - ~12 predefined common expressions: `neutral, happy, sad, angry, surprised, embarrassed, thoughtful, fearful, disgusted, smug, excited, tired`. Shown as labeled upload slots; all optional, `neutral` is the expected fallback.
   - **Custom expressions:** name + short description (the description teaches the AI when to use it).

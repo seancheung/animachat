@@ -109,11 +109,12 @@ export function CharacterCard(props: LibraryCardProps) {
         </Button>
       }
       cover={
-        avatar ? (
-          <CoverImage src={avatar} />
-        ) : neutral ? (
-          // 2:3 sprite cropped into the square cover — keep the face
+        neutral ? (
+          // the sprite makes the better cover — the avatar is sized for tiny chat chips;
+          // the 2:3 portrait is cropped into the square with the face kept
           <CoverImage src={neutral} top />
+        ) : avatar ? (
+          <CoverImage src={avatar} />
         ) : (
           <UserRound size={32} />
         )
