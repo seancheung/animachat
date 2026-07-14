@@ -46,6 +46,7 @@ import Progress from "@/components/ui/progress";
 import SegmentedControl from "@/components/ui/segmented-control";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
+import { computeStage, resolveStageAssets } from "@/lib/stage";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
@@ -183,8 +184,36 @@ export default function ChatPage() {
   const busy = generating || !!streaming || !!pendingUser;
   /** …or the AI is writing into the input: either way the user can't act */
   const locked = busy || drafting;
+
+  // the dialogue box's backlog position (null = the live end). It lives up here because the
+  // stage has to follow it: walking back through history replays the performance as it was.
+  const timeline: Message[] = useMemo(() => messages.filter((m) => m.role !== "marker"), [messages]);
+  const [viewIdx, setViewIdx] = useState<number | null>(null);
+  const browseIdx = layout === "dialogue" && viewIdx !== null && viewIdx < timeline.length - 1 ? viewIdx : null;
+  // the user's line owns the dialogue box until the reply appears — while it does, the stage
+  // stays quiet too: nobody is speaking yet (the panel shows the reply as it streams, so it
+  // keeps switching the sprite the moment the emotion tag lands)
+  const echoing = layout === "dialogue" && userEcho !== null;
+  // leaving the dialogue layout drops the backlog position — coming back always starts at
+  // the live end, unless a show-on-stage jump (which sets viewIdx first) brought us here.
+  // Render-time state adjustment (not an effect): react.dev "adjusting state when props change".
+  const [prevLayout, setPrevLayout] = useState(layout);
+  if (prevLayout !== layout) {
+    setPrevLayout(layout);
+    if (layout !== "dialogue") setViewIdx(null);
+  }
+
+  // the WHOLE stage follows the backlog: browsing recomputes scene, presence, assets and
+  // styling as of the message on screen (story mode — elsewhere the stage never changes);
+  // at the live end it's the server-resolved stage. Presentation only: the fiction is untouched.
+  const viewStage = useMemo(() => {
+    if (browseIdx === null || !chat?.storySnapshot) return data?.stage ?? null;
+    const st = computeStage(chat, timeline.slice(0, browseIdx + 1));
+    return { ...st, ...resolveStageAssets(chat, st) };
+  }, [browseIdx, chat, timeline, data?.stage]);
+
   // story mode: only the on-stage cast is drawn; casual/immersive show everyone
-  const present: string[] | null = data?.stage?.present ?? null;
+  const present: string[] | null = viewStage?.present ?? null;
   const stageCharacters: Character[] = useMemo(
     () => (present ? characters.filter((c) => present.includes(c.id)) : characters),
     [characters, present]
@@ -205,8 +234,8 @@ export default function ChatPage() {
   );
 
   useChatAudio({
-    bgmUrl: assetUrl(data?.stage?.bgmAsset),
-    ambientUrl: assetUrl(data?.stage?.ambientAsset),
+    bgmUrl: assetUrl(viewStage?.bgmAsset),
+    ambientUrl: assetUrl(viewStage?.ambientAsset),
     bgmVolume,
     sfxVolume,
     muted,
@@ -292,16 +321,6 @@ export default function ChatPage() {
     // afterwards only follow the tail if the user hasn't scrolled back to read
     if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length, streaming?.text, pendingUser, layout, pictureMode]);
-
-  // the dialogue box's backlog position (null = the live end). It lives up here because the
-  // stage has to follow it: walking back through history replays the sprites as they were.
-  const timeline: Message[] = useMemo(() => messages.filter((m) => m.role !== "marker"), [messages]);
-  const [viewIdx, setViewIdx] = useState<number | null>(null);
-  const browseIdx = layout === "dialogue" && viewIdx !== null && viewIdx < timeline.length - 1 ? viewIdx : null;
-  // the user's line owns the dialogue box until the reply appears — while it does, the stage
-  // stays quiet too: nobody is speaking yet (the panel shows the reply as it streams, so it
-  // keeps switching the sprite the moment the emotion tag lands)
-  const echoing = layout === "dialogue" && userEcho !== null;
 
   /* ---- stage emotions: each character's emotion as of the message on screen ---- */
   const emotions: StageEmotions = useMemo(() => {
@@ -518,10 +537,18 @@ export default function ChatPage() {
     await mutate();
   };
 
+  // jump from the log to the same message performed on the stage: the dialogue-box
+  // layout opens with its backlog already positioned there (last message = the live end)
+  const showOnStage = (m: Message) => {
+    const i = timeline.findIndex((t) => t.id === m.id);
+    setViewIdx(i >= 0 && i < timeline.length - 1 ? i : null);
+    void switchLayout("dialogue");
+  };
+
   // active scene/location coloring (location fields win) — gated by the global switch.
   // Per-surface token derivation lives in lib/stageStyle.ts. Styles supply colors only;
   // panel & bubble opacity are system settings.
-  const stageStyle = settings?.stageStyleEnabled !== false ? data.stage?.stageStyle : null;
+  const stageStyle = settings?.stageStyleEnabled !== false ? viewStage?.stageStyle : null;
   const styleVars: React.CSSProperties | undefined = stageStyle
     ? (stageStyleVars(stageStyle) as React.CSSProperties)
     : undefined;
@@ -538,16 +565,16 @@ export default function ChatPage() {
 
   // scene & location context — lives on the stage (top-left chip); on narrow screens,
   // where the panel covers the stage, it falls back to a strip under the panel header
-  const stageBadges = (data.stage?.scene || data.stage?.location) && (
+  const stageBadges = (viewStage?.scene || viewStage?.location) && (
     <>
-      {data.stage?.scene && (
+      {viewStage?.scene && (
         <Badge variant="secondary" rounded className="max-w-56 overflow-hidden">
-          <Clapperboard size={11} /> <span className="truncate">{data.stage.scene.name}</span>
+          <Clapperboard size={11} /> <span className="truncate">{viewStage.scene.name}</span>
         </Badge>
       )}
-      {data.stage?.location && (
+      {viewStage?.location && (
         <Badge variant="secondary" rounded className="max-w-56 overflow-hidden">
-          <MapPin size={11} /> <span className="truncate">{data.stage.location.name}</span>
+          <MapPin size={11} /> <span className="truncate">{viewStage.location.name}</span>
         </Badge>
       )}
     </>
@@ -647,7 +674,7 @@ export default function ChatPage() {
           characters={stageCharacters}
           emotions={emotions}
           speakingId={speakingId}
-          backgroundUrl={assetUrl(data.stage?.artworkAsset)}
+          backgroundUrl={assetUrl(viewStage?.artworkAsset)}
           backgroundColor={stageStyle?.stageBg}
           tall
         />
@@ -672,10 +699,10 @@ export default function ChatPage() {
         >
           <ArrowLeft />
         </Button>
-        {data.ended && <Badge rounded className="shrink-0">The End</Badge>}
+        {viewStage?.ended && <Badge rounded className="shrink-0">The End</Badge>}
         {stageBadges && !pictureMode && (
           <div
-            key={`${data.stage?.sceneId ?? ""}:${data.stage?.locationId ?? ""}`}
+            key={`${viewStage?.sceneId ?? ""}:${viewStage?.locationId ?? ""}`}
             className="flex items-center gap-1.5 fade-in"
             style={styleVars}
           >
@@ -723,6 +750,7 @@ export default function ChatPage() {
               await mutate();
             }}
             onPickOption={(text) => send(text)}
+            onShowOnStage={() => showOnStage(m)}
           />
         ))}
         {pendingUser && (
@@ -895,8 +923,10 @@ function DialogueLayout({
   const idx: number = viewIdx ?? messages.length - 1;
   const setIdx = (i: number) => setViewIdx(i >= messages.length - 1 ? null : i);
   // paragraph page within the shown message — long messages advance VN-style,
-  // paragraph by paragraph (display-only; the message itself stays whole)
-  const [page, setPage] = useState(0);
+  // paragraph by paragraph (display-only; the message itself stays whole).
+  // Mounting mid-backlog (a show-on-stage jump) lands on the jumped message's last
+  // page — it was already read in the log, no clicking through it again.
+  const [page, setPage] = useState(() => (viewIdx !== null ? Number.MAX_SAFE_INTEGER : 0));
   const atEnd = idx >= messages.length - 1;
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
 
@@ -931,7 +961,13 @@ function DialogueLayout({
   useEffect(() => {
     if (streaming) wasStreaming.current = true;
   }, [streaming]);
+  // reset only when the message count actually changes, not on mount: a show-on-stage
+  // jump mounts this layout mid-backlog and must keep its position. Comparing against
+  // a ref (not skipping "the first run") stays correct under StrictMode's double-invoke.
+  const lastLen = useRef(messages.length);
   useEffect(() => {
+    if (messages.length === lastLen.current) return;
+    lastLen.current = messages.length;
     setViewIdx(null); // a new reply jumps back to the live end
     setPage(wasStreaming.current ? Number.MAX_SAFE_INTEGER : 0);
     wasStreaming.current = false;

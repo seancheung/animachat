@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Bookmark,
+  Captions,
   ChevronLeft,
   ChevronRight,
   Clapperboard,
@@ -35,6 +36,7 @@ export function MessageRow({
   onDelete,
   onCheckpoint,
   onPickOption,
+  onShowOnStage,
 }: {
   message: Message;
   characters: Character[];
@@ -51,6 +53,8 @@ export function MessageRow({
   onDelete: () => Promise<void>;
   onCheckpoint: () => Promise<void>;
   onPickOption: (text: string) => void;
+  /** jump to this message performed on the VN stage (dialogue-box layout) */
+  onShowOnStage?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -180,6 +184,9 @@ export function MessageRow({
               {message.activeVariant + 1}/{message.variants.length}
               <Button variant="ghost" size="sm" shape="square" disabled={message.activeVariant >= message.variants.length - 1 || busy} onClick={() => onSwipe(message.activeVariant + 1)}><ChevronRight /></Button>
             </span>
+          )}
+          {onShowOnStage && (
+            <Button variant="ghost" size="sm" shape="square" title="Show on stage (dialogue box)" onClick={onShowOnStage}><Captions /></Button>
           )}
           <Button
             variant="ghost"

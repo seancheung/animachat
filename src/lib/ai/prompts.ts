@@ -2,6 +2,15 @@ import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import { mentionsToPlain } from "../mentions";
 import { substitutePlaceholders } from "./placeholders";
 import {
+  chatLocation as chatLocationPure,
+  chatScene as chatScenePure,
+  computeStage as computeStagePure,
+  resolveStageAssets as resolveStageAssetsPure,
+  type LibraryResolvers,
+  type StageAssets,
+  type StageState,
+} from "@/lib/stage";
+import {
   getChat,
   getCharacter,
   getCharRelationship,
@@ -26,100 +35,34 @@ import type {
   Pov,
   Scene,
   Settings,
-  StageStyle,
   StorySnapshot,
 } from "@/lib/types";
 import { EMOTIONS } from "@/lib/types";
 
-/* ---------------- stage state (derived from the message timeline) ---------------- */
+/* ---------------- stage state (derived from the message timeline) ----------------
+ * The pure logic lives in lib/stage.ts (client-safe, used by the chat page to replay
+ * the stage while browsing the backlog); these wrappers bind the store's library
+ * lookups for casual/immersive chats and keep every server-side import unchanged. */
 
-export interface StageState {
-  sceneId: string | null;
-  locationId: string | null;
-  /** story mode: character ids on stage (never includes the played character); null = everyone (casual/immersive) */
-  present: string[] | null;
-  /** story mode: the playthrough has concluded (<the-end/>) */
-  ended: boolean;
-}
+const storeLib: LibraryResolvers = { scene: getScene, location: getLocation };
 
-/** Playthroughs resolve scenes/locations from their frozen snapshot, never the library. */
 export function chatScene(chat: Chat, id: string | null | undefined): Scene | null {
-  if (!id) return null;
-  return chat.storySnapshot?.scenes.find((s) => s.scene.id === id)?.scene ?? getScene(id);
+  return chatScenePure(chat, id, storeLib);
 }
 
 export function chatLocation(chat: Chat, id: string | null | undefined): Location | null {
-  if (!id) return null;
-  return chat.storySnapshot?.locations.find((l) => l.id === id) ?? getLocation(id);
+  return chatLocationPure(chat, id, storeLib);
 }
 
-/** Walk the timeline accumulating stage events; never a free-floating field. */
 export function computeStage(chat: Chat, messages: Message[], uptoPosition?: number): StageState {
-  const snap = chat.mode === "story" ? chat.storySnapshot : null;
-  const participants = new Set(chat.characterIds);
-  // a scene opens with its snapshot cast (minus the played character = the participants filter)
-  const castOf = (sceneId: string | null): string[] | null => {
-    if (!snap) return null;
-    const entry = snap.scenes.find((s) => s.scene.id === sceneId);
-    return (entry?.cast ?? []).filter((id) => participants.has(id));
-  };
-  const startSceneId = chat.sceneId ?? snap?.scenes[0]?.scene.id ?? null;
-  const state: StageState = {
-    sceneId: startSceneId,
-    locationId: chat.locationId ?? chatScene(chat, startSceneId)?.locationId ?? null,
-    present: castOf(startSceneId),
-    ended: false,
-  };
-  for (const m of messages) {
-    if (uptoPosition !== undefined && m.position > uptoPosition) break;
-    const ev = m.sceneEvent;
-    if (!ev) continue;
-    if (ev.sceneId) {
-      state.sceneId = ev.sceneId;
-      state.locationId = chatScene(chat, ev.sceneId)?.locationId ?? null;
-      state.present = castOf(ev.sceneId);
-    }
-    if (state.present && (ev.enter?.length || ev.leave?.length)) {
-      const cur = new Set(state.present);
-      for (const id of ev.enter ?? []) if (participants.has(id)) cur.add(id);
-      for (const id of ev.leave ?? []) cur.delete(id);
-      state.present = [...cur];
-    }
-    if (ev.theEnd) state.ended = true;
-  }
-  return state;
+  return computeStagePure(chat, messages, uptoPosition, storeLib);
 }
 
-export interface StageAssets {
-  scene: Scene | null;
-  location: Location | null;
-  artworkAsset: string | null;
-  bgmAsset: string | null;
-  ambientAsset: string | null;
-  stageStyle: StageStyle | null;
-}
-
-/** Location assets win when present; otherwise the scene's own. Style fields resolve the same way. */
 export function resolveStageAssets(chat: Chat, state: StageState): StageAssets {
-  const scene = chatScene(chat, state.sceneId);
-  const location = chatLocation(chat, state.locationId);
-  // per-field precedence: the location's set fields win, the scene's fill the rest;
-  // styles are opt-in — only an explicitly enabled one contributes
-  const active = (st: StageStyle | null | undefined) => (st?.enabled === true ? st : null);
-  const style: StageStyle = {
-    ...(active(scene?.stageStyle) ?? {}),
-    ...Object.fromEntries(Object.entries(active(location?.stageStyle) ?? {}).filter(([, v]) => v != null)),
-  };
-  delete style.enabled;
-  return {
-    scene,
-    location,
-    artworkAsset: location?.artworkAsset ?? scene?.artworkAsset ?? null,
-    bgmAsset: location?.bgmAsset ?? scene?.bgmAsset ?? null,
-    ambientAsset: location?.ambientAsset ?? scene?.ambientAsset ?? null,
-    stageStyle: Object.values(style).some((v) => v != null) ? style : null,
-  };
+  return resolveStageAssetsPure(chat, state, storeLib);
 }
+
+export type { StageAssets, StageState };
 
 /* ---------------- shared chat context ---------------- */
 
