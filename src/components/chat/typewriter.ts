@@ -154,6 +154,11 @@ export function useTypewriter({
       /** Queue a freshly streamed chunk. */
       push(chunk: string) {
         const s = st.current;
+        // never let the buffer begin with whitespace: the saved message is trimmed, and
+        // a leading paragraph break (e.g. "<emo>x</emo>\n\nprose") would make page 0
+        // empty — the paginated reveal parks there with nothing ever shown
+        if (!s.buf) chunk = chunk.replace(/^\s+/, "");
+        if (!chunk) return;
         s.buf += chunk;
         if (speedRef.current <= 0) {
           s.shown = limit();
