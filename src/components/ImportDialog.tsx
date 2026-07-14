@@ -55,6 +55,20 @@ export function ImportDialog({
         {items.length === 0 && (
           <div className="text-sm text-content-300">This bundle is empty.</div>
         )}
+        {items.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-content-400">
+              {selected.size}/{items.length} selected
+            </span>
+            <span className="flex-1" />
+            <Button variant="ghost" size="sm" onClick={() => setChecked(new Set(items.map(keyOf)))}>
+              Select all
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setChecked(new Set())}>
+              None
+            </Button>
+          </div>
+        )}
         {TYPE_ORDER.map((type) => {
           const group = items.filter((i) => i.type === type);
           if (!group.length) return null;
