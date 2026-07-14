@@ -8,6 +8,7 @@ import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
+import Collapsible from "@/components/ui/collapsible";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
@@ -328,7 +329,10 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       <Field label="Description" hint="premise and arc — the narrator uses this to steer the plot; placeholders like [char_name], [user_name] work here">
         <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
-      <Field label="Cast (in order)" hint="the story's characters — order drives [charN_name]; a playthrough can play as any of them">
+      <Collapsible bordered title={`Cast (in order)${cast.length ? ` — ${cast.length}` : ""}`}>
+        <div className="text-xs text-content-400 mb-2">
+          the story&apos;s characters — order drives [charN_name]; a playthrough can play as any of them
+        </div>
         <div className="space-y-1">
           {cast.map((cid, i) => (
             <div key={cid} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1.5 text-sm">
@@ -349,8 +353,11 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
             placeholder="+ add cast member…"
           />
         </div>
-      </Field>
-      <Field label="Scenes (in order)" hint="each scene lists who is on stage when it opens; the narrator can bring others in mid-scene">
+      </Collapsible>
+      <Collapsible bordered title={`Scenes (in order)${storyScenes.length ? ` — ${storyScenes.length}` : ""}`}>
+        <div className="text-xs text-content-400 mb-2">
+          each scene lists who is on stage when it opens; the narrator can bring others in mid-scene
+        </div>
         <div className="space-y-1">
           {storyScenes.map((entry, i) => (
             <div key={`${entry.sceneId}-${i}`} className="bg-base-200 rounded-md px-3 py-1.5 text-sm space-y-1.5">
@@ -391,7 +398,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
             placeholder="+ add scene…"
           />
         </div>
-      </Field>
+      </Collapsible>
       <Field label="Lorebooks" hint="attached to every playthrough of this story">
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {lorebooks?.map((l) => (

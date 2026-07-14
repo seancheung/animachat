@@ -6,6 +6,7 @@ import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Button from "@/components/ui/button";
+import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
 import Switch from "@/components/ui/switch";
@@ -118,10 +119,15 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
         </Field>
       )}
 
-      <Field
-        label="Expression sprites (2:3)"
-        hint="all optional — neutral is the fallback; missing expressions fall back to neutral, then the placeholder. The audio slot under each is a one-shot SFX (laughter, sigh…) played when the character switches to that expression"
+      <Collapsible
+        bordered
+        title={`Expression sprites (2:3)${(() => { const n = EMOTIONS.filter((e) => sprites[e]).length; return n ? ` — ${n} uploaded` : ""; })()}`}
       >
+        <div className="text-xs text-content-400 mb-2">
+          all optional — neutral is the fallback; missing expressions fall back to neutral, then the
+          placeholder. The audio slot under each is a one-shot SFX (laughter, sigh…) played when the
+          character switches to that expression
+        </div>
         <div className="grid grid-cols-4 gap-2">
           {EMOTIONS.map((emo) => (
             <div key={emo}>
@@ -131,9 +137,10 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
             </div>
           ))}
         </div>
-      </Field>
+      </Collapsible>
 
-      <Field label="Custom expressions" hint="the description teaches the AI when to pick it">
+      <Collapsible bordered title={`Custom expressions${customs.length ? ` — ${customs.length}` : ""}`}>
+        <div className="text-xs text-content-400 mb-2">the description teaches the AI when to pick it</div>
         <div className="space-y-2">
           {customs.map((c, i) => (
             <div key={i} className="flex gap-2 items-start">
@@ -197,7 +204,7 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
             <Plus /> Add custom expression
           </Button>
         </div>
-      </Field>
+      </Collapsible>
 
       <div className="w-56">
         <AssetInput label="Typing sound override" kind="audio" value={form.typingSfxAsset ?? null} onChange={(v) => setForm({ ...form, typingSfxAsset: v })} />
