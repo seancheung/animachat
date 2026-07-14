@@ -255,6 +255,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             : buildCharacterRequest(turnCtx, speaker.character!, modelRef);
 
         let content = "";
+        let raw = ""; // the model's output verbatim, before tag parsing — kept for debugging
         let emotion: string | null = null;
         let options: string[] | null = null;
         let sawNextScene = false;
@@ -300,7 +301,10 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             chatId,
             signal: abort.signal,
           })) {
-            if (ev.type === "text") handleEvents(parser.feed(ev.text));
+            if (ev.type === "text") {
+              raw += ev.text;
+              handleEvents(parser.feed(ev.text));
+            }
           }
           handleEvents(parser.end());
         } catch (e) {
@@ -338,7 +342,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           if (regenTarget) {
             const variants = [
               ...regenTarget.variants,
-              { content, emotion, options, createdAt: Date.now() },
+              { content, emotion, options, raw, createdAt: Date.now() },
             ];
             saved = updateMessage(regenTarget.id, {
               variants,
@@ -353,6 +357,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               content,
               emotion,
               options,
+              raw,
               sceneEvent,
             });
           }

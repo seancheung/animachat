@@ -120,6 +120,16 @@ export function MessageRow({
                   options={emotionChoices.map((e) => ({ value: e, label: e }))}
                 />
               )}
+              {v.raw != null && (
+                <details className="text-xs not-italic">
+                  <summary className="cursor-pointer text-content-300 select-none">
+                    Raw model output (debug)
+                  </summary>
+                  <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-base-200 p-2 font-mono text-[11px] text-content-300">
+                    {v.raw}
+                  </pre>
+                </details>
+              )}
               <div className="flex gap-2">
                 <Button
                   size="sm"

@@ -723,6 +723,8 @@ export function appendMessage(m: {
   content: string;
   emotion?: string | null;
   options?: string[] | null;
+  /** raw model output before tag parsing (AI messages only) */
+  raw?: string | null;
   sceneEvent?: SceneEvent | null;
 }): Message {
   const db = getDb();
@@ -732,6 +734,7 @@ export function appendMessage(m: {
     content: m.content,
     emotion: m.emotion ?? null,
     options: m.options ?? null,
+    ...(m.raw != null ? { raw: m.raw } : {}),
     createdAt: now(),
   };
   const id = uid();

@@ -255,6 +255,9 @@ export interface MessageVariant {
   content: string;
   emotion: string | null;
   options: string[] | null;
+  /** the model's raw output before tag parsing (kept for debugging; absent on
+      user messages and on messages saved before this field existed) */
+  raw?: string | null;
   createdAt: number;
 }
 
