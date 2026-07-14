@@ -68,7 +68,7 @@ function matchCharacter(ctx: ChatContext, name: string): Character | null {
   );
 }
 
-async function pickDefaultSpeaker(ctx: ChatContext, body: GenerateBody): Promise<Speaker> {
+async function pickDefaultSpeaker(ctx: ChatContext): Promise<Speaker> {
   if (ctx.present.length === 1 && !ctx.chat.narratorEnabled) {
     return { role: "character", character: ctx.present[0] };
   }
@@ -114,7 +114,7 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
     if (addressed.length)
       return addressed.map((c) => ({ role: "character" as const, character: c }));
   }
-  return [await pickDefaultSpeaker(ctx, body)];
+  return [await pickDefaultSpeaker(ctx)];
 }
 
 function nextSceneId(ctx: ChatContext): string | null {
@@ -171,6 +171,11 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
     if (!regenTarget || regenTarget.chatId !== chatId) return bad("Message to regenerate not found");
     if (regenTarget.role !== "character" && regenTarget.role !== "narrator")
       return bad("Only AI messages can be regenerated");
+    // alternatives live on the tail only — appendMessage freezes a message the moment a
+    // follow-up lands, so regenerating anything older would fight the freeze
+    const lastLive = [...ctx.messages].reverse().find((m) => m.role !== "marker");
+    if (lastLive?.id !== regenTarget.id)
+      return bad("Only the latest message can be regenerated — fork the chat to branch from an earlier point");
     ctx = { ...ctx, messages: ctx.messages.filter((m) => m.position < regenTarget!.position) };
   }
 

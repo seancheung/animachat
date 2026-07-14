@@ -124,6 +124,8 @@ interface Streaming {
   pageDone: boolean;
   /** there is more text past the current page */
   hasMore: boolean;
+  /** regeneration: the message this reply replaces — it reveals in place on that row */
+  forMessageId: string | null;
 }
 
 export default function ChatPage() {
@@ -411,6 +413,7 @@ export default function ChatPage() {
                 emotion: null,
                 pageDone: false,
                 hasMore: false,
+                forMessageId: body.regenerateMessageId ?? null,
               });
             } else if (ev.type === "text") {
               typewriter.push(ev.text);
@@ -643,7 +646,8 @@ export default function ChatPage() {
     </div>
   );
 
-  const streamingRow = streaming && (
+  // a regeneration reveals IN PLACE on the row it replaces — no phantom row at the tail
+  const streamingRow = streaming && !streaming.forMessageId && (
     <div className="flex gap-3 fade-in">
       <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
         {streaming.role === "narrator" ? <ScrollText size={15} /> : (
@@ -731,6 +735,7 @@ export default function ChatPage() {
             personaName={personaName}
             isLast={m.id === lastNonMarker?.id}
             busy={busy}
+            streaming={streaming?.forMessageId === m.id ? { text: streaming.text, emotion: streaming.emotion } : null}
             sceneName={sceneNameFor(m)}
             onEdit={(patch) => patchMessage(m, patch)}
             onSwipe={(index) => patchMessage(m, { activeVariant: index })}

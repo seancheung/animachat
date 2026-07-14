@@ -727,6 +727,18 @@ export function appendMessage(m: {
   sceneEvent?: SceneEvent | null;
 }): Message {
   const db = getDb();
+  // freeze the previous tail: alternatives (swipes) live on the newest message only —
+  // once a follow-up lands, the chosen variant is the message and the others are dropped
+  const prevRow = db
+    .prepare("SELECT * FROM messages WHERE chat_id=? ORDER BY position DESC LIMIT 1")
+    .get(m.chatId) as Row | undefined;
+  if (prevRow) {
+    const prev = messageFromRow(prevRow);
+    if (prev.variants.length > 1) {
+      const kept = prev.variants[prev.activeVariant] ?? prev.variants[0];
+      updateMessage(prev.id, { variants: [kept], activeVariant: 0 });
+    }
+  }
   const pos =
     ((db.prepare("SELECT MAX(position) AS p FROM messages WHERE chat_id=?").get(m.chatId) as Row)?.p ?? -1) + 1;
   const variant: MessageVariant = {

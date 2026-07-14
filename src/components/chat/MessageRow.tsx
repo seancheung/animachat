@@ -29,6 +29,7 @@ export function MessageRow({
   personaName,
   isLast,
   busy,
+  streaming,
   sceneName,
   onEdit,
   onSwipe,
@@ -45,6 +46,8 @@ export function MessageRow({
   personaName: string;
   isLast: boolean;
   busy: boolean;
+  /** a regeneration of THIS message is streaming — reveal it in place of the current variant */
+  streaming?: { text: string; emotion: string | null } | null;
   /** stage direction derived from the message's events ("Scene: X · Enter Y · The End") */
   sceneName?: string | null;
   onEdit: (patch: { content?: string; emotion?: string | null }) => Promise<void>;
@@ -102,7 +105,9 @@ export function MessageRow({
       <div className={cn("max-w-[78%] min-w-0", message.role === "user" && "text-right")}>
         <div className="text-xs text-content-300 mb-0.5 flex items-center gap-2">
           <span className={cn(message.role === "user" && "ml-auto")}>{name}</span>
-          {message.role === "character" && v.emotion && <Badge variant="secondary" rounded>{v.emotion}</Badge>}
+          {message.role === "character" && (streaming ? streaming.emotion : v.emotion) && (
+            <Badge variant="secondary" rounded>{streaming ? streaming.emotion : v.emotion}</Badge>
+          )}
         </div>
 
         <div
@@ -138,6 +143,8 @@ export function MessageRow({
                 <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
               </div>
             </div>
+          ) : streaming ? (
+            <MessageText text={streaming.text} streaming />
           ) : (
             <MessageText text={v.content} />
           )}
@@ -163,13 +170,16 @@ export function MessageRow({
           </div>
         )}
 
+        {!streaming && (
         <div
           className={cn(
             "flex items-center gap-0.5 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs",
             message.role === "user" && "justify-end"
           )}
         >
-          {message.variants.length > 1 && (
+          {/* alternatives live on the tail only — appending a message freezes the rest;
+              while a follow-up is being generated the freeze is imminent, so don't offer them */}
+          {isLast && !busy && message.variants.length > 1 && (
             <span className="flex items-center gap-0.5 mr-1 text-content-300">
               <Button variant="ghost" size="sm" shape="square" disabled={message.activeVariant === 0 || busy} onClick={() => onSwipe(message.activeVariant - 1)}><ChevronLeft /></Button>
               {message.activeVariant + 1}/{message.variants.length}
@@ -192,7 +202,7 @@ export function MessageRow({
           >
             <Pencil />
           </Button>
-          {(message.role === "character" || message.role === "narrator") && (
+          {isLast && (message.role === "character" || message.role === "narrator") && (
             <Button variant="ghost" size="sm" shape="square" title="Regenerate (adds a swipe)" disabled={busy} onClick={onRegen}><RefreshCw /></Button>
           )}
           <Button variant="ghost" size="sm" shape="square" title="Fork a new chat from here" disabled={busy} onClick={onFork}><GitFork /></Button>
@@ -209,6 +219,7 @@ export function MessageRow({
             <Trash2 />
           </Button>
         </div>
+        )}
       </div>
     </div>
   );
