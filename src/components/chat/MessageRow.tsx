@@ -164,7 +164,7 @@ export function MessageRow({
           <div className="flex flex-col items-start gap-1.5 mt-2">
             {v.options.map((o, i) => (
               <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => onPickOption(o)}>
-                <ChevronRight /> {o}
+                <ChevronRight /> <MessageText text={o} />
               </Button>
             ))}
           </div>

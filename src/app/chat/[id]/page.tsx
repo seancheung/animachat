@@ -1108,7 +1108,7 @@ function DialogueLayout({
             <div className="flex shrink-0 flex-col items-start gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
               {v.options.map((o: string, i: number) => (
                 <Button key={i} variant="secondary" size="sm" className="h-auto py-1 text-left whitespace-normal" onClick={() => send(o)}>
-                  <ChevronRight /> {o}
+                  <ChevronRight /> <MessageText text={o} />
                 </Button>
               ))}
             </div>
