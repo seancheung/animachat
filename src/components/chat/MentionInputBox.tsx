@@ -79,7 +79,35 @@ export function MentionInputBox({
     });
   };
 
+  /** The mention run a caret-adjacent deletion would eat into — mentions delete whole. */
+  const mentionRunAt = (pos: number, forward: boolean): { start: number; end: number } | null => {
+    let off = 0;
+    for (const p of splitAtMentions(value, mentionNames)) {
+      const end = off + p.text.length;
+      if (p.mention && (forward ? pos >= off && pos < end : pos > off && pos <= end))
+        return { start: off, end };
+      off = end;
+    }
+    return null;
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.key === "Backspace" || e.key === "Delete") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const el = innerRef.current;
+      if (el && el.selectionStart === el.selectionEnd) {
+        const run = mentionRunAt(el.selectionStart, e.key === "Delete");
+        if (run) {
+          e.preventDefault();
+          onChange(value.slice(0, run.start) + value.slice(run.end));
+          setQuery(null);
+          requestAnimationFrame(() => {
+            el.focus();
+            el.setSelectionRange(run.start, run.start);
+          });
+          return;
+        }
+      }
+    }
     if (open) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
