@@ -8,6 +8,7 @@ import {
   getAsset,
   getChat,
   getCharacter,
+  inTransaction,
   listMessages,
   registerAsset,
   saveChat,
@@ -96,28 +97,31 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
     registerAsset(a.id, a.filename, a.mime, data.length);
   }
 
-  const { id: _id, createdAt: _c, updatedAt: _u, ...chatFields } = manifest.chat ?? ({} as Chat);
-  const chat = saveChat(chatFields);
+  // atomic: a malformed message mid-archive must not leave a half-imported chat
+  return inTransaction(() => {
+    const { id: _id, createdAt: _c, updatedAt: _u, ...chatFields } = manifest.chat ?? ({} as Chat);
+    const chat = saveChat(chatFields);
 
-  for (const m of manifest.messages ?? []) {
-    const first = m.variants?.[0];
-    const saved = appendMessage({
-      chatId: chat.id,
-      role: m.role,
-      characterId: m.characterId ?? null,
-      content: first?.content ?? "",
-      emotion: first?.emotion ?? null,
-      options: first?.options ?? null,
-      sceneEvent: m.sceneEvent ?? null,
-    });
-    // restore the full variant set (swipes) and the active pick verbatim;
-    // archives from before the raw_outputs table carried raw model output
-    // inside variants — debug data that doesn't travel, so drop it
-    if (Array.isArray(m.variants))
-      updateMessage(saved.id, {
-        variants: m.variants.map(({ raw: _raw, ...v }: { raw?: unknown } & Message["variants"][number]) => v),
-        activeVariant: m.activeVariant ?? 0,
+    for (const m of manifest.messages ?? []) {
+      const first = m.variants?.[0];
+      const saved = appendMessage({
+        chatId: chat.id,
+        role: m.role,
+        characterId: m.characterId ?? null,
+        content: first?.content ?? "",
+        emotion: first?.emotion ?? null,
+        options: first?.options ?? null,
+        sceneEvent: m.sceneEvent ?? null,
       });
-  }
-  return chat;
+      // restore the full variant set (swipes) and the active pick verbatim;
+      // archives from before the raw_outputs table carried raw model output
+      // inside variants — debug data that doesn't travel, so drop it
+      if (Array.isArray(m.variants))
+        updateMessage(saved.id, {
+          variants: m.variants.map(({ raw: _raw, ...v }: { raw?: unknown } & Message["variants"][number]) => v),
+          activeVariant: m.activeVariant ?? 0,
+        });
+    }
+    return chat;
+  });
 }

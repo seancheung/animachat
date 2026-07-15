@@ -37,6 +37,13 @@ const J = {
   },
 };
 
+/** Run several store mutations atomically. better-sqlite3 is synchronous, so any
+ *  sync function body works; nested calls (e.g. appendMessage inside a fork copy)
+ *  join the outer transaction via savepoints. Never await inside `fn`. */
+export function inTransaction<T>(fn: () => T): T {
+  return getDb().transaction(fn)();
+}
+
 /* ---------------- settings ---------------- */
 
 export function getSettings(): Settings {
@@ -781,46 +788,52 @@ export function appendMessage(m: {
   sceneEvent?: SceneEvent | null;
 }): Message {
   const db = getDb();
-  // freeze the previous tail: alternatives (swipes) live on the newest message only —
-  // once a follow-up lands, the chosen variant is the message and the others are dropped
-  const prevRow = db
-    .prepare("SELECT * FROM messages WHERE chat_id=? ORDER BY position DESC LIMIT 1")
-    .get(m.chatId) as Row | undefined;
-  if (prevRow) {
-    const prev = messageFromRow(prevRow);
-    if (prev.variants.length > 1) {
-      const keptIndex = prev.variants[prev.activeVariant] ? prev.activeVariant : 0;
-      updateMessage(prev.id, { variants: [prev.variants[keptIndex]], activeVariant: 0 });
-      // raw outputs follow their variants: keep only the chosen one, re-keyed to 0
-      db.prepare("DELETE FROM raw_outputs WHERE message_id=? AND variant_index<>?").run(prev.id, keptIndex);
-      db.prepare("UPDATE raw_outputs SET variant_index=0 WHERE message_id=?").run(prev.id);
+  // the freeze is destructive (swipes dropped, raw outputs pruned) — atomically
+  // paired with the insert so a failed append can't cost the previous tail its
+  // alternatives without appending anything
+  const id = db.transaction(() => {
+    // freeze the previous tail: alternatives (swipes) live on the newest message only —
+    // once a follow-up lands, the chosen variant is the message and the others are dropped
+    const prevRow = db
+      .prepare("SELECT * FROM messages WHERE chat_id=? ORDER BY position DESC LIMIT 1")
+      .get(m.chatId) as Row | undefined;
+    if (prevRow) {
+      const prev = messageFromRow(prevRow);
+      if (prev.variants.length > 1) {
+        const keptIndex = prev.variants[prev.activeVariant] ? prev.activeVariant : 0;
+        updateMessage(prev.id, { variants: [prev.variants[keptIndex]], activeVariant: 0 });
+        // raw outputs follow their variants: keep only the chosen one, re-keyed to 0
+        db.prepare("DELETE FROM raw_outputs WHERE message_id=? AND variant_index<>?").run(prev.id, keptIndex);
+        db.prepare("UPDATE raw_outputs SET variant_index=0 WHERE message_id=?").run(prev.id);
+      }
     }
-  }
-  const pos =
-    ((db.prepare("SELECT MAX(position) AS p FROM messages WHERE chat_id=?").get(m.chatId) as Row)?.p ?? -1) + 1;
-  const variant: MessageVariant = {
-    content: m.content,
-    emotion: m.emotion ?? null,
-    options: m.options ?? null,
-    sceneEvent: m.sceneEvent ?? null,
-    createdAt: now(),
-  };
-  const id = uid();
-  db.prepare(
-    `INSERT INTO messages (id, chat_id, position, role, character_id, variants, active_variant, scene_event, created_at)
-     VALUES (?,?,?,?,?,?,0,?,?)`
-  ).run(
-    id,
-    m.chatId,
-    pos,
-    m.role,
-    m.characterId ?? null,
-    J.str([variant]),
-    m.sceneEvent ? J.str(m.sceneEvent) : null,
-    now()
-  );
-  touchChat(m.chatId);
-  if (m.raw != null) setRawOutput(id, 0, m.raw);
+    const pos =
+      ((db.prepare("SELECT MAX(position) AS p FROM messages WHERE chat_id=?").get(m.chatId) as Row)?.p ?? -1) + 1;
+    const variant: MessageVariant = {
+      content: m.content,
+      emotion: m.emotion ?? null,
+      options: m.options ?? null,
+      sceneEvent: m.sceneEvent ?? null,
+      createdAt: now(),
+    };
+    const newId = uid();
+    db.prepare(
+      `INSERT INTO messages (id, chat_id, position, role, character_id, variants, active_variant, scene_event, created_at)
+       VALUES (?,?,?,?,?,?,0,?,?)`
+    ).run(
+      newId,
+      m.chatId,
+      pos,
+      m.role,
+      m.characterId ?? null,
+      J.str([variant]),
+      m.sceneEvent ? J.str(m.sceneEvent) : null,
+      now()
+    );
+    touchChat(m.chatId);
+    if (m.raw != null) setRawOutput(newId, 0, m.raw);
+    return newId;
+  })();
   return getMessage(id)!;
 }
 

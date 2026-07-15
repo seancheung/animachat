@@ -4,6 +4,7 @@ import {
   getChat,
   getMessage,
   getSummary,
+  inTransaction,
   listMessages,
   putSummary,
   saveChat,
@@ -23,28 +24,32 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const anchor = b.messageId ? getMessage(b.messageId) : null;
   if (!anchor || anchor.chatId !== id) return bad("messageId must reference a message in this chat");
 
-  const { id: _id, createdAt: _c, updatedAt: _u, ...fields } = src;
-  const fork = saveChat({ ...fields, title: `${src.title} (fork)` });
-  for (const m of listMessages(id)) {
-    if (m.position > anchor.position) break;
-    const v = m.variants[m.activeVariant];
-    appendMessage({
-      chatId: fork.id,
-      role: m.role,
-      characterId: m.characterId,
-      content: v?.content ?? "",
-      emotion: v?.emotion ?? null,
-      options: v?.options ?? null,
-      sceneEvent: m.sceneEvent,
-    });
-  }
-  const summary = getSummary(id);
-  if (summary.content && summary.coveredPosition <= anchor.position) {
-    // fork positions are contiguous; remap coverage by counting copied messages
-    const covered = listMessages(id).filter(
-      (m) => m.position <= anchor.position && m.position <= summary.coveredPosition
-    ).length;
-    putSummary(fork.id, summary.content, covered - 1);
-  }
+  // atomic: a mid-copy failure must not leave a half-forked chat behind
+  const fork = inTransaction(() => {
+    const { id: _id, createdAt: _c, updatedAt: _u, ...fields } = src;
+    const created = saveChat({ ...fields, title: `${src.title} (fork)` });
+    for (const m of listMessages(id)) {
+      if (m.position > anchor.position) break;
+      const v = m.variants[m.activeVariant];
+      appendMessage({
+        chatId: created.id,
+        role: m.role,
+        characterId: m.characterId,
+        content: v?.content ?? "",
+        emotion: v?.emotion ?? null,
+        options: v?.options ?? null,
+        sceneEvent: m.sceneEvent,
+      });
+    }
+    const summary = getSummary(id);
+    if (summary.content && summary.coveredPosition <= anchor.position) {
+      // fork positions are contiguous; remap coverage by counting copied messages
+      const covered = listMessages(id).filter(
+        (m) => m.position <= anchor.position && m.position <= summary.coveredPosition
+      ).length;
+      putSummary(created.id, summary.content, covered - 1);
+    }
+    return created;
+  });
   return ok({ chatId: fork.id });
 });

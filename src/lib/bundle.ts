@@ -10,6 +10,7 @@ import {
   getPersona,
   getScene,
   getStory,
+  inTransaction,
   listCharacters,
   listLocations,
   listLorebooks,
@@ -194,81 +195,86 @@ export async function importBundle(
     registerAsset(a.id, a.filename, a.mime, data.length);
   }
 
-  const existingNames: Record<BundleItemType, Set<string>> = {
-    character: new Set(listCharacters().map((x) => x.name.toLowerCase())),
-    persona: new Set(listPersonas().map((x) => x.name.toLowerCase())),
-    location: new Set(listLocations().map((x) => x.name.toLowerCase())),
-    scene: new Set(listScenes().map((x) => x.name.toLowerCase())),
-    story: new Set(listStories().map((x) => x.name.toLowerCase())),
-    lorebook: new Set(listLorebooks().map((x) => x.name.toLowerCase())),
-  };
-  const idMap = new Map<string, string>(); // old id -> new id
-  const imported: Record<string, number> = {};
-  const count = (t: string) => (imported[t] = (imported[t] ?? 0) + 1);
-  const byType = (t: BundleItemType) => manifest.items.filter((i) => i.type === t);
+  // the entity phase is fully synchronous — atomic, so a malformed item mid-bundle
+  // can't leave a half-imported library (already-written asset files are content-
+  // addressed orphans at worst, reclaimed by the prune)
+  return inTransaction(() => {
+    const existingNames: Record<BundleItemType, Set<string>> = {
+      character: new Set(listCharacters().map((x) => x.name.toLowerCase())),
+      persona: new Set(listPersonas().map((x) => x.name.toLowerCase())),
+      location: new Set(listLocations().map((x) => x.name.toLowerCase())),
+      scene: new Set(listScenes().map((x) => x.name.toLowerCase())),
+      story: new Set(listStories().map((x) => x.name.toLowerCase())),
+      lorebook: new Set(listLorebooks().map((x) => x.name.toLowerCase())),
+    };
+    const idMap = new Map<string, string>(); // old id -> new id
+    const imported: Record<string, number> = {};
+    const count = (t: string) => (imported[t] = (imported[t] ?? 0) + 1);
+    const byType = (t: BundleItemType) => manifest.items.filter((i) => i.type === t);
 
-  const prep = (type: BundleItemType, data: any) => {
-    const { id: _oldId, createdAt: _c, updatedAt: _u, ...fields } = data;
-    fields.name = dedupeName(String(fields.name ?? "Imported"), existingNames[type]);
-    existingNames[type].add(fields.name.toLowerCase());
-    return fields;
-  };
+    const prep = (type: BundleItemType, data: any) => {
+      const { id: _oldId, createdAt: _c, updatedAt: _u, ...fields } = data;
+      fields.name = dedupeName(String(fields.name ?? "Imported"), existingNames[type]);
+      existingNames[type].add(fields.name.toLowerCase());
+      return fields;
+    };
 
-  for (const it of byType("location")) {
-    const saved = saveLocation(prep("location", it.data) as Partial<Location>);
-    idMap.set(it.data.id, saved.id);
-    count("location");
-  }
-  for (const it of byType("scene")) {
-    const fields = prep("scene", it.data) as Partial<Scene>;
-    if (fields.locationId) fields.locationId = idMap.get(fields.locationId) ?? null;
-    idMap.set(it.data.id, saveScene(fields).id);
-    count("scene");
-  }
-  for (const it of byType("character")) {
-    idMap.set(it.data.id, saveCharacter(prep("character", it.data) as Partial<Character>).id);
-    count("character");
-  }
-  for (const it of byType("lorebook")) {
-    idMap.set(it.data.id, saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>).id);
-    count("lorebook");
-  }
-  // stories last — they remap scenes, cast and lorebooks
-  for (const it of byType("story")) {
-    const fields = prep("story", it.data) as Partial<Story>;
-    fields.characterIds = (fields.characterIds ?? [])
-      .map((cid) => idMap.get(cid))
-      .filter(Boolean) as string[];
-    fields.scenes = (fields.scenes ?? []).flatMap((e) => {
-      const sceneId = idMap.get(e.sceneId);
-      if (!sceneId) return [];
-      return [
-        {
-          ...e,
-          sceneId,
-          cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[],
-          // branch targets are scene refs too; dangling ones are dropped by saveStory
-          successors: (e.successors ?? []).flatMap((s) => {
-            const sid = idMap.get(s.sceneId);
-            return sid ? [{ ...s, sceneId: sid }] : [];
-          }),
-        },
-      ];
-    });
-    // secrets travel with the story; their holders are cast members — remap like the cast
-    fields.secrets = (fields.secrets ?? []).map((s) => ({
-      ...s,
-      knownBy: (s.knownBy ?? []).map((cid) => idMap.get(cid)).filter(Boolean) as string[],
-    }));
-    fields.lorebookIds = (fields.lorebookIds ?? [])
-      .map((lid) => idMap.get(lid))
-      .filter(Boolean) as string[];
-    idMap.set(it.data.id, saveStory(fields).id);
-    count("story");
-  }
-  for (const it of byType("persona")) {
-    idMap.set(it.data.id, savePersona(prep("persona", it.data) as Partial<Persona>).id);
-    count("persona");
-  }
-  return { imported };
+    for (const it of byType("location")) {
+      const saved = saveLocation(prep("location", it.data) as Partial<Location>);
+      idMap.set(it.data.id, saved.id);
+      count("location");
+    }
+    for (const it of byType("scene")) {
+      const fields = prep("scene", it.data) as Partial<Scene>;
+      if (fields.locationId) fields.locationId = idMap.get(fields.locationId) ?? null;
+      idMap.set(it.data.id, saveScene(fields).id);
+      count("scene");
+    }
+    for (const it of byType("character")) {
+      idMap.set(it.data.id, saveCharacter(prep("character", it.data) as Partial<Character>).id);
+      count("character");
+    }
+    for (const it of byType("lorebook")) {
+      idMap.set(it.data.id, saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>).id);
+      count("lorebook");
+    }
+    // stories last — they remap scenes, cast and lorebooks
+    for (const it of byType("story")) {
+      const fields = prep("story", it.data) as Partial<Story>;
+      fields.characterIds = (fields.characterIds ?? [])
+        .map((cid) => idMap.get(cid))
+        .filter(Boolean) as string[];
+      fields.scenes = (fields.scenes ?? []).flatMap((e) => {
+        const sceneId = idMap.get(e.sceneId);
+        if (!sceneId) return [];
+        return [
+          {
+            ...e,
+            sceneId,
+            cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[],
+            // branch targets are scene refs too; dangling ones are dropped by saveStory
+            successors: (e.successors ?? []).flatMap((s) => {
+              const sid = idMap.get(s.sceneId);
+              return sid ? [{ ...s, sceneId: sid }] : [];
+            }),
+          },
+        ];
+      });
+      // secrets travel with the story; their holders are cast members — remap like the cast
+      fields.secrets = (fields.secrets ?? []).map((s) => ({
+        ...s,
+        knownBy: (s.knownBy ?? []).map((cid) => idMap.get(cid)).filter(Boolean) as string[],
+      }));
+      fields.lorebookIds = (fields.lorebookIds ?? [])
+        .map((lid) => idMap.get(lid))
+        .filter(Boolean) as string[];
+      idMap.set(it.data.id, saveStory(fields).id);
+      count("story");
+    }
+    for (const it of byType("persona")) {
+      idMap.set(it.data.id, savePersona(prep("persona", it.data) as Partial<Persona>).id);
+      count("persona");
+    }
+    return { imported };
+  });
 }
