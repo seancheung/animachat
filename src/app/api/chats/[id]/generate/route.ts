@@ -347,8 +347,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               content += ev.text;
               send({ type: "text", text: ev.text });
             } else if (ev.type === "emotion") {
-              emotion = emotion ?? ev.name;
-              send({ type: "emotion", name: ev.name });
+              // one emotion per message — the first wins; a stray later tag is
+              // stripped from the text and must not flip the live sprite either
+              if (!emotion) {
+                emotion = ev.name;
+                send({ type: "emotion", name: ev.name });
+              }
             } else if (ev.type === "options") {
               options = ev.options;
             } else if (ev.type === "nextScene") {
