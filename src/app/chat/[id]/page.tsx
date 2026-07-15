@@ -442,8 +442,9 @@ export default function ChatPage() {
               // here rather than on "done" keeps the read loop free to see the stream
               // close, so streamDone below flips while the last reveal is still parked.
               await typewriter.finish();
-              setPendingUser(null);
-              void mutate(); // pick up the just-appended user message
+              // pick up the just-appended user message — only then drop the pending bubble,
+              // or it vanishes for the whole refetch
+              void mutate().then(() => setPendingUser(null));
               const speaker = characters.find((c) => c.id === ev.speaker.characterId);
               blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
               typewriter.reset();
@@ -479,12 +480,12 @@ export default function ChatPage() {
         if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
       } finally {
         abortRef.current = null;
-        setPendingUser(null);
         dropEcho(); // a turn that produced nothing (error, stop) must still hand the box back
         // pull the saved reply in BEFORE dropping the streaming view: clearing it first
         // leaves the dialogue box a frame with nothing to show but the previous message
         // (the user's own), which reads as a flicker at the end of the reveal
         await mutate().catch(() => {});
+        setPendingUser(null);
         setStreaming(null);
         setGenerating(false);
       }
