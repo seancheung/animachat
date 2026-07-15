@@ -22,6 +22,19 @@ import { assetUrl } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { EMOTIONS, type Character, type Message } from "@/lib/types";
 
+/** Hover timestamp: time for today, date + time when older. */
+function fmtReceived(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  const date =
+    d.getFullYear() === now.getFullYear()
+      ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      : d.toLocaleDateString(undefined, { dateStyle: "short" });
+  return `${date}, ${time}`;
+}
+
 export function MessageRow({
   message,
   characters,
@@ -177,6 +190,13 @@ export function MessageRow({
             message.role === "user" && "justify-end"
           )}
         >
+          {/* received time — the active variant's: a swipe arrived later than the original */}
+          <span
+            className="text-content-300 px-1 select-none"
+            title={new Date(v.createdAt ?? message.createdAt).toLocaleString()}
+          >
+            {fmtReceived(v.createdAt ?? message.createdAt)}
+          </span>
           {/* alternatives live on the tail only — appending a message freezes the rest;
               while a follow-up is being generated the freeze is imminent, so don't offer them */}
           {isLast && !busy && message.variants.length > 1 && (
