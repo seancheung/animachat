@@ -5,6 +5,7 @@ import {
   chatLocation as chatLocationPure,
   chatScene as chatScenePure,
   computeStage as computeStagePure,
+  nextSceneIdAfter,
   resolveStageAssets as resolveStageAssetsPure,
   type LibraryResolvers,
   type StageAssets,
@@ -460,15 +461,28 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
 
-  // story mode: where we are in the scene sequence, and who is on/off stage
+  // story mode: where we are in the scene sequence, and who is on/off stage.
+  // A played cast member's story advances only through THEIR scenes — the ones
+  // between unfold offstage and reach them only as consequences.
   let nextSceneInfo = "";
   let finalScene = false;
   if (ctx.snapshot && ctx.stage.sceneId && !ctx.ended) {
-    const idx = ctx.snapshot.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId);
-    finalScene = idx === ctx.snapshot.scenes.length - 1;
-    if (idx !== -1 && !finalScene) {
-      const next = ctx.snapshot.scenes[idx + 1].scene;
-      nextSceneInfo = ctx.sub(`NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}`);
+    const entries = ctx.snapshot.scenes.map(({ scene, cast }) => ({ id: scene.id, cast }));
+    const idx = entries.findIndex((e) => e.id === ctx.stage.sceneId);
+    if (idx !== -1) {
+      const nextId = nextSceneIdAfter(entries, ctx.stage.sceneId, ctx.chat.personaCharacterId);
+      finalScene = !nextId;
+      if (nextId) {
+        const nextIdx = entries.findIndex((e) => e.id === nextId);
+        const next = ctx.snapshot.scenes[nextIdx].scene;
+        const skipped = ctx.snapshot.scenes.slice(idx + 1, nextIdx).map((s) => s.scene.name);
+        nextSceneInfo = ctx.sub(
+          `NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}` +
+            (skipped.length && ctx.playedCharacter
+              ? `\n(The story passes over ${skipped.join(", ")} — those unfold offstage: carry into the transition only what would reach ${ctx.playedCharacter.name}.)`
+              : "")
+        );
+      }
     }
   }
   const offStage = ctx.snapshot ? ctx.characters.filter((c) => !ctx.present.some((p) => p.id === c.id)) : [];
@@ -491,6 +505,15 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   const destinationBlock = ctx.snapshot?.destination
     ? ctx.sub(`WHERE THE STORY IS HEADED (private — steer toward it, never announce it): ${ctx.snapshot.destination}`)
     : "";
+  // played cast member: the playthrough is THEIR story — the world is rendered
+  // strictly from within their reach, whatever angle the authored text takes
+  const played = ctx.playedCharacter;
+  const cameraBlock =
+    ctx.snapshot && played
+      ? ctx.sub(
+          `THE CAMERA IS ${played.name.toUpperCase()}: this playthrough is ${played.name}'s story, told strictly from within their reach. Narrate only what ${played.name} can perceive. Scene setups and story text may describe the wider situation — render only the slice that reaches ${played.name}; everything elsewhere arrives only as it would (sounds, news, consequences, arrivals). Never narrate a vantage ${played.name} doesn't hold.`
+        )
+      : "";
   const secrets = storySecrets(ctx);
   const secretsBlock = secrets.length
     ? ctx.sub(
@@ -521,6 +544,9 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
         (nextSceneInfo
           ? `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story to the next scene: write the transition and append <next-scene/> on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
           : "") +
+        (played
+          ? `If ${played.name} dies or leaves the story for good, ${played.name}'s story is over — whatever the wider tale would have done: write the ending that exit has earned and append <the-end/>.\n`
+          : "") +
         `When the story reaches its natural resolution${finalScene ? " (this is the FINAL scene — <next-scene/> is not available)" : ""}, conclude it: write the closing narration and append <the-end/> on its own line. A concluding message needs no suggested actions.\n`
       : "";
 
@@ -530,6 +556,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
     castBlock,
     worldBlock(ctx),
     personaBlock(ctx),
+    cameraBlock,
     contractBlock,
     destinationBlock,
     secretsBlock,
@@ -548,7 +575,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
           stagingRules +
           `Unless you are concluding the story, ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
           `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
-          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is.`),
+          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is — an action or line for ${ctx.persona?.name ?? "the user"} alone, doable from where they are; never another character's move.`),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -610,6 +637,9 @@ export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): Bu
       entry?.goal ? `Scene goal: ${entry.goal}` : "",
       entry?.exit ? `The scene should advance when: ${entry.exit}` : "",
       ctx.snapshot?.destination ? `The story is headed toward: ${ctx.snapshot.destination}` : "",
+      ctx.playedCharacter
+        ? `The user plays ${ctx.playedCharacter.name} — the story advances strictly in their view.`
+        : "",
       unrevealed.length
         ? `Unrevealed secrets in play: ${unrevealed.map((s) => `"${s.title}"`).join(", ")}`
         : "",

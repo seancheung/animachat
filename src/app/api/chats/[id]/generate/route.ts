@@ -20,6 +20,7 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
+import { nextSceneIdAfter } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
 import { appendMessage, getMessage, saveChat, setRawOutput, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
@@ -164,9 +165,12 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
 function nextSceneId(ctx: ChatContext): string | null {
   const snap = ctx.snapshot;
   if (!snap || !ctx.stage.sceneId) return null;
-  const idx = snap.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId);
-  if (idx === -1 || idx >= snap.scenes.length - 1) return null;
-  return snap.scenes[idx + 1].scene.id;
+  // a played cast member's story advances only through THEIR scenes; the rest unfold offstage
+  return nextSceneIdAfter(
+    snap.scenes.map(({ scene, cast }) => ({ id: scene.id, cast })),
+    ctx.stage.sceneId,
+    ctx.chat.personaCharacterId
+  );
 }
 
 function maybeGenerateTitle(chatId: string) {

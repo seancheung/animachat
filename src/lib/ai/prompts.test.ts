@@ -11,6 +11,7 @@ import {
   type ChatContext,
 } from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
+import { entranceSceneId, nextSceneIdAfter } from "@/lib/stage";
 import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
@@ -342,6 +343,45 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     expect(req.system).toContain("Scene goal: Entangle the user in the debt");
     expect(req.system).toContain("headed toward: Ends at dawn");
     expect(req.system).not.toContain("Kael owes the Ashen Guild too.");
+  });
+
+  it("playing a cast member anchors the narrator's camera and options to them", () => {
+    const base = storyCtx([]);
+    const ctx: ChatContext = {
+      ...base,
+      chat: { ...base.chat, personaCharacterId: "c2", characterIds: ["c1"] },
+      characters: [mira],
+      present: [mira],
+      playedCharacter: kael,
+      persona: { id: "c2", name: "Kael", description: "", tags: [], createdAt: 0, updatedAt: 0 },
+    };
+    const req = buildNarratorRequest(ctx, modelRef);
+    expect(req.system).toContain("THE CAMERA IS KAEL");
+    expect(req.system).toContain("an action or line for Kael alone");
+    expect(req.system).toContain("If Kael dies or leaves the story for good");
+  });
+});
+
+describe("played-character immersion helpers", () => {
+  const entries = [
+    { id: "s1", cast: ["lead"] },
+    { id: "s2", cast: ["lead", "side"] },
+    { id: "s3", cast: ["lead"] },
+    { id: "s4", cast: ["side"] },
+  ];
+
+  it("entrance: first authored scene with the played character, chosen scene only if they are in it", () => {
+    expect(entranceSceneId(entries, "side")).toBe("s2");
+    expect(entranceSceneId(entries, "side", "s1")).toBe("s2"); // chosen without them → snap forward
+    expect(entranceSceneId(entries, "side", "s4")).toBe("s4"); // chosen with them → honored
+    expect(entranceSceneId(entries, "nobody")).toBeNull(); // no scene lists them → caller falls back
+  });
+
+  it("advance skips scenes the played character is not in; nothing ahead = final", () => {
+    expect(nextSceneIdAfter(entries, "s2", "side")).toBe("s4"); // s3 unfolds offstage
+    expect(nextSceneIdAfter(entries, "s3", "lead")).toBeNull(); // s4 excludes the lead → s3 is their finale
+    expect(nextSceneIdAfter(entries, "s1", null)).toBe("s2"); // not playing a cast member → plain order
+    expect(nextSceneIdAfter(entries, "missing", "side")).toBeNull();
   });
 });
 

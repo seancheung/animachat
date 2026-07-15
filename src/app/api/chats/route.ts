@@ -1,5 +1,6 @@
 import { bad, handler, ok } from "@/lib/api";
 import { substitutePlaceholders } from "@/lib/ai/placeholders";
+import { entranceSceneId } from "@/lib/stage";
 import {
   appendMessage,
   getCharacter,
@@ -101,6 +102,17 @@ export const POST = handler(async (req: Request) => {
       if (!scenes.some(({ scene }) => scene.id === b.sceneId))
         return bad("Starting scene must belong to the story");
       sceneId = b.sceneId;
+    }
+    // played cast member: play opens at their ENTRANCE — the chosen scene if they
+    // are in its cast, else their first authored scene, never earlier ground
+    // (immersion rule; no scene listing them = fail-soft, default start stands)
+    if (personaCharacterId) {
+      const entrance = entranceSceneId(
+        scenes.map(({ scene, cast }) => ({ id: scene.id, cast })),
+        personaCharacterId,
+        sceneId
+      );
+      if (entrance) sceneId = entrance;
     }
   }
 

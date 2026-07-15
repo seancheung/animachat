@@ -77,6 +77,44 @@ export function computeStage(
   return state;
 }
 
+/* ---------------- played-character immersion (story mode) ----------------
+ * A playthrough is the played character's story: it opens at their entrance and
+ * advances only through scenes that include them — everything else is offstage. */
+
+export interface SceneCastRef {
+  id: string;
+  cast: string[];
+}
+
+/** Where play opens for a played cast member: the chosen scene if they are in its
+ *  cast, else their first authored scene — never earlier ground. Null when no scene
+ *  includes them (caller keeps the default start, fail-soft). */
+export function entranceSceneId(
+  entries: SceneCastRef[],
+  playedId: string,
+  chosenId?: string | null
+): string | null {
+  const chosen = chosenId ? entries.find((e) => e.id === chosenId) : null;
+  if (chosen?.cast.includes(playedId)) return chosen.id;
+  return entries.find((e) => e.cast.includes(playedId))?.id ?? null;
+}
+
+/** The next scene after `currentId` — skipping, for a played cast member, scenes
+ *  they are not in (those unfold offstage). Null = nothing ahead: the current
+ *  scene is this playthrough's final one. */
+export function nextSceneIdAfter(
+  entries: SceneCastRef[],
+  currentId: string | null,
+  playedId?: string | null
+): string | null {
+  const idx = entries.findIndex((e) => e.id === currentId);
+  if (idx === -1) return null;
+  for (let i = idx + 1; i < entries.length; i++) {
+    if (!playedId || entries[i].cast.includes(playedId)) return entries[i].id;
+  }
+  return null;
+}
+
 export interface StageAssets {
   scene: Scene | null;
   location: Location | null;
