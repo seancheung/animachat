@@ -181,15 +181,20 @@ export default function ChatPage() {
   const openedRef = useRef(false);
   // leaving the page (or switching chats) cancels in-flight generation like a Stop press:
   // the server aborts with the dropped request instead of finishing a reply nobody awaits
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // a fork navigates chat→chat without unmounting — the new chat must not inherit the
+    // old one's error banner, draft text, or read-back scroll state
+    setError(null);
+    setInput("");
+    pinnedRef.current = true;
+    setPinned(true);
+    return () => {
       abortRef.current?.abort();
       draftAbortRef.current?.abort();
-      // a fork navigates chat→chat without unmounting — the next chat gets its own opener
+      // …and the next chat gets its own opener
       openedRef.current = false;
-    },
-    [id]
-  );
+    };
+  }, [id]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // typing SFX of whoever is speaking right now (per-character override, else the default blip)
