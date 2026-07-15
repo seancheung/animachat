@@ -1,17 +1,29 @@
-import { callLlm, estimateTokens, extractJson, resolveModel } from "./client";
+import { callLlm, estimateTokens, extractJson, resolveModel, type ResolvedModel } from "./client";
 import { activeContent, buildContext, speakerName, verbatimWindow, type ChatContext } from "./prompts";
 import {
   addFact,
   getCharacter,
   getCharRelationship,
   getRelationship,
+  listFacts,
   putCharRelationship,
   putRelationship,
   putSummary,
 } from "@/lib/store";
 import type { Message } from "@/lib/types";
 
-const inFlight = new Set<string>();
+const inFlight = new Map<string, Promise<void>>();
+
+/** The window boundary must match what chat prompts actually send, so it is
+ *  computed with the CHAT task's model — windowing with the memory model would
+ *  open a gap (or overlap) whenever the two models' budgets differ. */
+function windowModel(ctx: ChatContext, memoryModel: ResolvedModel): ResolvedModel {
+  try {
+    return resolveModel("chat", ctx.chat);
+  } catch {
+    return memoryModel;
+  }
+}
 
 interface MemoryOutput {
   summary?: string;
@@ -44,7 +56,7 @@ export function pendingMemoryTokens(chatId: string): number {
   } catch {
     return 0;
   }
-  const window = verbatimWindow(ctx, model);
+  const window = verbatimWindow(ctx, windowModel(ctx, model), { includeUnsummarized: false });
   const windowStart = window[0]?.position ?? Number.MAX_SAFE_INTEGER;
   return pendingChunk(ctx, windowStart).reduce((n, m) => n + estimateTokens(activeContent(m)), 0);
 }
@@ -53,96 +65,116 @@ export function pendingMemoryTokens(chatId: string): number {
  * Rolling summarization + fact extraction + affinity update.
  * Triggered in the background after responses; `force` is the synchronous safety valve.
  */
-export async function runMemoryPass(chatId: string, force = false): Promise<void> {
-  if (inFlight.has(chatId)) return;
-  inFlight.add(chatId);
-  try {
-    const ctx = buildContext(chatId);
-    const modelRef = resolveModel("memory", ctx.chat);
-    const window = verbatimWindow(ctx, modelRef);
-    const windowStart = window[0]?.position ?? Number.MAX_SAFE_INTEGER;
-    const chunk = pendingChunk(ctx, windowStart);
-    if (!chunk.length) return;
-    const chunkTokens = chunk.reduce((n, m) => n + estimateTokens(activeContent(m)), 0);
-    if (!force && chunkTokens < ctx.chunkThreshold) return;
+export function runMemoryPass(chatId: string, force = false): Promise<void> {
+  // one pass per chat at a time; a forced caller (the safety valve) joins the
+  // running pass instead of silently no-opping against the stale summary
+  const running = inFlight.get(chatId);
+  if (running) return force ? running : Promise.resolve();
+  const pass = doMemoryPass(chatId, force).finally(() => inFlight.delete(chatId));
+  inFlight.set(chatId, pass);
+  return pass;
+}
 
-    const characters = ctx.characters.map((c) => c.name).join(", ");
-    // playing as narrator there is no user character — relationship targets are
-    // characters only (persona-relationship writes are guarded off by ctx.persona below)
-    const userName = ctx.persona?.name ?? (ctx.chat.playAsNarrator ? "the narrator" : "the user");
-    const system =
-      `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
-      `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
-      `{"summary": "updated rolling summary, chronological, <= 400 words, keep every plot-critical fact",\n` +
-      ` "facts": [{"character": "name", "fact": "a durable fact this character learned/experienced, worth remembering across sessions"}],\n` +
-      ` "relationships": [{"character": "name", "towards": "who the feeling is about — '${userName}' or another character's name", "affinityDelta": -10..10, "note": "one-line current state of that relationship"}]}\n` +
-      `Characters: ${characters}. The user is ${userName}. Report a relationships entry only when it meaningfully shifted. ` +
-      `Extract at most 5 facts; only genuinely durable ones. Write the summary in ${ctx.language}.`;
-    const user =
-      `EXISTING SUMMARY:\n${ctx.summaryText || "(none yet)"}\n\nNEW MESSAGES TO FOLD IN:\n` +
-      chunkTranscript(ctx, chunk);
+async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
+  const ctx = buildContext(chatId);
+  const modelRef = resolveModel("memory", ctx.chat);
+  const window = verbatimWindow(ctx, windowModel(ctx, modelRef), { includeUnsummarized: false });
+  const windowStart = window[0]?.position ?? Number.MAX_SAFE_INTEGER;
+  const chunk = pendingChunk(ctx, windowStart);
+  if (!chunk.length) return;
+  const chunkTokens = chunk.reduce((n, m) => n + estimateTokens(activeContent(m)), 0);
+  if (!force && chunkTokens < ctx.chunkThreshold) return;
 
-    const raw = await callLlm({
-      modelRef,
-      system,
-      messages: [{ role: "user", content: user }],
-      maxTokens: 1500,
-      feature: "memory",
-      chatId,
-    });
-    const out = extractJson<MemoryOutput>(raw);
-    if (!out?.summary) return;
+  const characters = ctx.characters.map((c) => c.name).join(", ");
+  // playing as narrator there is no user character — relationship targets are
+  // characters only (persona-relationship writes are guarded off by ctx.persona below)
+  const userName = ctx.persona?.name ?? (ctx.chat.playAsNarrator ? "the narrator" : "the user");
+  const system =
+    `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
+    `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
+    `{"summary": "updated rolling summary, chronological, <= 400 words, keep every plot-critical fact",\n` +
+    ` "facts": [{"character": "name", "fact": "a durable fact this character learned/experienced, worth remembering across sessions"}],\n` +
+    ` "relationships": [{"character": "name", "towards": "who the feeling is about — '${userName}' or another character's name", "affinityDelta": -10..10, "note": "one-line current state of that relationship"}]}\n` +
+    `Characters: ${characters}. The user is ${userName}. Report a relationships entry only when it meaningfully shifted. ` +
+    `Extract at most 5 facts; only genuinely durable ones, never one already recorded. Write the summary in ${ctx.language}.`;
+  // show already-recorded facts so the model doesn't re-extract them — duplicates
+  // crowd genuinely distinct older facts out of the character prompts
+  const knownFacts = ctx.characters
+    .map((c) => {
+      const known = listFacts(c.id, 20).map((f) => f.content);
+      return known.length ? `${c.name}: ${known.join(" | ")}` : null;
+    })
+    .filter(Boolean)
+    .join("\n");
+  const user =
+    `EXISTING SUMMARY:\n${ctx.summaryText || "(none yet)"}\n\n` +
+    (knownFacts ? `FACTS ALREADY RECORDED (never repeat these):\n${knownFacts}\n\n` : "") +
+    `NEW MESSAGES TO FOLD IN:\n` +
+    chunkTranscript(ctx, chunk);
 
-    putSummary(chatId, out.summary, chunk[chunk.length - 1].position);
+  const raw = await callLlm({
+    modelRef,
+    system,
+    messages: [{ role: "user", content: user }],
+    maxTokens: 1500,
+    feature: "memory",
+    chatId,
+  });
+  const out = extractJson<MemoryOutput>(raw);
+  if (!out?.summary) return;
 
-    // facts & relationships live in the library (across chats) — playthrough snapshot
-    // characters that were since deleted from the library are skipped fail-soft
-    const inLibrary = (id: string) => !!getCharacter(id);
-    const byName = new Map(ctx.characters.map((c) => [c.name.toLowerCase(), c]));
-    if (ctx.playedCharacter) byName.set(ctx.playedCharacter.name.toLowerCase(), ctx.playedCharacter);
-    for (const f of out.facts ?? []) {
-      const c = f.character && byName.get(f.character.toLowerCase());
-      if (c && f.fact && inLibrary(c.id)) addFact(c.id, chatId, f.fact);
-    }
-    for (const r of out.relationships ?? []) {
-      const c = r.character && byName.get(r.character.toLowerCase());
-      if (!c || !c.trackRelationship || !inLibrary(c.id)) continue;
-      const towards = (r.towards ?? "").trim().toLowerCase();
-      const target = towards ? byName.get(towards) : undefined;
-      const playedTarget = target && target.id === ctx.playedCharacter?.id;
-      if (target && !playedTarget) {
-        // character → character (global switch + both sides' tracking must be on)
-        if (!ctx.settings.charRelationshipsEnabled) continue;
-        if (target.id === c.id || !target.trackRelationship || !inLibrary(target.id)) continue;
-        const cur = getCharRelationship(c.id, target.id);
+  putSummary(chatId, out.summary, chunk[chunk.length - 1].position);
+
+  // facts & relationships live in the library (across chats) — playthrough snapshot
+  // characters that were since deleted from the library are skipped fail-soft
+  const inLibrary = (id: string) => !!getCharacter(id);
+  const byName = new Map(ctx.characters.map((c) => [c.name.toLowerCase(), c]));
+  if (ctx.playedCharacter) byName.set(ctx.playedCharacter.name.toLowerCase(), ctx.playedCharacter);
+  for (const f of out.facts ?? []) {
+    const c = f.character && byName.get(f.character.toLowerCase());
+    if (c && f.fact && inLibrary(c.id)) addFact(c.id, chatId, f.fact);
+  }
+  for (const r of out.relationships ?? []) {
+    const c = r.character && byName.get(r.character.toLowerCase());
+    if (!c || !c.trackRelationship || !inLibrary(c.id)) continue;
+    const towards = (r.towards ?? "").trim().toLowerCase();
+    const target = towards ? byName.get(towards) : undefined;
+    const playedTarget = target && target.id === ctx.playedCharacter?.id;
+    if (target && !playedTarget) {
+      // character → character (global switch + both sides' tracking must be on)
+      if (!ctx.settings.charRelationshipsEnabled) continue;
+      if (target.id === c.id || !target.trackRelationship || !inLibrary(target.id)) continue;
+      const cur = getCharRelationship(c.id, target.id);
+      const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
+      putCharRelationship(c.id, target.id, affinity, r.note ?? cur?.notes ?? "");
+    } else if (
+      ctx.persona &&
+      ctx.settings.userRelationshipsEnabled &&
+      (playedTarget || !towards || towards === "user" || towards === ctx.persona.name.toLowerCase())
+    ) {
+      if (ctx.playedCharacter) {
+        // playing a cast member: the "user relationship" is character↔character
+        if (!inLibrary(ctx.playedCharacter.id)) continue;
+        const cur = getCharRelationship(c.id, ctx.playedCharacter.id);
         const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
-        putCharRelationship(c.id, target.id, affinity, r.note ?? cur?.notes ?? "");
-      } else if (
-        ctx.persona &&
-        ctx.settings.userRelationshipsEnabled &&
-        (playedTarget || !towards || towards === "user" || towards === ctx.persona.name.toLowerCase())
-      ) {
-        if (ctx.playedCharacter) {
-          // playing a cast member: the "user relationship" is character↔character
-          if (!inLibrary(ctx.playedCharacter.id)) continue;
-          const cur = getCharRelationship(c.id, ctx.playedCharacter.id);
-          const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
-          putCharRelationship(c.id, ctx.playedCharacter.id, affinity, r.note ?? cur?.notes ?? "");
-        } else {
-          const cur = getRelationship(c.id, ctx.persona.id);
-          const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
-          putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");
-        }
+        putCharRelationship(c.id, ctx.playedCharacter.id, affinity, r.note ?? cur?.notes ?? "");
+      } else {
+        const cur = getRelationship(c.id, ctx.persona.id);
+        const affinity = (cur?.affinity ?? 0) + (Number(r.affinityDelta) || 0);
+        putRelationship(c.id, ctx.persona.id, affinity, r.note ?? cur?.notes ?? "");
       }
     }
-  } finally {
-    inFlight.delete(chatId);
   }
 }
 
-/** Safety valve: catch up synchronously when un-summarized history has piled up too far. */
+/** Safety valve: catch up synchronously when un-summarized history exceeds what the
+ *  verbatim window's overflow allowance can carry (one chunk threshold — see
+ *  verbatimWindow). Joining a pass that was already running may have been a no-op,
+ *  so re-check once and force our own. */
 export async function ensureMemoryCaughtUp(chatId: string, chunkThreshold: number): Promise<void> {
-  if (pendingMemoryTokens(chatId) > chunkThreshold * 3) {
+  if (pendingMemoryTokens(chatId) <= chunkThreshold) return;
+  await runMemoryPass(chatId, true).catch(() => {});
+  if (pendingMemoryTokens(chatId) > chunkThreshold) {
     await runMemoryPass(chatId, true).catch(() => {});
   }
 }

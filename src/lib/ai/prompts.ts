@@ -203,15 +203,29 @@ function renderMessageLine(ctx: ChatContext, m: Message): string | null {
   return `${speakerName(ctx, m)}: ${content}`;
 }
 
-/** Select the recent messages that fit the verbatim window budget. */
-export function verbatimWindow(ctx: ChatContext, model: ResolvedModel): Message[] {
+/** Select the recent messages that fit the verbatim window budget.
+ *
+ *  Un-summarized overflow rides along raw (bounded by the chunk threshold): a
+ *  message that has scrolled past the budget but isn't covered by the rolling
+ *  summary yet would otherwise appear in NEITHER — invisible until the next
+ *  memory pass. The memory trigger passes `includeUnsummarized: false` — that
+ *  overflow is exactly what it measures and summarizes. */
+export function verbatimWindow(
+  ctx: ChatContext,
+  model: ResolvedModel,
+  opts?: { includeUnsummarized?: boolean }
+): Message[] {
   const budget = Math.max(1000, ctx.contextBudget(model) * ctx.verbatimShare);
+  const extra = opts?.includeUnsummarized === false ? 0 : ctx.chunkThreshold;
   const out: Message[] = [];
   let used = 0;
   for (let i = ctx.messages.length - 1; i >= 0; i--) {
     const m = ctx.messages[i];
     const cost = estimateTokens(activeContent(m)) + 8;
-    if (out.length > 0 && used + cost > budget) break;
+    if (out.length > 0 && used + cost > budget) {
+      if (m.position <= ctx.summaryCovered) break;
+      if (used + cost > budget + extra) break;
+    }
     out.unshift(m);
     used += cost;
   }
