@@ -69,6 +69,18 @@ const MODE_ICONS: Record<string, React.ReactNode> = {
   location: <MapPin size={14} />,
 };
 
+/** Chat-list timestamp: time for today, month+day this year, short date otherwise. */
+function fmtWhen(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (d.getFullYear() === now.getFullYear())
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, { dateStyle: "short" });
+}
+
+
 function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const { data: characters } = useSWR<any[]>("/api/characters", api.get);
@@ -494,29 +506,53 @@ export default function HomePage() {
               </EmptyState>
             )}
             {visible.map((c) => (
-              <div key={c.id} className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group" onClick={() => router.push(`/chat/${c.id}`)}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium truncate flex items-center gap-2">
-                    <span className="text-content-300">{MODE_ICONS[c.mode] ?? null}</span>
-                    {c.title}
-                    {c.mode === "story" && c.storyName && (
-                      <Badge variant="secondary" rounded>
-                        Playthrough — {c.storyName}
+              <div
+                key={c.id}
+                className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group flex items-center gap-3"
+                onClick={() => router.push(`/chat/${c.id}`)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium truncate">{c.title}</span>
+                    {c.ended && (
+                      <Badge size="sm" rounded className="shrink-0">
+                        The End
                       </Badge>
                     )}
-                    {c.ended && <Badge rounded>The End</Badge>}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {c.tags?.map((t: string) => <Badge key={t} variant="secondary" rounded>{t}</Badge>)}
-                    <span className="text-xs text-content-300">{c.messageCount} msgs</span>
-                    <span className="text-xs text-content-400">
-                      {new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs min-w-0">
+                    <span className="shrink-0 size-6 rounded-full bg-base-300 flex items-center justify-center text-content-300">
+                      {MODE_ICONS[c.mode] ?? null}
                     </span>
+                    <span className="min-w-0 truncate flex items-center gap-1 text-content-300">
+                      {c.characterNames.join(", ")}
+                      {c.narratorEnabled && <ScrollText size={11} className="shrink-0" />}
+                    </span>
+                    {c.tags?.map((t: string) => (
+                      <Badge key={t} variant="secondary" size="sm" rounded className="shrink-0">
+                        {t}
+                      </Badge>
+                    ))}
+                    {c.mode === "story" && c.storyName && (
+                      <Badge variant="secondary" size="sm" rounded className="shrink-0">
+                        {c.storyName}
+                      </Badge>
+                    )}
+                  </div>
+                  {c.lastMessage && (
+                    <div className="mt-0.5 text-xs text-content-400 truncate">{c.lastMessage}</div>
+                  )}
+                </div>
+                <div className="relative shrink-0 self-stretch min-w-16">
+                  <div className="h-full flex flex-col items-end justify-center transition-opacity group-hover:opacity-0">
+                    <span className="text-xs text-content-300">{fmtWhen(c.updatedAt)}</span>
+                    <span className="text-tiny text-content-400">{c.messageCount} msgs</span>
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-end gap-1 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">
                     <Button
                       variant="ghost"
                       size="sm"
                       shape="square"
-                      className="opacity-0 group-hover:opacity-100"
                       title="Export chat archive"
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -529,7 +565,6 @@ export default function HomePage() {
                       variant="ghost"
                       size="sm"
                       shape="square"
-                      className="opacity-0 group-hover:opacity-100"
                       title="Delete chat"
                       onClick={async (e) => {
                         e.stopPropagation();
@@ -542,11 +577,6 @@ export default function HomePage() {
                       <Trash2 />
                     </Button>
                   </div>
-                </div>
-                <div className="text-xs text-content-300 mt-1 truncate flex items-center gap-1">
-                  {c.characterNames.join(", ")}
-                  {c.narratorEnabled && <ScrollText size={11} />}
-                  {c.lastMessage && ` — ${c.lastMessage}`}
                 </div>
               </div>
             ))}
