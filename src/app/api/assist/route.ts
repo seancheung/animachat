@@ -209,10 +209,17 @@ export const POST = handler(async (req: Request) => {
   const encoder = new TextEncoder();
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
+  if (req.signal.aborted) abort.abort(); // listener-after-abort never fires
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      const send = (obj: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        } catch {
+          /* client disconnected — the abort signal ends the work; don't crash the stream */
+        }
+      };
       let visible = ""; // text already sent
       let buf = ""; // full accumulated text
       let inFields = false;
@@ -381,7 +388,11 @@ export const POST = handler(async (req: Request) => {
         if (!abort.signal.aborted)
           send({ type: "error", message: e instanceof Error ? e.message : String(e) });
       }
-      controller.close();
+      try {
+        controller.close();
+      } catch {
+        /* already closed */
+      }
     },
   });
 
