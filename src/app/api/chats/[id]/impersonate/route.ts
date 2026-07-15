@@ -1,6 +1,7 @@
 import { bad, handler, type IdParams } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { buildContext, buildImpersonateRequest } from "@/lib/ai/prompts";
+import { getChat } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
  *  Aborting keeps whatever was written — a half-draft is still a starting point. */
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
+  if (!getChat(id)) return bad("Chat not found", 404);
   const ctx = buildContext(id);
 
   let built;
@@ -22,6 +24,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const encoder = new TextEncoder();
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
+  if (req.signal.aborted) abort.abort(); // listener-after-abort never fires
 
   const stream = new ReadableStream({
     async start(controller) {

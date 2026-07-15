@@ -22,7 +22,7 @@ import {
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
-import { addVariant, appendMessage, getMessage, saveChat, setRawOutput } from "@/lib/store";
+import { addVariant, appendMessage, getChat, getMessage, saveChat, setRawOutput } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -216,6 +216,7 @@ function maybeGenerateTitle(chatId: string) {
 
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id: chatId } = await params;
+  if (!getChat(chatId)) return bad("Chat not found", 404);
   const body = (await req.json()) as GenerateBody;
 
   // append the user's message first so it's part of the context — converting exact
@@ -281,6 +282,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const encoder = new TextEncoder();
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
+  // a listener attached after the signal already fired never runs — without this a
+  // client gone before the stream starts would still generate the whole turn chain
+  if (req.signal.aborted) abort.abort();
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -301,7 +305,15 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         // fresh context per turn so later speakers see earlier replies —
         // and so the infinite-mentions toggle is re-read live from the chat
-        const turnCtx = regenTarget ? buildContext(chatId, regenMessages) : buildContext(chatId);
+        let turnCtx: ChatContext;
+        try {
+          turnCtx = regenTarget ? buildContext(chatId, regenMessages) : buildContext(chatId);
+        } catch (e) {
+          // e.g. the chat was deleted from another tab mid-chain — end the stream
+          // with an error event instead of crashing it
+          send({ type: "error", message: e instanceof Error ? e.message : String(e) });
+          break;
+        }
 
         const infinite = !!turnCtx.chat.overrides.infiniteMentions;
         // kill switch: flipping infinite off mid-chain stops after the reply that just finished
