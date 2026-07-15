@@ -51,6 +51,7 @@ export default function LibraryPage() {
   const [tab, setTab] = useState<TypeKey>("character");
   const [editing, setEditing] = useState<any | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"selected" | "all">("selected");
   const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
   const [exporting, setExporting] = useState(false);
   const [importPreview, setImportPreview] = useState<{ file: File; items: BundlePreviewItem[] } | null>(null);
@@ -133,6 +134,7 @@ export default function LibraryPage() {
             variant="secondary"
             onClick={() => {
               setExportSel([]);
+              setExportMode("selected");
               setExportOpen(true);
             }}
           >
@@ -213,20 +215,45 @@ export default function LibraryPage() {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title="Export library items"
-        hint="Check items across any types — everything is bundled into a single zip with its assets."
+        header={
+          <SegmentedControl
+            variant="secondary"
+            className="w-full"
+            items={[
+              { value: "selected", label: "Selected items" },
+              { value: "all", label: "Whole library" },
+            ]}
+            value={exportMode}
+            onChange={setExportMode}
+          />
+        }
+        hint={
+          exportMode === "all"
+            ? "Every item in the library — all types — is bundled into a single zip with its assets."
+            : "Check items across any types — everything is bundled into a single zip with its assets."
+        }
         selection={exportSel}
         onChange={setExportSel}
+        hidePicker={exportMode === "all"}
         footer={
           <>
             <Button variant="secondary" onClick={() => setExportOpen(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!exportSel.length || exporting}
+              disabled={exporting || (exportMode === "selected" && !exportSel.length)}
               onClick={async () => {
                 setExporting(true);
                 try {
-                  await exportItems(exportSel.map(({ type, id }) => ({ type, id })));
+                  let ids = exportSel.map(({ type, id }) => ({ type, id }));
+                  if (exportMode === "all") {
+                    const lists = await Promise.all(TYPES.map((t) => api.get(t.endpoint)));
+                    ids = TYPES.flatMap((t, i) =>
+                      (lists[i] as { id: string }[]).map((x) => ({ type: t.key, id: x.id }))
+                    );
+                    if (!ids.length) return void toast.error("The library is empty");
+                  }
+                  await exportItems(ids);
                   setExportOpen(false);
                 } finally {
                   setExporting(false);
@@ -236,7 +263,9 @@ export default function LibraryPage() {
               <Download />{" "}
               {exporting
                 ? "Exporting…"
-                : `Export ${exportSel.length || ""} item${exportSel.length === 1 ? "" : "s"}`}
+                : exportMode === "all"
+                  ? "Export whole library"
+                  : `Export ${exportSel.length || ""} item${exportSel.length === 1 ? "" : "s"}`}
             </Button>
           </>
         }

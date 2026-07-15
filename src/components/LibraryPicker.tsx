@@ -43,24 +43,30 @@ const MAX_MATCHES = 30;
  * Multi-select dialog over the whole library (all entity types): a search-as-you-type
  * combobox instead of a full listing, so any library size stays manageable. Picks apply
  * to `selection` immediately; `footer` replaces the default Done button when the caller
- * needs a confirm action (e.g. Export).
+ * needs a confirm action (e.g. Export). `header` renders above the hint (e.g. a mode
+ * switch); `hidePicker` drops the search & selection UI for modes where picking
+ * individual items doesn't apply.
  */
 export function LibraryPicker({
   open,
   onClose,
   title,
+  header,
   hint,
   selection,
   onChange,
   footer,
+  hidePicker,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  header?: ReactNode;
   hint?: string;
   selection: LibraryRef[];
   onChange: (selection: LibraryRef[]) => void;
   footer?: ReactNode;
+  hidePicker?: boolean;
 }) {
   const [query, setQuery] = useState("");
   // one fetch across all six lists when the dialog opens (SWR-cached between opens)
@@ -89,39 +95,42 @@ export function LibraryPicker({
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <div className="space-y-3">
+        {header}
         {hint && <div className="text-xs text-content-400">{hint}</div>}
-        <MultiCombobox
-          className="w-full"
-          placeholder="Search the library…"
-          hideTags
-          value={selection.map(keyOf)}
-          options={options}
-          loading={open && !all}
-          onSearch={setQuery}
-          onChange={(keys) =>
-            onChange(
-              keys
-                .map(
-                  (k) =>
-                    selection.find((r) => keyOf(r) === k) ??
-                    (all ?? []).find((i) => keyOf(i) === k)
-                )
-                .filter((r): r is LibraryRef => !!r)
-            )
-          }
-          renderOption={(opt) => {
-            const [type] = String(opt.value).split(":");
-            const Icon = libraryTypeIcon(type);
-            return (
-              <span className="flex flex-1 min-w-0 items-center gap-1.5">
-                <Icon size={12} className="shrink-0 text-content-400" />
-                <span className="truncate">{opt.label}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-content-400">{type}</span>
-              </span>
-            );
-          }}
-        />
-        {selection.length > 0 && (
+        {!hidePicker && (
+          <MultiCombobox
+            className="w-full"
+            placeholder="Search the library…"
+            hideTags
+            value={selection.map(keyOf)}
+            options={options}
+            loading={open && !all}
+            onSearch={setQuery}
+            onChange={(keys) =>
+              onChange(
+                keys
+                  .map(
+                    (k) =>
+                      selection.find((r) => keyOf(r) === k) ??
+                      (all ?? []).find((i) => keyOf(i) === k)
+                  )
+                  .filter((r): r is LibraryRef => !!r)
+              )
+            }
+            renderOption={(opt) => {
+              const [type] = String(opt.value).split(":");
+              const Icon = libraryTypeIcon(type);
+              return (
+                <span className="flex flex-1 min-w-0 items-center gap-1.5">
+                  <Icon size={12} className="shrink-0 text-content-400" />
+                  <span className="truncate">{opt.label}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-content-400">{type}</span>
+                </span>
+              );
+            }}
+          />
+        )}
+        {!hidePicker && selection.length > 0 && (
           <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
             {selection.map((r) => {
               const Icon = libraryTypeIcon(r.type);

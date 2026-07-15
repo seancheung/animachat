@@ -393,7 +393,7 @@ Parser rules:
 
 ## Import / export
 
-- Character, location, scene, story, and lorebook can be exported; multiple items can be combined into a single **bundle**.
+- Character, location, scene, story, and lorebook can be exported; multiple items can be combined into a single **bundle**. The library's Export dialog has two modes (segmented control): hand-picking items, or exporting the **whole library** — every item of every type in one bundle (the item picker is hidden in that mode).
 - Bundle = zip with a JSON manifest + all referenced assets (avatars, sprites, artwork, BGM).
 - A story export pulls in its cast, scenes (with per-scene casts), the scenes' locations, and its lorebooks.
 - Import opens a **selection dialog** listing the bundle's contents (everything checked by default): checking an item auto-checks and locks its in-bundle dependencies (story → cast/scenes/lorebooks, scene → location); the server enforces the same dependency closure. Duplicate handling as before (references remapped, names deduped); only assets the imported items reference are written.
