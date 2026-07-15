@@ -88,8 +88,9 @@ export class TagStreamParser {
       const close = b.indexOf("</emo>");
       if (close !== -1) {
         const name = b.slice(5, close).trim().toLowerCase();
+        if (!name) return "not-a-tag"; // empty body: leave buf untouched so it flushes as text
         this.buf = b.slice(close + 6);
-        return name ? { type: "emotion", name } : "not-a-tag";
+        return { type: "emotion", name };
       }
       return b.length > MAX_EMO || final ? "not-a-tag" : "hold";
     }
@@ -98,7 +99,6 @@ export class TagStreamParser {
       const close = b.indexOf("</options>");
       if (close !== -1) {
         const inner = b.slice(9, close);
-        this.buf = b.slice(close + 10);
         const options = [...inner.matchAll(/<o>([\s\S]*?)<\/o>/g)]
           .map((m) => m[1].trim())
           .filter(Boolean);
@@ -109,7 +109,9 @@ export class TagStreamParser {
             if (t) options.push(t);
           }
         }
-        return options.length ? { type: "options", options: options.slice(0, 4) } : "not-a-tag";
+        if (!options.length) return "not-a-tag"; // empty block: leave buf untouched so it flushes as text
+        this.buf = b.slice(close + 10);
+        return { type: "options", options: options.slice(0, 4) };
       }
       return b.length > MAX_OPTIONS || final ? "not-a-tag" : "hold";
     }
@@ -121,8 +123,9 @@ export class TagStreamParser {
         const close = b.indexOf(closeTag);
         if (close !== -1) {
           const name = b.slice(open.length, close).trim();
+          if (!name) return "not-a-tag"; // empty body: leave buf untouched so it flushes as text
           this.buf = b.slice(close + closeTag.length);
-          return name ? { type: tag, name } : "not-a-tag";
+          return { type: tag, name };
         }
         return b.length > MAX_NAME || final ? "not-a-tag" : "hold";
       }

@@ -111,6 +111,20 @@ describe("TagStreamParser", () => {
     expect(textOf(events)).toBe("<reveal>Kael's debt");
   });
 
+  it("empty-bodied tags flush as literal text without corrupting what follows", () => {
+    // regression: the parser used to consume the tag before rejecting it,
+    // eating the first character of the following prose
+    expect(textOf(run(["<emo></emo>Hello there"]))).toBe("<emo></emo>Hello there");
+    expect(textOf(run(["Door opens. <enter> </enter>Kael nods."]))).toBe(
+      "Door opens. <enter> </enter>Kael nods."
+    );
+    expect(textOf(run(["Prose.<options>\n\n</options>After"]))).toBe("Prose.<options>\n\n</options>After");
+    for (const size of [1, 3, 7]) {
+      const full = "<emo></emo>Hello";
+      expect(textOf(run(full.match(new RegExp(`.{1,${size}}`, "gs"))!))).toBe(full);
+    }
+  });
+
   it("parses the-end with and without self-closing slash", () => {
     expect(run(["fin <the-end/>"]).some((e) => e.type === "theEnd")).toBe(true);
     expect(run(["fin <the-end >"]).some((e) => e.type === "theEnd")).toBe(true);
