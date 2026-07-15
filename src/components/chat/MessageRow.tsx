@@ -217,6 +217,7 @@ export function MessageRow({
             size="sm"
             shape="square"
             title="Edit in place"
+            disabled={busy}
             onClick={() => {
               setDraft(v.content);
               setDraftEmotion(v.emotion ?? "neutral");
