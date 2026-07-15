@@ -145,7 +145,10 @@ async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
  * nicknames) → the orchestrator resolves them, each replying in turn.
  */
 async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speaker[]> {
-  if (body.mode === "narrator") return [{ role: "narrator", character: null }];
+  if (body.mode === "narrator") {
+    if (ctx.chat.playAsNarrator) throw new Error("You are the narrator in this chat");
+    return [{ role: "narrator", character: null }];
+  }
   if (body.mode === "character" && body.characterId) {
     const c = ctx.present.find((x) => x.id === body.characterId);
     if (!c) throw new Error("Character not on stage in this chat");
@@ -221,7 +224,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   if (body.userText?.trim()) {
     const pre = buildContext(chatId);
     body.userText = tagMentions(body.userText.trim(), pre.present.map((c) => c.name));
-    appendMessage({ chatId, role: "user", content: body.userText });
+    // playing as narrator: the user's messages ARE narrator messages — narration, not
+    // a persona's dialogue (casual/immersive only, so no staging tags to parse)
+    appendMessage({ chatId, role: pre.chat.playAsNarrator ? "narrator" : "user", content: body.userText });
   }
 
   let ctx = buildContext(chatId);
@@ -233,6 +238,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
     if (!regenTarget || regenTarget.chatId !== chatId) return bad("Message to regenerate not found");
     if (regenTarget.role !== "character" && regenTarget.role !== "narrator")
       return bad("Only AI messages can be regenerated");
+    // when the user plays the narrator, narrator messages are human-written — edit, don't regenerate
+    if (regenTarget.role === "narrator" && ctx.chat.playAsNarrator)
+      return bad("You are the narrator in this chat — narrator messages are yours to edit, not regenerate");
     // alternatives live on the tail only — appendMessage freezes a message the moment a
     // follow-up lands, so regenerating anything older would fight the freeze
     const lastLive = [...ctx.messages].reverse().find((m) => m.role !== "marker");

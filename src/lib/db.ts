@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS chats (
   language TEXT NOT NULL DEFAULT '',
   pov TEXT NOT NULL DEFAULT '',
   narrator_enabled INTEGER NOT NULL DEFAULT 0,
+  play_as_narrator INTEGER NOT NULL DEFAULT 0,
   overrides TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

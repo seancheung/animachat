@@ -67,7 +67,9 @@ export async function runMemoryPass(chatId: string, force = false): Promise<void
     if (!force && chunkTokens < ctx.chunkThreshold) return;
 
     const characters = ctx.characters.map((c) => c.name).join(", ");
-    const userName = ctx.persona?.name ?? "the user";
+    // playing as narrator there is no user character — relationship targets are
+    // characters only (persona-relationship writes are guarded off by ctx.persona below)
+    const userName = ctx.persona?.name ?? (ctx.chat.playAsNarrator ? "the narrator" : "the user");
     const system =
       `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
       `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +

@@ -96,6 +96,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     locationId: null,
     lorebookIds: [],
     narratorEnabled: false,
+    playAsNarrator: false,
     greetings: false,
     modelId: null,
     language: "",
@@ -188,14 +189,15 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
   const settingOption = typedOption({ scene: <Clapperboard size={13} />, location: <MapPin size={13} /> });
   const playAsOption = typedOption({ char: <UserRound size={13} />, persona: <VenetianMask size={13} /> });
 
-  const narrator = form.mode === "story" ? true : form.narratorEnabled;
+  const narrator = form.mode === "story" ? true : form.playAsNarrator ? false : form.narratorEnabled;
   const modeValid =
     form.mode === "story"
       ? !!form.storyId
       : (form.mode === "casual" || form.sceneId || form.locationId) &&
         (form.characterIds.length > 0 || narrator);
   // greetings fit exactly one shape: a casual 1:1 with the narrator off
-  const greetingsAvailable = form.mode === "casual" && form.characterIds.length === 1 && !narrator;
+  const greetingsAvailable =
+    form.mode === "casual" && form.characterIds.length === 1 && !narrator && !form.playAsNarrator;
 
   return (
     <Modal open={open} onClose={onClose} title="New chat" wide>
@@ -397,6 +399,22 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             </Field>
           )}
           {form.mode !== "story" && (
+            <Field label="Play as narrator" hint="you write the narration; characters respond — replaces the AI narrator and your persona">
+              <Switch
+                className="h-8"
+                value={form.playAsNarrator}
+                onChange={(v) =>
+                  setForm({
+                    ...form,
+                    playAsNarrator: v,
+                    ...(v ? { personaId: null, narratorEnabled: false, greetings: false } : {}),
+                  })
+                }
+                label={form.playAsNarrator ? "You are the narrator" : "Off"}
+              />
+            </Field>
+          )}
+          {form.mode !== "story" && !form.playAsNarrator && (
             <Field label="Your persona">
               <Combobox
                 className="w-full"
@@ -432,15 +450,21 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             />
           </Field>
           <Field label="POV override">
-            <Select
-              className="w-full"
-              value={form.pov || null}
-              onChange={(v) => setForm({ ...form, pov: v })}
-              options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
-              placeholder="(global default)"
-              clearable
-              onClear={() => setForm({ ...form, pov: "" })}
-            />
+            {form.playAsNarrator ? (
+              <div className="h-8 flex items-center text-sm text-content-300">
+                Third person — narration has no &quot;you&quot;
+              </div>
+            ) : (
+              <Select
+                className="w-full"
+                value={form.pov || null}
+                onChange={(v) => setForm({ ...form, pov: v })}
+                options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+                placeholder="(global default)"
+                clearable
+                onClear={() => setForm({ ...form, pov: "" })}
+              />
+            )}
           </Field>
           <Field label="Chat layout" hint="presentation only — switchable anytime in chat settings">
             <SegmentedControl
@@ -456,11 +480,21 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           </Field>
           <Field
             label="Narrator"
-            hint={form.mode === "story" ? "always on — the narrator directs playthroughs" : "narration, suggested actions — speaks first"}
+            hint={
+              form.mode === "story"
+                ? "always on — the narrator directs playthroughs"
+                : form.playAsNarrator
+                  ? "that's you — the AI narrator is off"
+                  : "narration, suggested actions — speaks first"
+            }
           >
             {form.mode === "story" ? (
               <div className="h-8 flex items-center text-sm text-content-300">
                 <ScrollText size={14} className="mr-1.5" /> Enabled
+              </div>
+            ) : form.playAsNarrator ? (
+              <div className="h-8 flex items-center text-sm text-content-300">
+                <ScrollText size={14} className="mr-1.5" /> You
               </div>
             ) : (
               <Switch
@@ -512,6 +546,8 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               const chat = await api.post("/api/chats", {
                 ...form,
                 narratorEnabled: narrator,
+                // narration has no "you" — narrator-play pins the third-person convention
+                pov: form.playAsNarrator ? "third" : form.pov,
                 greetings: greetingsAvailable && form.greetings,
                 overrides: form.layout === "dialogue" ? { layout: "dialogue" } : {},
               });

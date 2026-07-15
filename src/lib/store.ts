@@ -655,6 +655,7 @@ const chatFromRow = (r: Row): Chat => ({
   language: r.language,
   pov: r.pov,
   narratorEnabled: !!r.narrator_enabled,
+  playAsNarrator: !!r.play_as_narrator,
   overrides: J.parse(r.overrides, {}),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -691,6 +692,7 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
     language: "",
     pov: "" as const,
     narratorEnabled: false,
+    playAsNarrator: false,
     overrides: {},
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
@@ -699,12 +701,12 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
   });
   getDb()
     .prepare(
-      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,overrides,created_at,updated_at)
-       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@personaChar,@snapshot,@names,@model,@charModels,@language,@pov,@narrator,@overrides,@created,@updated)
+      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,play_as_narrator,overrides,created_at,updated_at)
+       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@personaChar,@snapshot,@names,@model,@charModels,@language,@pov,@narrator,@playNarrator,@overrides,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET title=@title, mode=@mode, folder=@folder, tags=@tags, story_id=@story, scene_id=@scene, location_id=@loc,
          lorebook_ids=@lore, character_ids=@chars, persona_id=@persona, persona_character_id=@personaChar, story_snapshot=@snapshot,
          name_snapshots=@names, model_id=@model, char_models=@charModels,
-         language=@language, pov=@pov, narrator_enabled=@narrator, overrides=@overrides, updated_at=@updated`
+         language=@language, pov=@pov, narrator_enabled=@narrator, play_as_narrator=@playNarrator, overrides=@overrides, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -726,6 +728,7 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
       language: m.language,
       pov: m.pov,
       narrator: m.narratorEnabled ? 1 : 0,
+      playNarrator: m.playAsNarrator ? 1 : 0,
       overrides: J.str(m.overrides),
       created: m.createdAt,
       updated: m.updatedAt,

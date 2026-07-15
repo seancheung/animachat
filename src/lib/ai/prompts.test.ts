@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCharacterRequest,
   buildDirectorRequest,
+  buildImpersonateRequest,
   buildNarratorRequest,
   computeStage,
   resolveStageAssets,
@@ -65,6 +66,7 @@ const chat: Chat = {
   language: "",
   pov: "",
   narratorEnabled: false,
+  playAsNarrator: false,
   overrides: {},
   createdAt: 0,
   updatedAt: 0,
@@ -581,5 +583,29 @@ describe("buildCharacterRequest", () => {
     const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira]);
     const req = buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).toContain("private background knowledge");
+  });
+});
+
+describe("playing as narrator (the user is the narrator)", () => {
+  const mira = makeCharacter("c1", "Mira");
+  const gmCtx = (): ChatContext => ({
+    ...makeCtx(makeMessages([{ role: "narrator" }, { role: "character", characterId: "c1" }]), [mira]),
+    chat: { ...chat, playAsNarrator: true, narratorEnabled: false },
+  });
+
+  it("frames the user as the narrator and pins third person in character prompts", () => {
+    const req = buildCharacterRequest(gmCtx(), mira, modelRef);
+    expect(req.system).toContain("THE USER IS THE NARRATOR");
+    expect(req.system).toContain("third person");
+    // the persona-mode user-format rule is replaced, not merely appended to
+    expect(req.system).not.toContain("their unmarked text is usually speech");
+  });
+
+  it("impersonate drafts narration, with narrator messages as the user's own side", () => {
+    const req = buildImpersonateRequest(gmCtx(), modelRef);
+    expect(req.system).toContain("NARRATION");
+    expect(req.system).toContain("Never write the characters' dialogue");
+    // the narrator-role message is the user's own → assistant side of the history
+    expect(req.messages.some((m) => m.role === "assistant" && m.content.includes("message 0"))).toBe(true);
   });
 });

@@ -31,6 +31,7 @@ const chat: Chat = {
   language: "",
   pov: "",
   narratorEnabled: true,
+  playAsNarrator: false,
   overrides: {},
   createdAt: 0,
   updatedAt: 0,

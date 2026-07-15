@@ -71,11 +71,13 @@ const MIN_ECHO_MS = 700;
 function ImpersonateButton({
   drafting,
   disabled,
+  title = "AI drafts your reply",
   onClick,
   onStop,
 }: {
   drafting: boolean;
   disabled: boolean;
+  title?: string;
   onClick: () => void;
   onStop: () => void;
 }) {
@@ -84,7 +86,7 @@ function ImpersonateButton({
       <Square />
     </Button>
   ) : (
-    <Button variant="ghost" size="sm" shape="square" disabled={disabled} title="AI drafts your reply" onClick={onClick}>
+    <Button variant="ghost" size="sm" shape="square" disabled={disabled} title={title} onClick={onClick}>
       <Wand2 />
     </Button>
   );
@@ -198,7 +200,9 @@ export default function ChatPage() {
   const layout: ChatLayout = chat?.overrides?.layout === "dialogue" ? "dialogue" : "panel";
   const characters: Character[] = useMemo(() => data?.characters ?? [], [data]);
   const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
-  const personaName = data?.persona?.name ?? "You";
+  // playing as narrator: the user's lines are narration — they speak as "Narrator"
+  const playAsNarrator = !!chat?.playAsNarrator;
+  const personaName = playAsNarrator ? "Narrator" : data?.persona?.name ?? "You";
   /** a turn is being generated (drives the Stop button) */
   const busy = generating || !!streaming || !!pendingUser;
   /** …or the AI is writing into the input: either way the user can't act */
@@ -639,9 +643,13 @@ export default function ChatPage() {
         mentionNames={stageCharacters.length > 1 ? stageCharacters.map((c) => c.name) : []}
         textareaRef={inputRef}
         placeholder={
-          characters.length > 1
-            ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
-            : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
+          playAsNarrator
+            ? characters.length > 1
+              ? "Narrate — describe events, the scene, the world… (@ to address a character)"
+              : "Narrate — describe events, the scene, the world…"
+            : characters.length > 1
+              ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
+              : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
         }
         value={input}
         disabled={locked}
@@ -661,6 +669,7 @@ export default function ChatPage() {
         <ImpersonateButton
           drafting={drafting}
           disabled={locked}
+          title={playAsNarrator ? "AI drafts narration" : "AI drafts your reply"}
           onClick={impersonate}
           onStop={() => draftAbortRef.current?.abort()}
         />
@@ -769,6 +778,7 @@ export default function ChatPage() {
             characters={characters}
             nameSnapshots={chat.nameSnapshots}
             personaName={personaName}
+            humanNarrator={playAsNarrator}
             isLast={m.id === lastNonMarker?.id}
             busy={busy}
             streaming={streaming?.forMessageId === m.id ? { text: streaming.text, emotion: streaming.emotion } : null}
@@ -794,11 +804,16 @@ export default function ChatPage() {
           />
         ))}
         {pendingUser && (
-          <div className="flex flex-row-reverse gap-3 fade-in opacity-70">
+          <div className={cn("flex gap-3 fade-in opacity-70", !playAsNarrator && "flex-row-reverse")}>
             <div className="chip-initial w-9 h-9 rounded-full shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1 font-semibold">
-              {personaName.slice(0, 1).toUpperCase()}
+              {playAsNarrator ? <ScrollText size={15} /> : personaName.slice(0, 1).toUpperCase()}
             </div>
-            <div className="max-w-[78%] rounded-lg px-3.5 py-2.5 bg-primary-500/15 text-[0.925rem]">
+            <div
+              className={cn(
+                "max-w-[78%] rounded-lg px-3.5 py-2.5 text-[0.925rem]",
+                playAsNarrator ? "border border-dashed border-base-400 italic" : "bg-primary-500/15"
+              )}
+            >
               <MessageText text={pendingUser} />
             </div>
           </div>
@@ -1163,9 +1178,13 @@ function DialogueLayout({
               textareaRef={inputRef}
               textareaClassName="h-10"
               placeholder={
-                mentionNames?.length
-                  ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
-                  : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
+                data.chat.playAsNarrator
+                  ? mentionNames?.length
+                    ? "Narrate — describe events, the scene, the world… (@ to address a character)"
+                    : "Narrate — describe events, the scene, the world…"
+                  : mentionNames?.length
+                    ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
+                    : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
               }
               value={input}
               disabled={busy}
@@ -1180,6 +1199,7 @@ function DialogueLayout({
               <ImpersonateButton
                 drafting={drafting}
                 disabled={busy}
+                title={data.chat.playAsNarrator ? "AI drafts narration" : "AI drafts your reply"}
                 onClick={impersonate}
                 onStop={stopDrafting}
               />
@@ -1438,7 +1458,8 @@ function ChatDrawer({
       </div>
       <Field label="Narrator" hint="fixed at creation">
         <div className="text-sm text-content-200 h-8 flex items-center gap-1.5">
-          <ScrollText size={14} /> {chat.narratorEnabled ? "Enabled" : "Disabled"}
+          <ScrollText size={14} />{" "}
+          {chat.playAsNarrator ? "You — you write the narration" : chat.narratorEnabled ? "Enabled" : "Disabled"}
         </div>
       </Field>
       {data.characters.length > 1 && (

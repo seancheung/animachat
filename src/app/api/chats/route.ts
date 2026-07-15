@@ -52,6 +52,13 @@ export const POST = handler(async (req: Request) => {
   let narratorEnabled = !!b.narratorEnabled;
   let storySnapshot: StorySnapshot | null = null;
   let defaultTitle = "New chat";
+  // casual/immersive only: the user takes the narrator's seat — no AI narrator, no persona
+  const playAsNarrator = mode !== "story" && !!b.playAsNarrator;
+  if (playAsNarrator) {
+    if (!characterIds.length) return bad("Playing as the narrator needs at least one character to narrate to");
+    narratorEnabled = false;
+    personaId = null;
+  }
 
   if (mode === "casual") {
     // characters optional when the narrator carries the chat (solo / text-adventure)
@@ -168,6 +175,7 @@ export const POST = handler(async (req: Request) => {
     nameSnapshots,
     lorebookIds,
     narratorEnabled,
+    playAsNarrator,
     language: b.language ?? "",
     pov: b.pov ?? "",
     modelId: b.modelId ?? null,
@@ -178,8 +186,9 @@ export const POST = handler(async (req: Request) => {
   });
 
   // greeting: opt-in, and only for the one shape it suits — a casual 1:1 without narrator
-  // (everywhere else the narrator opens the chat, triggered by the client)
-  if (mode === "casual" && !narratorEnabled && characterIds.length === 1 && b.greetings === true) {
+  // (everywhere else the narrator opens the chat, triggered by the client — and when the
+  // USER is the narrator, the opening move is theirs)
+  if (mode === "casual" && !narratorEnabled && !playAsNarrator && characterIds.length === 1 && b.greetings === true) {
     const c = getCharacter(characterIds[0]);
     if (c?.greeting) {
       const persona = personaId ? getPersona(personaId) : null;

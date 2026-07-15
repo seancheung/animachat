@@ -283,6 +283,9 @@ export interface Chat {
   language: string;
   pov: Pov | "";
   narratorEnabled: boolean;
+  /** casual/immersive: the USER is the narrator — their messages are narrator-role
+   *  narration, the AI narrator is off (narratorEnabled forced false), no persona */
+  playAsNarrator: boolean;
   overrides: ChatOverrides;
   createdAt: number;
   updatedAt: number;

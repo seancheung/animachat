@@ -40,6 +40,7 @@ export function MessageRow({
   characters,
   nameSnapshots,
   personaName,
+  humanNarrator,
   isLast,
   busy,
   streaming,
@@ -57,6 +58,8 @@ export function MessageRow({
   /** characterId -> name at chat creation; display fallback for deleted characters */
   nameSnapshots?: Record<string, string>;
   personaName: string;
+  /** the USER plays the narrator — narrator messages are theirs (editable, never regenerable) */
+  humanNarrator?: boolean;
   isLast: boolean;
   busy: boolean;
   /** a regeneration of THIS message is streaming — reveal it in place of the current variant */
@@ -222,7 +225,7 @@ export function MessageRow({
           >
             <Pencil />
           </Button>
-          {isLast && (message.role === "character" || message.role === "narrator") && (
+          {isLast && (message.role === "character" || (message.role === "narrator" && !humanNarrator)) && (
             <Button variant="ghost" size="sm" shape="square" title="Regenerate (adds a swipe)" disabled={busy} onClick={onRegen}><RefreshCw /></Button>
           )}
           <Button variant="ghost" size="sm" shape="square" title="Fork a new chat from here" disabled={busy} onClick={onFork}><GitFork /></Button>

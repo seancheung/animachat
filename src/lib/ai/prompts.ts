@@ -308,6 +308,16 @@ function personaBlock(ctx: ChatContext): string {
 }
 
 function formatRules(ctx: ChatContext, selfName: string | null): string {
+  // the user as narrator: their lines are narration, there is no user character in the
+  // scene, and the POV setting is moot — everything runs in plain third person
+  if (ctx.chat.playAsNarrator) {
+    return [
+      `Write in ${ctx.language}.`,
+      `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
+      `The user is the NARRATOR: everything they write is narration — events, descriptions, the world's doings — never a participant's dialogue.`,
+      `Everyone writes in third person${selfName ? `, so write ${selfName}'s actions and dialogue by name` : ""}. There is no user character in the scene.`,
+    ].join("\n");
+  }
   return [
     `Write in ${ctx.language}.`,
     `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
@@ -437,10 +447,13 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
-      `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write ${personaName}'s actions, dialogue or decisions, nor what happens to them.\n` +
-      (ctx.chat.narratorEnabled
-        ? `Don't advance events beyond ${character.name}'s own doing — plot developments, outside events and their consequences belong to the narrator. End your reply where ${personaName} can react.\n`
-        : `End your reply where ${personaName} can react — don't resolve a whole situation in one message.\n`) +
+      (ctx.chat.playAsNarrator
+        ? `THE USER IS THE NARRATOR of this roleplay: their messages are narration directing the scene — treat what they establish as true and react to it as ${character.name}.\n` +
+          `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write narration or another character's words: plot developments, outside events and their consequences belong to the narrator. End your reply where the narration can pick the scene back up.\n`
+        : `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write ${personaName}'s actions, dialogue or decisions, nor what happens to them.\n` +
+          (ctx.chat.narratorEnabled
+            ? `Don't advance events beyond ${character.name}'s own doing — plot developments, outside events and their consequences belong to the narrator. End your reply where ${personaName} can react.\n`
+            : `End your reply where ${personaName} can react — don't resolve a whole situation in one message.\n`)) +
       `Your character sheet is private background knowledge, not content: never quote, paraphrase or re-announce your own traits, backstory or appearance — reveal them through how you act and speak, and only when the scene calls for them. Don't reuse distinctive phrases from your earlier messages.\n` +
       (others.length
         ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Name</mention> (exact name) in your reply — they will respond next. Do it only when the scene calls for it; a plain name without the tag does not pass the turn.\n`
@@ -702,13 +715,16 @@ export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel):
     worldBlock(ctx),
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     `RULES:\n${formatRules(ctx, null)}\n` +
-      `Write 1-3 sentences as ${ctx.persona?.name ?? "the user"} — their voice, their perspective. Plain prose only: no emotion tags, no options, no name prefix.`,
+      (ctx.chat.playAsNarrator
+        ? `Write 1-3 sentences of NARRATION on the user's behalf — the world's voice: scene movement, outside events, sensory detail. Never write the characters' dialogue. Plain prose only: no emotion tags, no options, no name prefix.`
+        : `Write 1-3 sentences as ${ctx.persona?.name ?? "the user"} — their voice, their perspective. Plain prose only: no emotion tags, no options, no name prefix.`),
   ]
     .filter(Boolean)
     .join("\n\n");
   return {
     system,
-    messages: historyAsMessages(ctx, window, (m) => m.role === "user", false),
+    // as narrator, the user's own past messages are the narrator-role ones (no AI narrator exists)
+    messages: historyAsMessages(ctx, window, (m) => m.role === (ctx.chat.playAsNarrator ? "narrator" : "user"), false),
   };
 }
 
