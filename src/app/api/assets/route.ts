@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { bad, handler, ok } from "@/lib/api";
+import { bad, handler, ok, tooLarge } from "@/lib/api";
 import { ASSETS_DIR } from "@/lib/db";
 import { registerAsset } from "@/lib/store";
 
@@ -20,6 +20,7 @@ export const GET = handler(() => {
 });
 
 export const POST = handler(async (req: Request) => {
+  if (tooLarge(req, 52 * 1024 * 1024)) return bad("file too large (max 50MB)", 413);
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return bad("file field is required");

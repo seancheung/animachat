@@ -1,7 +1,9 @@
-import { bad, handler, ok } from "@/lib/api";
+import { bad, handler, ok, tooLarge } from "@/lib/api";
 import { importBundle, previewBundle } from "@/lib/bundle";
 
 export const POST = handler(async (req: Request) => {
+  // bundles legitimately carry a whole library of art/BGM — the cap only bounds memory
+  if (tooLarge(req, 512 * 1024 * 1024)) return bad("bundle too large (max 512MB)", 413);
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return bad("file field is required");

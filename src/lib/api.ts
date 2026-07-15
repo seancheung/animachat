@@ -42,6 +42,13 @@ export function pageOpts(req: Request): PageOpts {
   };
 }
 
+/** Reject an oversized upload before buffering it all in memory. Content-Length is
+ *  client-set, so size checks after buffering still apply — this only stops a
+ *  cooperative client from ballooning the process. */
+export function tooLarge(req: Request, maxBytes: number): boolean {
+  return Number(req.headers.get("content-length") ?? 0) > maxBytes;
+}
+
 /** Coerce a request-body price (USD per 1M tokens) — empty/invalid/negative → null (unpriced). */
 export function price(v: unknown): number | null {
   const n = Number(v);
