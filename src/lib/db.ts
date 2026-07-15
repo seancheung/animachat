@@ -221,11 +221,5 @@ export function getDb(): Database.Database {
   return globalThis.__animachatDb;
 }
 
-/** Close and forget the connection (used by backup restore). */
-export function closeDb() {
-  globalThis.__animachatDb?.close();
-  globalThis.__animachatDb = undefined;
-}
-
 export const now = () => Date.now();
 export const uid = () => crypto.randomUUID();

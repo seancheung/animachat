@@ -321,7 +321,6 @@ export default function SettingsPage() {
   const { data: settings, mutate: mutateSettings } = useSWR<Settings>("/api/settings", api.get);
   const { data: storage, mutate: mutateStorage } = useSWR<{ count: number; bytes: number }>("/api/assets", api.get);
   const [addingProvider, setAddingProvider] = useState<any | null>(null);
-  const restoreRef = useRef<HTMLInputElement>(null);
   const importSettingsRef = useRef<HTMLInputElement>(null);
 
   async function patchSettings(patch: Partial<Settings>) {
@@ -503,7 +502,7 @@ export default function SettingsPage() {
         </section>
 
         <section className="space-y-3 pb-10">
-          <h2 className="text-lg font-semibold">Backup</h2>
+          <h2 className="text-lg font-semibold">Settings transfer</h2>
           <Row>
             <Button
               variant="secondary"
@@ -552,37 +551,6 @@ export default function SettingsPage() {
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : "Import failed");
                 }
-              }}
-            />
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                const res = await fetch("/api/backup");
-                await downloadBlob(res, "animachat-backup.zip");
-              }}
-            >
-              <Download /> Download full backup
-            </Button>
-            <Button variant="danger" onClick={() => restoreRef.current?.click()}>
-              <Upload /> Restore from backup…
-            </Button>
-            <input
-              ref={restoreRef}
-              type="file"
-              hidden
-              accept=".zip"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (!f) return;
-                if (!(await confirmDialog({ title: "Restore backup", message: "Restoring REPLACES the current database and assets. Continue?", confirmLabel: "Restore", danger: true }))) return;
-                const fd = new FormData();
-                fd.append("file", f);
-                const res = await fetch("/api/restore", { method: "POST", body: fd });
-                if (res.ok) {
-                  toast.success("Restored.");
-                  location.reload();
-                } else toast.error((await res.json())?.error ?? "Restore failed");
               }}
             />
           </Row>

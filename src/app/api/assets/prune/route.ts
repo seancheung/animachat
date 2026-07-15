@@ -33,7 +33,7 @@ function collectOrphans(): { ids: string[]; bytes: number } {
   if (fs.existsSync(ASSETS_DIR)) {
     for (const f of fs.readdirSync(ASSETS_DIR)) {
       if (!/^[a-f0-9]{32}$/.test(f) || known.has(f) || refs.has(f)) continue;
-      // file without a DB row (e.g. leftover from a partial restore)
+      // file without a DB row (e.g. leftover from an interrupted upload)
       orphans.set(f, fs.statSync(path.join(ASSETS_DIR, f)).size);
     }
   }
