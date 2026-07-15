@@ -71,6 +71,7 @@ function deepMerge(base: any, extra: any): any {
 
 export type StreamEvent =
   | { type: "text"; text: string }
+  | { type: "stop"; truncated: boolean }
   | { type: "usage"; input: number; cacheRead: number; cacheWrite: number; output: number };
 
 function joinUrl(base: string, path: string): string {
@@ -133,6 +134,7 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
   let cacheRead = 0;
   let cacheWrite = 0;
   let output = 0;
+  let stopReason: string | null = null;
   for await (const data of sseLines(res)) {
     if (!data || data === "[DONE]") continue;
     let ev: any;
@@ -151,10 +153,12 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
       yield { type: "text", text: ev.delta.text };
     } else if (ev.type === "message_delta") {
       output = ev.usage?.output_tokens ?? output;
+      stopReason = ev.delta?.stop_reason ?? stopReason;
     } else if (ev.type === "error") {
       throw new Error(`${provider.name} stream error: ${ev.error?.message ?? "unknown"}`);
     }
   }
+  yield { type: "stop", truncated: stopReason === "max_tokens" };
   yield { type: "usage", input, cacheRead, cacheWrite, output };
 }
 
@@ -189,6 +193,7 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
   let cacheRead = 0;
   let cacheWrite = 0;
   let output = 0;
+  let finishReason: string | null = null;
   for await (const data of sseLines(res)) {
     if (!data || data === "[DONE]") continue;
     let ev: any;
@@ -199,6 +204,7 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
     }
     const delta = ev.choices?.[0]?.delta?.content;
     if (typeof delta === "string" && delta) yield { type: "text", text: delta };
+    finishReason = ev.choices?.[0]?.finish_reason ?? finishReason;
     if (ev.usage) {
       // prompt_tokens includes cache reads and writes; split them out so each bills at
       // its own price. Reads: cached_tokens (DeepSeek: prompt_cache_hit_tokens). Writes:
@@ -210,11 +216,13 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
       output = ev.usage.completion_tokens ?? output;
     }
   }
+  yield { type: "stop", truncated: finishReason === "length" };
   yield { type: "usage", input: Math.max(0, prompt - cacheRead - cacheWrite), cacheRead, cacheWrite, output };
 }
 
 /**
- * Stream a completion. Yields text deltas, then a final usage event.
+ * Stream a completion. Yields text deltas, then a stop event (truncated = the model
+ * hit maxTokens), then a final usage event.
  * Usage is logged to the usage_log automatically (estimated when the provider omits it).
  */
 export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
@@ -225,8 +233,10 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
     if (ev.type === "text") {
       collected += ev.text;
       yield ev;
-    } else {
+    } else if (ev.type === "usage") {
       usage = ev;
+    } else {
+      yield ev;
     }
   }
   const promptText = req.system + req.messages.map((m) => m.content).join("\n");

@@ -72,8 +72,8 @@ interface AssistBody {
   attachments?: { name: string; text: string }[];
 }
 
-/** Cap per attached file so a whole novel can't blow the context. */
-const ATTACHMENT_CHAR_CAP = 60_000;
+/** Cap per attached file so a huge source dump can't blow the context (chars, not tokens — CJK text runs ~1–1.5 tokens per char, so this is far more tokens for Chinese than for English). */
+const ATTACHMENT_CHAR_CAP = 200_000;
 
 /** Serialize an attached library item for the system prompt; null if it no longer exists. */
 function referenceText(ref: { type: string; id: string }): string | null {
@@ -244,18 +244,21 @@ export const POST = handler(async (req: Request) => {
         }
       };
 
+      let truncated = false;
       try {
         for await (const ev of streamLlm({
           modelRef,
           system,
           messages: body.messages,
-          maxTokens: isLibrary ? 8000 : 2000, // item batches (e.g. novel extraction) need room
+          maxTokens: isLibrary ? 32000 : 2000, // item batches (e.g. novel extraction) need room
           feature: "assist",
           signal: abort.signal,
         })) {
           if (ev.type === "text") {
             buf += ev.text;
             flush();
+          } else if (ev.type === "stop") {
+            truncated = ev.truncated;
           }
         }
         if (!inFields && visible.length < buf.length) {
@@ -283,7 +286,12 @@ export const POST = handler(async (req: Request) => {
             send({ type: "fields", fields });
           } catch (e) {
             console.error("assist: fields block failed to parse:", e);
-            send({ type: "text", text: "\n(I produced malformed field data — ask me to try again.)" });
+            send({
+              type: "text",
+              text: truncated
+                ? "\n(My reply hit the response length limit before the fields were complete — ask me to continue, or to produce fewer items at a time.)"
+                : "\n(I produced malformed field data — ask me to try again.)",
+            });
             if (debugResponseLogEnabled()) {
               try {
                 const url = writeDebugLog(
@@ -292,6 +300,7 @@ export const POST = handler(async (req: Request) => {
                     "AnimaChat assist debug log — the <fields> block failed to parse",
                     `time: ${new Date().toISOString()}`,
                     `entityType: ${body.entityType}`,
+                    `truncated by maxTokens: ${truncated}`,
                     "",
                     "--- error ---",
                     e instanceof Error ? (e.stack ?? e.message) : String(e),
@@ -306,6 +315,11 @@ export const POST = handler(async (req: Request) => {
               }
             }
           }
+        } else if (truncated) {
+          send({
+            type: "text",
+            text: "\n(My reply hit the response length limit — ask me to continue.)",
+          });
         }
         send({ type: "done" });
       } catch (e) {
