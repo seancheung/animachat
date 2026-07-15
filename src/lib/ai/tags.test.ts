@@ -131,6 +131,14 @@ describe("TagStreamParser", () => {
     expect(textOf(run(["fin <the-end/>"]))).toBe("fin ");
   });
 
+  it("consumes the paired the-end form without leaking its close tag", () => {
+    for (const size of [1, 5, 999]) {
+      const events = run("fin <the-end>The End</the-end> after".match(new RegExp(`.{1,${size}}`, "gs"))!);
+      expect(events.some((e) => e.type === "theEnd")).toBe(true);
+      expect(textOf(events)).toBe("fin  after");
+    }
+  });
+
   it("fails soft on an unclosed enter tag", () => {
     const events = run(["<enter>Kael never closes and the prose just keeps going on and on..."]);
     expect(events.some((e) => e.type === "enter")).toBe(false);

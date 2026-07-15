@@ -154,10 +154,25 @@ export class TagStreamParser {
     }
     if (/^<next-scene/.test(b) && b.length <= MAX_NEXT_SCENE && !final) return "hold";
 
-    const theEnd = b.match(/^<the-end\s*\/?\s*>/);
-    if (theEnd) {
-      this.buf = b.slice(theEnd[0].length);
+    const theEndSelf = b.match(/^<the-end\s*\/\s*>/);
+    if (theEndSelf) {
+      this.buf = b.slice(theEndSelf[0].length);
       return { type: "theEnd" };
+    }
+    const theEndOpen = b.match(/^<the-end\s*>/);
+    if (theEndOpen) {
+      // models sometimes emit the paired form <the-end>…</the-end>; consume the
+      // whole pair so the close tag doesn't leak into the prose
+      const close = b.indexOf("</the-end>");
+      if (close !== -1) {
+        this.buf = b.slice(close + "</the-end>".length);
+        return { type: "theEnd" };
+      }
+      if (b.length > theEndOpen[0].length + MAX_NAME || final) {
+        this.buf = b.slice(theEndOpen[0].length);
+        return { type: "theEnd" };
+      }
+      return "hold";
     }
     if (/^<the-end/.test(b) && b.length <= MAX_NEXT_SCENE && !final) return "hold";
 
