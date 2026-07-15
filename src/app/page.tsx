@@ -628,6 +628,11 @@ export default function HomePage() {
                       The End
                     </Badge>
                   )}
+                  {c.mode === "story" && c.storyName && (
+                    <Badge variant="secondary" size="sm" rounded className="ml-auto shrink-0">
+                      {c.storyName}
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-xs min-w-0">
                   <span className="shrink-0 size-6 rounded-full bg-base-300 flex items-center justify-center text-content-300">
@@ -642,11 +647,6 @@ export default function HomePage() {
                       {t}
                     </Badge>
                   ))}
-                  {c.mode === "story" && c.storyName && (
-                    <Badge variant="secondary" size="sm" rounded className="shrink-0">
-                      {c.storyName}
-                    </Badge>
-                  )}
                 </div>
                 {c.lastMessage && (
                   <div className="mt-0.5 text-xs text-content-400 truncate">{c.lastMessage}</div>
