@@ -88,6 +88,20 @@ export function seedPresets() {
     locationId: tavern.id,
   });
 
+  // two dawn scenes — the branch point at the cellar decides which one the night earns
+  const scene3a = saveScene({
+    name: "Dawn: The Collectors' Terms",
+    setup:
+      "First light. Grey gloves at the door of [loc_name], polite as ever, ledger open. The debt is still owed — but the night has changed what's on the table, and the Guild always prefers a deal to a loss.",
+    locationId: tavern.id,
+  });
+  const scene3b = saveScene({
+    name: "Dawn: Nothing to Collect",
+    setup:
+      "First light. The knock comes as promised — but the ledger no longer holds Mira's name the way it did at midnight. What the collectors find at [loc_name] is not what they came for.",
+    locationId: tavern.id,
+  });
+
   const lorebook = saveLorebook({
     name: "Moonlit Tavern lore",
     description: "Shared world facts for the starter story",
@@ -144,13 +158,45 @@ export function seedPresets() {
         goal: "Get [user_name] entangled in Mira's problem — the job accepted, or refused in a way that won't stick.",
         obstacles: "Mira is too proud to say what the debt really is; Kael watches from his corner, measuring everyone.",
         exit: "Someone commits to helping before dawn — and the only way forward is whatever Mira keeps locked below.",
+        pressures: "The Ashen Guild's collectors work their way up the river road all night — every hour spent hesitating is an hour closer to the knock.",
+        successors: [],
       },
       {
         sceneId: scene2.id,
         cast: [mira.id, kael.id],
         goal: "Force the night's truths into the open and make the party choose what dawn finds them holding.",
         obstacles: "The moonmilk is unstable, the Concord's law is absolute, and the Guild's collectors are already walking up the river road.",
-        exit: "Dawn arrives — the knock at the door decides how the story ends.",
+        exit: "The night's truths are out, a plan for the knock is chosen — and the first grey light shows the collectors at the end of the street.",
+        pressures: "Word of a green glow over the river wall spreads through the pre-dawn streets — the kind of rumor the Concord pays for.",
+        // an authored branch point: the same debt, two dawns — two endings
+        successors: [
+          {
+            sceneId: scene3a.id,
+            hint: "if dawn arrives with the debt still owed — the night's discoveries become bargaining chips",
+          },
+          {
+            sceneId: scene3b.id,
+            hint: "if the debt is settled, dodged or dissolved before the knock — by moonmilk, by Kael's gambit, or by something worse",
+          },
+        ],
+      },
+      {
+        sceneId: scene3a.id,
+        cast: [mira.id, kael.id],
+        goal: "Settle the debt face to face — every secret still standing is leverage, theirs or the Guild's.",
+        obstacles: "The collectors don't raise their voices and don't need to; the Concord's law hangs over any mention of what's below.",
+        exit: "Terms are struck or refused for good — the story ends on what they cost.",
+        pressures: "",
+        successors: [],
+      },
+      {
+        sceneId: scene3b.id,
+        cast: [mira.id, kael.id],
+        goal: "Let the knock land on an empty ledger — and count what the night's escape actually cost.",
+        obstacles: "Collectors hate surprises; whatever cleared the debt left a trail someone will follow.",
+        exit: "The grey gloves withdraw — the story ends on what was given up to watch them go.",
+        pressures: "",
+        successors: [],
       },
     ],
     lorebookIds: [lorebook.id],

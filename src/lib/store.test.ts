@@ -8,7 +8,7 @@ process.env.ANIMACHAT_DB_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
   "test.db"
 );
-import { appendMessage, getMessage, saveChat, updateMessage } from "./store";
+import { appendMessage, getMessage, saveChat, saveScene, saveStory, updateMessage } from "./store";
 
 describe("appendMessage tail freeze", () => {
   it("collapses the previous tail's variants to the active one when a follow-up lands", () => {
@@ -36,5 +36,31 @@ describe("appendMessage tail freeze", () => {
       activeVariant: 1,
     });
     expect(getMessage(tail.id)!.variants).toHaveLength(2);
+  });
+});
+
+describe("saveStory scene entries", () => {
+  it("normalizes missing contract/branching fields and prunes dangling/self successors", () => {
+    const a = saveScene({ name: "A" });
+    const b = saveScene({ name: "B" });
+    const story = saveStory({
+      name: "branches",
+      // pre-branching shape (no pressures/successors) plus a successor list that
+      // points at itself, at a scene outside the story, and at a real road
+      scenes: [
+        { sceneId: a.id, cast: [] },
+        {
+          sceneId: b.id,
+          cast: [],
+          successors: [
+            { sceneId: b.id, hint: "self" },
+            { sceneId: "not-in-story", hint: "dangling" },
+            { sceneId: a.id, hint: "back to the start" },
+          ],
+        },
+      ] as never,
+    });
+    expect(story.scenes[0]).toMatchObject({ goal: "", obstacles: "", exit: "", pressures: "", successors: [] });
+    expect(story.scenes[1].successors).toEqual([{ sceneId: a.id, hint: "back to the start" }]);
   });
 });

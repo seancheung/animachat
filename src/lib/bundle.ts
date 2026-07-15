@@ -242,7 +242,18 @@ export async function importBundle(
     fields.scenes = (fields.scenes ?? []).flatMap((e) => {
       const sceneId = idMap.get(e.sceneId);
       if (!sceneId) return [];
-      return [{ ...e, sceneId, cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[] }];
+      return [
+        {
+          ...e,
+          sceneId,
+          cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[],
+          // branch targets are scene refs too; dangling ones are dropped by saveStory
+          successors: (e.successors ?? []).flatMap((s) => {
+            const sid = idMap.get(s.sceneId);
+            return sid ? [{ ...s, sceneId: sid }] : [];
+          }),
+        },
+      ];
     });
     // secrets travel with the story; their holders are cast members — remap like the cast
     fields.secrets = (fields.secrets ?? []).map((s) => ({

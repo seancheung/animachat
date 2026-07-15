@@ -66,12 +66,27 @@ export const POST = handler(async (req: Request) => {
     const characters = story.characterIds
       .map(getCharacter)
       .filter((c): c is Character => !!c);
-    const scenes = story.scenes.flatMap(({ sceneId: sid, cast, goal, obstacles, exit }) => {
-      const scene = getScene(sid);
-      return scene
-        ? [{ scene, cast: cast.filter((id) => story.characterIds.includes(id)), goal, obstacles, exit }]
-        : [];
-    });
+    const scenes = story.scenes.flatMap(
+      ({ sceneId: sid, cast, goal, obstacles, exit, pressures, successors }) => {
+        const scene = getScene(sid);
+        return scene
+          ? [
+              {
+                scene,
+                cast: cast.filter((id) => story.characterIds.includes(id)),
+                goal,
+                obstacles,
+                exit,
+                pressures,
+                successors,
+              },
+            ]
+          : [];
+      }
+    );
+    // a successor whose scene didn't make it into the snapshot is a dead road — drop it
+    const snapshotSceneIds = new Set(scenes.map(({ scene }) => scene.id));
+    for (const e of scenes) e.successors = e.successors.filter((s) => snapshotSceneIds.has(s.sceneId));
     const locations = [
       ...new Set(scenes.map(({ scene }) => scene.locationId).filter((id): id is string => !!id)),
     ]

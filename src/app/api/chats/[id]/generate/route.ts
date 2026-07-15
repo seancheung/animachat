@@ -20,7 +20,7 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
-import { nextSceneIdAfter } from "@/lib/stage";
+import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
 import { appendMessage, getMessage, saveChat, setRawOutput, updateMessage } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
@@ -162,15 +162,27 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
   return pickDefaultSpeakers(ctx);
 }
 
-function nextSceneId(ctx: ChatContext): string | null {
+/** Where <next-scene/> lands: the targeted form's payload is matched fail-soft against
+ *  the roads open from the current scene (declared successors, or the next in order —
+ *  a played cast member's story advances only through THEIR scenes); the bare tag or an
+ *  unresolved payload takes the first open road. Null = final scene, nothing ahead. */
+function resolveNextScene(ctx: ChatContext, target: string | null): string | null {
   const snap = ctx.snapshot;
   if (!snap || !ctx.stage.sceneId) return null;
-  // a played cast member's story advances only through THEIR scenes; the rest unfold offstage
-  return nextSceneIdAfter(
-    snap.scenes.map(({ scene, cast }) => ({ id: scene.id, cast })),
+  const allowed = allowedNextScenes(
+    snap.scenes.map(({ scene, cast, successors }) => ({ id: scene.id, cast, successors })),
     ctx.stage.sceneId,
     ctx.chat.personaCharacterId
   );
+  if (!allowed.length) return null;
+  const t = target?.trim().toLowerCase();
+  if (t) {
+    const nameOf = (id: string) =>
+      snap.scenes.find((s) => s.scene.id === id)?.scene.name.trim().toLowerCase() ?? "";
+    const hit = allowed.find((id) => nameOf(id) === t) ?? allowed.find((id) => nameOf(id).startsWith(t));
+    if (hit) return hit;
+  }
+  return allowed[0];
 }
 
 function maybeGenerateTitle(chatId: string) {
@@ -312,6 +324,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         let emotion: string | null = null;
         let options: string[] | null = null;
         let sawNextScene = false;
+        let nextSceneTarget: string | null = null;
         let sawTheEnd = false;
         const enters: string[] = [];
         const leaves: string[] = [];
@@ -330,6 +343,8 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               options = ev.options;
             } else if (ev.type === "nextScene") {
               sawNextScene = true;
+              // targeted form at a branch point; resolved at save time (fail-soft)
+              nextSceneTarget = nextSceneTarget ?? ev.name ?? null;
             } else if (ev.type === "theEnd") {
               sawTheEnd = true;
             } else if (ev.type === "enter" || ev.type === "leave") {
@@ -381,7 +396,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           if (speaker.role === "narrator" && turnCtx.snapshot && !turnCtx.ended) {
             const ev: SceneEvent = {};
             if (sawNextScene) {
-              const next = nextSceneId(turnCtx);
+              const next = resolveNextScene(turnCtx, nextSceneTarget);
               if (next) ev.sceneId = next;
             }
             const resolve = (names: string[]) => [

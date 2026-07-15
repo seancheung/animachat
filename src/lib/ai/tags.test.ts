@@ -40,6 +40,30 @@ describe("TagStreamParser", () => {
     expect(textOf(run(["before <next-scene/> after"]))).toBe("before  after");
   });
 
+  it("parses the targeted next-scene form, stripped from text, across chunk boundaries", () => {
+    const full = "The night ends. <next-scene>The Cellar Door</next-scene>";
+    for (const size of [1, 4, 9]) {
+      const events = run(full.match(new RegExp(`.{1,${size}}`, "gs"))!);
+      expect(events.find((e) => e.type === "nextScene")).toEqual({
+        type: "nextScene",
+        name: "The Cellar Door",
+      });
+      expect(textOf(events)).toBe("The night ends. ");
+    }
+  });
+
+  it("treats an unclosed targeted next-scene as the bare tag (old behavior)", () => {
+    const events = run(["<next-scene>and the prose just runs on"]);
+    expect(events.find((e) => e.type === "nextScene")).toEqual({ type: "nextScene" });
+    expect(textOf(events)).toBe("and the prose just runs on");
+  });
+
+  it("an empty targeted next-scene is the bare tag", () => {
+    expect(run(["<next-scene></next-scene>"]).find((e) => e.type === "nextScene")).toEqual({
+      type: "nextScene",
+    });
+  });
+
   it("fails soft on malformed/unclosed tags", () => {
     const events = run(["<emo>never closed and then a lot of prose follows here....."]);
     expect(events.some((e) => e.type === "emotion")).toBe(false);
@@ -103,6 +127,15 @@ describe("TagStreamParser", () => {
 describe("parseTagged", () => {
   it("collects reveal titles", () => {
     expect(parseTagged("A. <reveal>What sleeps below</reveal> B.").reveal).toEqual(["What sleeps below"]);
+  });
+
+  it("captures the targeted next-scene payload; bare tag leaves it null", () => {
+    const targeted = parseTagged("Dawn. <next-scene>Dawn: Nothing to Collect</next-scene>");
+    expect(targeted.nextScene).toBe(true);
+    expect(targeted.nextSceneTarget).toBe("Dawn: Nothing to Collect");
+    const bare = parseTagged("Dawn. <next-scene/>");
+    expect(bare.nextScene).toBe(true);
+    expect(bare.nextSceneTarget).toBeNull();
   });
 
   it("extracts everything in one shot", () => {

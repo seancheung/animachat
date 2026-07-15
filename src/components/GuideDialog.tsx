@@ -129,6 +129,15 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
                   goal: typeof e?.goal === "string" ? e.goal : "",
                   obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
                   exit: typeof e?.exit === "string" ? e.exit : "",
+                  pressures: typeof e?.pressures === "string" ? e.pressures : "",
+                  // branch targets link by scene name too; dangling/self roads are
+                  // dropped by the server on save
+                  successors: (Array.isArray(e?.successors) ? e.successors : [])
+                    .map((s: any) => ({
+                      sceneId: sceneIds.get(norm(s?.sceneName)),
+                      hint: typeof s?.hint === "string" ? s.hint : "",
+                    }))
+                    .filter((s: any) => s.sceneId && s.sceneId !== sceneId),
                 };
               })
               .filter(Boolean);

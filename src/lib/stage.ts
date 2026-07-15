@@ -84,6 +84,8 @@ export function computeStage(
 export interface SceneCastRef {
   id: string;
   cast: string[];
+  /** authored branching (story→scene relation); absent/empty = next scene in order */
+  successors?: { sceneId: string; hint: string }[];
 }
 
 /** Where play opens for a played cast member: the chosen scene if they are in its
@@ -113,6 +115,40 @@ export function nextSceneIdAfter(
     if (!playedId || entries[i].cast.includes(playedId)) return entries[i].id;
   }
   return null;
+}
+
+/** The roads open from `currentId` — empty = the current scene is this playthrough's
+ *  final one. A scene with declared successors offers exactly those (dropping, for a
+ *  played cast member, roads whose cast excludes them — ways their story doesn't take).
+ *  A scene without falls through to the next in order, skipping scenes that are some
+ *  scene's declared successor: a road is entered by its branch, never by falling
+ *  through the list (which is what lets two ending scenes sit side by side). With no
+ *  branching anywhere this is exactly the plain in-order walk. */
+export function allowedNextScenes(
+  entries: SceneCastRef[],
+  currentId: string | null,
+  playedId?: string | null
+): string[] {
+  const cur = entries.find((e) => e.id === currentId);
+  if (!cur) return [];
+  if (cur.successors?.length) {
+    const out: string[] = [];
+    for (const s of cur.successors) {
+      const target = entries.find((e) => e.id === s.sceneId);
+      if (!target || target.id === cur.id || out.includes(target.id)) continue;
+      if (playedId && !target.cast.includes(playedId)) continue;
+      out.push(target.id);
+    }
+    return out;
+  }
+  const branchTargets = new Set(entries.flatMap((e) => (e.successors ?? []).map((s) => s.sceneId)));
+  const idx = entries.findIndex((e) => e.id === currentId);
+  for (let i = idx + 1; i < entries.length; i++) {
+    if (branchTargets.has(entries[i].id)) continue;
+    if (playedId && !entries[i].cast.includes(playedId)) continue;
+    return [entries[i].id];
+  }
+  return [];
 }
 
 export interface StageAssets {

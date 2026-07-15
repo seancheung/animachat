@@ -15,6 +15,7 @@ import InputNumber from "@/components/ui/input-number";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import Tooltip from "@/components/ui/tooltip";
+import { allowedNextScenes } from "@/lib/stage";
 import { api, uid } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story, StoryScene, StorySecret } from "@/lib/types";
@@ -293,16 +294,35 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
     };
     setForm({ ...form, scenes: next });
   };
-  const setSceneField = (i: number, key: "goal" | "obstacles" | "exit", v: string) => {
+  const setSceneField = (i: number, key: "goal" | "obstacles" | "exit" | "pressures", v: string) => {
     const next = [...storyScenes];
     next[i] = { ...next[i], [key]: v };
     setForm({ ...form, scenes: next });
+  };
+  const setSuccessors = (i: number, successors: StoryScene["successors"]) => {
+    const next = [...storyScenes];
+    next[i] = { ...next[i], successors };
+    setForm({ ...form, scenes: next });
+  };
+  const removeScene = (i: number) => {
+    const removedId = storyScenes[i].sceneId;
+    setForm({
+      ...form,
+      // a removed scene also stops being anyone's branch target
+      scenes: storyScenes
+        .filter((_, k) => k !== i)
+        .map((s) => ({ ...s, successors: (s.successors ?? []).filter((x) => x.sceneId !== removedId) })),
+    });
   };
   const setSecret = (i: number, patch: Partial<StorySecret>) => {
     const next = [...secrets];
     next[i] = { ...next[i], ...patch };
     setForm({ ...form, secrets: next });
   };
+  // where each scene can lead, under the same rule the narrator plays by — a scene
+  // with no road out is an ending (several endings = several ways the story closes)
+  const sceneRefs = storyScenes.map((e) => ({ id: e.sceneId, cast: e.cast, successors: e.successors }));
+  const isEnding = (sceneId: string) => allowedNextScenes(sceneRefs, sceneId).length === 0;
 
   // the co-writer links cast/scenes/lorebooks/secret-holders by NAME — resolve against the library (fail-soft)
   const mapAssistFields = (partial: any) => {
@@ -315,12 +335,22 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
     }
     const roster: string[] = out.characterIds ?? cast;
     if (Array.isArray(partial.scenes)) {
+      // successors link scenes by name too; keep already-id-shaped ones as-is
+      const successorsOf = (e: any) =>
+        (Array.isArray(e?.successors) ? e.successors : [])
+          .map((s: any) => ({
+            sceneId: typeof s?.sceneId === "string" && s.sceneId ? s.sceneId : byName(scenes, s?.sceneName),
+            hint: typeof s?.hint === "string" ? s.hint : "",
+          }))
+          .filter((s: any): s is { sceneId: string; hint: string } => !!s.sceneId);
       out.scenes = partial.scenes
         .map((e: any) => {
           const contract = {
             goal: typeof e?.goal === "string" ? e.goal : "",
             obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
             exit: typeof e?.exit === "string" ? e.exit : "",
+            pressures: typeof e?.pressures === "string" ? e.pressures : "",
+            successors: successorsOf(e),
           };
           if (e?.sceneId) return { sceneId: e.sceneId, cast: e.cast ?? [], ...contract }; // already id-shaped
           const sceneId = byName(scenes, e?.sceneName);
@@ -331,6 +361,12 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
           return { sceneId, cast: who, ...contract };
         })
         .filter(Boolean);
+      // a road must lead to a scene of this story, never back into itself
+      const inStory = new Set(out.scenes.map((e: any) => e.sceneId));
+      out.scenes = out.scenes.map((e: any) => ({
+        ...e,
+        successors: e.successors.filter((s: any) => inStory.has(s.sceneId) && s.sceneId !== e.sceneId),
+      }));
     }
     if (Array.isArray(partial.secrets)) {
       out.secrets = partial.secrets
@@ -398,17 +434,24 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       </Collapsible>
       <Collapsible bordered title={`Scenes (in order)${storyScenes.length ? ` — ${storyScenes.length}` : ""}`}>
         <div className="text-xs text-content-400 mb-2">
-          each scene lists who is on stage when it opens; the narrator can bring others in mid-scene
+          each scene lists who is on stage when it opens; the narrator can bring others in mid-scene.
+          without branches a story plays in order; a scene named as a branch target is reached only
+          by that road, and a scene with no road out is an ending
         </div>
         <div className="space-y-1">
           {storyScenes.map((entry, i) => (
             <div key={`${entry.sceneId}-${i}`} className="bg-base-200 rounded-md px-3 py-1.5 text-sm space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-content-300">{i + 1}.</span>
-                <span className="flex-1">{scenes?.find((s) => s.id === entry.sceneId)?.name ?? "?"}</span>
+                <span className="flex-1">
+                  {scenes?.find((s) => s.id === entry.sceneId)?.name ?? "?"}
+                  {isEnding(entry.sceneId) && (
+                    <span className="ml-2 text-xs text-content-400">— an ending</span>
+                  )}
+                </span>
                 <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, -1)}><ArrowUp /></Button>
                 <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, 1)}><ArrowDown /></Button>
-                <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, scenes: storyScenes.filter((_, k) => k !== i) })}><X /></Button>
+                <Button variant="ghost" size="sm" shape="square" onClick={() => removeScene(i)}><X /></Button>
               </div>
               {cast.length > 0 && (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 pl-5">
@@ -427,6 +470,37 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
                 <Input className="w-full" placeholder="goal — what this scene is for…" value={entry.goal ?? ""} onChange={(v) => setSceneField(i, "goal", v)} />
                 <Input className="w-full" placeholder="obstacles — what stands in the way…" value={entry.obstacles ?? ""} onChange={(v) => setSceneField(i, "obstacles", v)} />
                 <Input className="w-full" placeholder="advance when — the narrator's cue to move on…" value={entry.exit ?? ""} onChange={(v) => setSceneField(i, "exit", v)} />
+                <Input className="w-full" placeholder="meanwhile, elsewhere — offstage pressure that keeps moving…" value={entry.pressures ?? ""} onChange={(v) => setSceneField(i, "pressures", v)} />
+              </div>
+              {/* authored branching — allowed successors; none = the next scene in order */}
+              <div className="pl-5 space-y-1">
+                {(entry.successors ?? []).map((suc, k) => (
+                  <div key={`${suc.sceneId}-${k}`} className="flex items-center gap-2">
+                    <span className="text-content-300 shrink-0">→ {scenes?.find((s) => s.id === suc.sceneId)?.name ?? "?"}</span>
+                    <Input
+                      className="flex-1 min-w-0"
+                      placeholder="this road when… (condition hint, optional)"
+                      value={suc.hint}
+                      onChange={(v) =>
+                        setSuccessors(i, (entry.successors ?? []).map((x, m) => (m === k ? { ...x, hint: v } : x)))
+                      }
+                    />
+                    <Button variant="ghost" size="sm" shape="square" onClick={() => setSuccessors(i, (entry.successors ?? []).filter((_, m) => m !== k))}><X /></Button>
+                  </div>
+                ))}
+                <Combobox
+                  className="w-full"
+                  value={null}
+                  onChange={(v) => v && setSuccessors(i, [...(entry.successors ?? []), { sceneId: v, hint: "" }])}
+                  options={storyScenes
+                    .filter((e) => e.sceneId !== entry.sceneId && !(entry.successors ?? []).some((x) => x.sceneId === e.sceneId))
+                    .map((e) => ({ value: e.sceneId, label: scenes?.find((s) => s.id === e.sceneId)?.name ?? "?" }))}
+                  placeholder={
+                    entry.successors?.length
+                      ? "+ add another road…"
+                      : "+ branch to… (none = the next scene in order)"
+                  }
+                />
               </div>
             </div>
           ))}
@@ -438,7 +512,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
               !storyScenes.some((s) => s.sceneId === v) &&
               setForm({
                 ...form,
-                scenes: [...storyScenes, { sceneId: v, cast: [...cast], goal: "", obstacles: "", exit: "" }],
+                scenes: [...storyScenes, { sceneId: v, cast: [...cast], goal: "", obstacles: "", exit: "", pressures: "", successors: [] }],
               })
             }
             options={

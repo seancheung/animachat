@@ -439,13 +439,17 @@ export function deleteScene(id: string) {
 
 /* ---------------- stories ---------------- */
 
-/** Normalize a scene entry — rows/imports predating scene contracts lack the fields. */
+/** Normalize a scene entry — rows/imports predating scene contracts or branching lack the fields. */
 const storySceneEntry = (e: Partial<StoryScene>): StoryScene => ({
   sceneId: e.sceneId ?? "",
   cast: e.cast ?? [],
   goal: e.goal ?? "",
   obstacles: e.obstacles ?? "",
   exit: e.exit ?? "",
+  pressures: e.pressures ?? "",
+  successors: (e.successors ?? [])
+    .map((s) => ({ sceneId: s?.sceneId ?? "", hint: s?.hint ?? "" }))
+    .filter((s) => s.sceneId),
 });
 
 const storyFromRow = (r: Row): Story => ({
@@ -489,6 +493,13 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     ...x,
   });
   m.scenes = m.scenes.map(storySceneEntry);
+  // successors only point at scenes of this story, never at the scene itself —
+  // self-healing on every save (a scene removed from the story drops out of branches)
+  const sceneIds = new Set(m.scenes.map((s) => s.sceneId));
+  m.scenes = m.scenes.map((s) => ({
+    ...s,
+    successors: s.successors.filter((x) => sceneIds.has(x.sceneId) && x.sceneId !== s.sceneId),
+  }));
   getDb()
     .prepare(
       `INSERT INTO stories (id,name,description,destination,secrets,character_ids,scenes,lorebook_ids,tags,created_at,updated_at)

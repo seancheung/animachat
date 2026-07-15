@@ -2,7 +2,9 @@
  * Streaming parser for the structured tags that ride inside AI chat prose:
  *   <emo>name</emo>            (character messages, prefix)
  *   <options><o>..</o>...</options>  (narrator, trailing)
- *   <next-scene/>              (narrator, trailing)
+ *   <next-scene/>              (narrator, trailing; targeted form
+ *                               <next-scene>Scene Name</next-scene> names the
+ *                               chosen road at an authored branch point)
  *   <enter>name</enter> / <leave>name</leave>  (narrator, inline — stage presence)
  *   <reveal>title</reveal>     (narrator, inline — story secret established as truth)
  *   <the-end/>                 (narrator, trailing — playthrough concluded)
@@ -14,7 +16,7 @@ export type TagEvent =
   | { type: "text"; text: string }
   | { type: "emotion"; name: string }
   | { type: "options"; options: string[] }
-  | { type: "nextScene" }
+  | { type: "nextScene"; name?: string }
   | { type: "enter"; name: string }
   | { type: "leave"; name: string }
   | { type: "reveal"; name: string }
@@ -126,10 +128,26 @@ export class TagStreamParser {
       }
     }
 
-    const nextScene = b.match(/^<next-scene\s*\/?\s*>/);
-    if (nextScene) {
-      this.buf = b.slice(nextScene[0].length);
+    const nextSceneBare = b.match(/^<next-scene\s*\/\s*>/);
+    if (nextSceneBare) {
+      this.buf = b.slice(nextSceneBare[0].length);
       return { type: "nextScene" };
+    }
+    const nextSceneOpen = b.match(/^<next-scene\s*>/);
+    if (nextSceneOpen) {
+      // paired form carries the chosen road's name at an authored branch point
+      const close = b.indexOf("</next-scene>");
+      if (close !== -1) {
+        const name = b.slice(nextSceneOpen[0].length, close).trim();
+        this.buf = b.slice(close + "</next-scene>".length);
+        return name ? { type: "nextScene", name } : { type: "nextScene" };
+      }
+      if (b.length > nextSceneOpen[0].length + MAX_NAME || final) {
+        // no closing tag in sight — it was the bare form models already emit
+        this.buf = b.slice(nextSceneOpen[0].length);
+        return { type: "nextScene" };
+      }
+      return "hold";
     }
     if (/^<next-scene/.test(b) && b.length <= MAX_NEXT_SCENE && !final) return "hold";
 
@@ -152,6 +170,8 @@ export function parseTagged(text: string): {
   emotion: string | null;
   options: string[] | null;
   nextScene: boolean;
+  /** the targeted form's payload (branch point) — null on the bare tag */
+  nextSceneTarget: string | null;
   enter: string[];
   leave: string[];
   reveal: string[];
@@ -163,6 +183,7 @@ export function parseTagged(text: string): {
   let emotion: string | null = null;
   let options: string[] | null = null;
   let nextScene = false;
+  let nextSceneTarget: string | null = null;
   const enter: string[] = [];
   const leave: string[] = [];
   const reveal: string[] = [];
@@ -171,11 +192,13 @@ export function parseTagged(text: string): {
     if (ev.type === "text") content += ev.text;
     else if (ev.type === "emotion") emotion = emotion ?? ev.name;
     else if (ev.type === "options") options = ev.options;
-    else if (ev.type === "nextScene") nextScene = true;
-    else if (ev.type === "enter") enter.push(ev.name);
+    else if (ev.type === "nextScene") {
+      nextScene = true;
+      nextSceneTarget = nextSceneTarget ?? ev.name ?? null;
+    } else if (ev.type === "enter") enter.push(ev.name);
     else if (ev.type === "leave") leave.push(ev.name);
     else if (ev.type === "reveal") reveal.push(ev.name);
     else if (ev.type === "theEnd") theEnd = true;
   }
-  return { content: content.trim(), emotion, options, nextScene, enter, leave, reveal, theEnd };
+  return { content: content.trim(), emotion, options, nextScene, nextSceneTarget, enter, leave, reveal, theEnd };
 }

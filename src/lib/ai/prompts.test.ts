@@ -11,7 +11,7 @@ import {
   type ChatContext,
 } from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
-import { entranceSceneId, nextSceneIdAfter } from "@/lib/stage";
+import { allowedNextScenes, entranceSceneId, nextSceneIdAfter } from "@/lib/stage";
 import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
@@ -382,6 +382,162 @@ describe("played-character immersion helpers", () => {
     expect(nextSceneIdAfter(entries, "s3", "lead")).toBeNull(); // s4 excludes the lead → s3 is their finale
     expect(nextSceneIdAfter(entries, "s1", null)).toBe("s2"); // not playing a cast member → plain order
     expect(nextSceneIdAfter(entries, "missing", "side")).toBeNull();
+  });
+});
+
+describe("authored branching (the roads open from a scene)", () => {
+  const entries = [
+    { id: "s1", cast: ["lead"] },
+    {
+      id: "s2",
+      cast: ["lead", "side"],
+      successors: [
+        { sceneId: "s3a", hint: "if the debt stands" },
+        { sceneId: "s3b", hint: "if the debt is settled" },
+      ],
+    },
+    { id: "s3a", cast: ["lead"] },
+    { id: "s3b", cast: ["lead", "side"] },
+  ];
+
+  it("declared successors are the open roads; a branch target with none is an ending", () => {
+    expect(allowedNextScenes(entries, "s2")).toEqual(["s3a", "s3b"]);
+    // s3b sits right after s3a in order, but a road is entered by its branch,
+    // never by fallthrough — so both dawn scenes are endings
+    expect(allowedNextScenes(entries, "s3a")).toEqual([]);
+    expect(allowedNextScenes(entries, "s3b")).toEqual([]);
+  });
+
+  it("the in-order fallthrough skips branch targets", () => {
+    expect(allowedNextScenes(entries, "s1")).toEqual(["s2"]);
+  });
+
+  it("a played cast member is only offered roads that include them; none left = their finale", () => {
+    expect(allowedNextScenes(entries, "s2", "side")).toEqual(["s3b"]);
+    const oneRoad = [entries[0], { ...entries[1], successors: [{ sceneId: "s3a", hint: "" }] }, entries[2], entries[3]];
+    expect(allowedNextScenes(oneRoad, "s2", "side")).toEqual([]);
+  });
+
+  it("without branching anywhere it is exactly the plain in-order walk", () => {
+    const plain = entries.map(({ id, cast }) => ({ id, cast }));
+    expect(allowedNextScenes(plain, "s2")).toEqual(["s3a"]);
+    expect(allowedNextScenes(plain, "s2", "side")).toEqual(["s3b"]);
+    expect(allowedNextScenes(plain, "s3b")).toEqual([]);
+  });
+
+  it("ignores dangling, self and duplicate successors", () => {
+    const weird = [
+      {
+        id: "a",
+        cast: [],
+        successors: [
+          { sceneId: "a", hint: "" },
+          { sceneId: "ghost", hint: "" },
+          { sceneId: "b", hint: "" },
+          { sceneId: "b", hint: "again" },
+        ],
+      },
+      { id: "b", cast: [] },
+    ];
+    expect(allowedNextScenes(weird, "a")).toEqual(["b"]);
+    expect(allowedNextScenes(weird, "missing")).toEqual([]);
+  });
+});
+
+describe("narrator branching & offstage pressures", () => {
+  const mira = makeCharacter("c1", "Mira");
+  const kael = makeCharacter("c2", "Kael");
+
+  function branchCtx(sceneId: string, playedId?: string): ChatContext {
+    const scn = (id: string, name: string, setup: string): Scene => ({ ...makeScene(id, name), setup });
+    const snapshot: StorySnapshot = {
+      name: "Test story",
+      description: "A night of debts.",
+      destination: "",
+      secrets: [],
+      characters: [mira, kael],
+      scenes: [
+        {
+          scene: scn("s1", "The Cellar Door", "The cellar stands open."),
+          cast: ["c1", "c2"],
+          goal: "",
+          obstacles: "",
+          exit: "",
+          pressures: "the collectors work their way up the river road",
+          successors: [
+            { sceneId: "s2a", hint: "if the debt stands" },
+            { sceneId: "s2b", hint: "if the debt is settled" },
+          ],
+        },
+        {
+          scene: scn("s2a", "The Collectors' Terms", "Grey gloves at the door."),
+          cast: ["c1", "c2"],
+          goal: "",
+          obstacles: "",
+          exit: "",
+        },
+        {
+          scene: scn("s2b", "Nothing to Collect", "The ledger is empty."),
+          cast: ["c1"],
+          goal: "",
+          obstacles: "",
+          exit: "",
+        },
+      ],
+      locations: [],
+      lorebooks: [],
+    };
+    const playing = !!playedId;
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), playing ? [mira] : [mira, kael]);
+    return {
+      ...ctx,
+      chat: {
+        ...chat,
+        mode: "story",
+        narratorEnabled: true,
+        storySnapshot: snapshot,
+        characterIds: playing ? ["c1"] : ["c1", "c2"],
+        personaCharacterId: playedId ?? null,
+      },
+      snapshot,
+      playedCharacter: playedId ? kael : null,
+      persona: playedId
+        ? { id: playedId, name: "Kael", description: "", tags: [], createdAt: 0, updatedAt: 0 }
+        : null,
+      stage: { sceneId, locationId: null, present: ["c1"], revealed: [], ended: false },
+    };
+  }
+
+  it("lists the open roads with their hints and instructs the targeted tag", () => {
+    const req = buildNarratorRequest(branchCtx("s1"), modelRef);
+    expect(req.system).toContain("WHERE THE STORY CAN GO NEXT");
+    expect(req.system).toContain(`"The Collectors' Terms" — Grey gloves at the door.`);
+    expect(req.system).toContain("(this road when: if the debt stands)");
+    expect(req.system).toContain(`"Nothing to Collect" — The ledger is empty.`);
+    expect(req.system).toContain("<next-scene>Scene Name</next-scene>");
+    expect(req.system).not.toContain("this is the FINAL scene");
+  });
+
+  it("a branch-target ending offers no next scene — it is the final scene", () => {
+    const req = buildNarratorRequest(branchCtx("s2a"), modelRef);
+    expect(req.system).not.toContain("WHERE THE STORY CAN GO NEXT");
+    expect(req.system).not.toContain("NEXT SCENE");
+    expect(req.system).toContain("this is the FINAL scene");
+  });
+
+  it("a played cast member collapses the branch to their one road — bare tag, no menu", () => {
+    // Kael is only in s2a: the s2b road is one his story doesn't take
+    const req = buildNarratorRequest(branchCtx("s1", "c2"), modelRef);
+    expect(req.system).toContain("NEXT SCENE (if the story should advance): The Collectors' Terms");
+    expect(req.system).toContain("(this road when: if the debt stands)");
+    expect(req.system).not.toContain("WHERE THE STORY CAN GO NEXT");
+    expect(req.system).toContain("<next-scene/>");
+  });
+
+  it("carries the offstage pressure as part of the scene's job", () => {
+    const req = buildNarratorRequest(branchCtx("s1"), modelRef);
+    expect(req.system).toContain("THIS SCENE'S JOB");
+    expect(req.system).toContain("Meanwhile, elsewhere: the collectors work their way up the river road");
   });
 });
 

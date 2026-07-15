@@ -121,6 +121,16 @@ export interface Scene {
   updatedAt: number;
 }
 
+/** An authored road out of a scene. Branches are situations the truths make
+ *  reachable, not scripted routes — the hint guides the narrator's judgment,
+ *  never a mechanical gate. */
+export interface SceneSuccessor {
+  /** an allowed next scene (id within the story's scene list) */
+  sceneId: string;
+  /** optional condition hint ("if trust has grown") — guidance, not a gate */
+  hint: string;
+}
+
 export interface StoryScene {
   sceneId: string;
   /** roster members (character ids) on stage when the scene opens — subset of the story's characterIds */
@@ -132,6 +142,12 @@ export interface StoryScene {
   obstacles: string;
   /** what "done" looks like — the narrator's cue to <next-scene/> */
   exit: string;
+  /** what moves ELSEWHERE while this scene plays — the world's momentum, surfacing
+      only as consequences that reach the stage (pure prompt material) */
+  pressures: string;
+  /** allowed next scenes — empty = the next scene in order; 2+ = an authored branch
+      point the narrator resolves with a targeted <next-scene>Scene Name</next-scene> */
+  successors: SceneSuccessor[];
 }
 
 /**
@@ -226,8 +242,18 @@ export interface StorySnapshot {
   secrets: StorySecret[];
   /** full sheets in roster order (includes the played character, if any) */
   characters: Character[];
-  /** ordered scene sequence; cast = character ids on stage when the scene opens; goal/obstacles/exit = the scene contract */
-  scenes: { scene: Scene; cast: string[]; goal: string; obstacles: string; exit: string }[];
+  /** ordered scene sequence; cast = character ids on stage when the scene opens;
+      goal/obstacles/exit/pressures = the scene contract; successors = authored branching
+      (pressures/successors optional: snapshots predate the fields — read as ""/[]) */
+  scenes: {
+    scene: Scene;
+    cast: string[];
+    goal: string;
+    obstacles: string;
+    exit: string;
+    pressures?: string;
+    successors?: SceneSuccessor[];
+  }[];
   /** locations referenced by the scenes */
   locations: Location[];
   lorebooks: Lorebook[];

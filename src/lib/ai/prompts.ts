@@ -2,10 +2,10 @@ import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import { mentionsToPlain } from "../mentions";
 import { substitutePlaceholders } from "./placeholders";
 import {
+  allowedNextScenes,
   chatLocation as chatLocationPure,
   chatScene as chatScenePure,
   computeStage as computeStagePure,
-  nextSceneIdAfter,
   resolveStageAssets as resolveStageAssetsPure,
   type LibraryResolvers,
   type StageAssets,
@@ -463,21 +463,49 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
 
   // story mode: where we are in the scene sequence, and who is on/off stage.
   // A played cast member's story advances only through THEIR scenes — the ones
-  // between unfold offstage and reach them only as consequences.
+  // between unfold offstage and reach them only as consequences. A scene with
+  // authored successors is a branch point: the roads are listed, the narrator
+  // chooses one with the targeted <next-scene>Scene Name</next-scene>.
   let nextSceneInfo = "";
   let finalScene = false;
+  let branchPoint = false;
   if (ctx.snapshot && ctx.stage.sceneId && !ctx.ended) {
-    const entries = ctx.snapshot.scenes.map(({ scene, cast }) => ({ id: scene.id, cast }));
+    const entries = ctx.snapshot.scenes.map(({ scene, cast, successors }) => ({
+      id: scene.id,
+      cast,
+      successors,
+    }));
     const idx = entries.findIndex((e) => e.id === ctx.stage.sceneId);
     if (idx !== -1) {
-      const nextId = nextSceneIdAfter(entries, ctx.stage.sceneId, ctx.chat.personaCharacterId);
-      finalScene = !nextId;
-      if (nextId) {
-        const nextIdx = entries.findIndex((e) => e.id === nextId);
+      const allowed = allowedNextScenes(entries, ctx.stage.sceneId, ctx.chat.personaCharacterId);
+      finalScene = allowed.length === 0;
+      branchPoint = allowed.length > 1;
+      const cur = ctx.snapshot.scenes[idx];
+      const hintOf = (id: string) => cur.successors?.find((s) => s.sceneId === id)?.hint ?? "";
+      if (branchPoint) {
+        nextSceneInfo = ctx.sub(
+          `WHERE THE STORY CAN GO NEXT (a branch point — the roads open from this scene):\n` +
+            allowed
+              .map((id) => {
+                const next = ctx.snapshot!.scenes.find((s) => s.scene.id === id)!.scene;
+                const hint = hintOf(id);
+                return `- "${next.name}" — ${next.setup}${hint ? `\n  (this road when: ${hint})` : ""}`;
+              })
+              .join("\n") +
+            `\nChoose the ONE road play has actually earned — the hints are guidance for your judgment, never gates.`
+        );
+      } else if (allowed.length === 1) {
+        const nextIdx = entries.findIndex((e) => e.id === allowed[0]);
         const next = ctx.snapshot.scenes[nextIdx].scene;
-        const skipped = ctx.snapshot.scenes.slice(idx + 1, nextIdx).map((s) => s.scene.name);
+        const hint = hintOf(allowed[0]);
+        // the passed-over note only makes sense on the in-order walk — an authored
+        // successor is a jump, not a skip
+        const skipped = cur.successors?.length
+          ? []
+          : ctx.snapshot.scenes.slice(idx + 1, nextIdx).map((s) => s.scene.name);
         nextSceneInfo = ctx.sub(
           `NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}` +
+            (hint ? `\n(this road when: ${hint})` : "") +
             (skipped.length && ctx.playedCharacter
               ? `\n(The story passes over ${skipped.join(", ")} — those unfold offstage: carry into the transition only what would reach ${ctx.playedCharacter.name}.)`
               : "")
@@ -494,12 +522,15 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   // the story design layer — the narrator is the one voice that knows all of it
   const entry = currentSceneEntry(ctx);
   const contractBlock =
-    ctx.snapshot && entry && (entry.goal || entry.obstacles || entry.exit)
+    ctx.snapshot && entry && (entry.goal || entry.obstacles || entry.exit || entry.pressures)
       ? ctx.sub(
           `THIS SCENE'S JOB (private direction — serve it, never announce it):` +
             (entry.goal ? `\n- Goal: ${entry.goal}` : "") +
             (entry.obstacles ? `\n- Obstacles to keep in the way: ${entry.obstacles}` : "") +
-            (entry.exit ? `\n- The scene is done when: ${entry.exit}` : "")
+            (entry.exit ? `\n- The scene is done when: ${entry.exit}` : "") +
+            (entry.pressures
+              ? `\n- Meanwhile, elsewhere: ${entry.pressures} — the world's momentum: it keeps moving while the scene plays and between scenes, and reaches the stage only as it would (sounds, news, consequences, arrivals). The world doesn't wait for ${ctx.persona?.name ?? "the user"}.`
+              : "")
         )
       : "";
   const destinationBlock = ctx.snapshot?.destination
@@ -542,7 +573,9 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
           ? `When the fiction genuinely uncovers a secret (its moment arrives, a holder confesses, evidence surfaces), state it plainly in the narration and append <reveal>Title</reveal> with the secret's exact title — from then on it is established truth everyone knows. If a secret already came out in play unmarked, mark it on your next turn.\n`
           : "") +
         (nextSceneInfo
-          ? `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story to the next scene: write the transition and append <next-scene/> on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
+          ? branchPoint
+            ? `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story down ONE of the roads listed above: write the transition and append <next-scene>Scene Name</next-scene> with the chosen scene's exact name, on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
+            : `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story to the next scene: write the transition and append <next-scene/> on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
           : "") +
         (played
           ? `If ${played.name} dies or leaves the story for good, ${played.name}'s story is over — whatever the wider tale would have done: write the ending that exit has earned and append <the-end/>.\n`
