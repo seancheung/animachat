@@ -409,6 +409,8 @@ export interface Settings {
   userRelationshipsEnabled: boolean;
   /** track affinity between characters (group chats); off = no updates, no prompt injection */
   charRelationshipsEnabled: boolean;
+  /** co-writer JSON repair: how many times to feed a fields-block parse error back to the model for a fixup; 0 = off */
+  assistFixupRetries: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -430,6 +432,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stageStyleEnabled: true,
   userRelationshipsEnabled: true,
   charRelationshipsEnabled: true,
+  assistFixupRetries: 1,
 };
 
 export const EMOTIONS = [

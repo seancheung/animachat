@@ -264,10 +264,62 @@ export const POST = handler(async (req: Request) => {
         if (!inFields && visible.length < buf.length) {
           send({ type: "text", text: buf.slice(visible.length) });
         }
-        const m = buf.match(new RegExp(`${OPEN}([\\s\\S]*?)(?:${CLOSE}|$)`));
+        const fieldsRe = new RegExp(`${OPEN}([\\s\\S]*?)(?:${CLOSE}|$)`);
+        const m = buf.match(fieldsRe);
         if (m) {
-          try {
-            let fields = JSON.parse(m[1].trim());
+          // On a parse failure, feed the error back to the model for a fixup, up to the
+          // configured retry count — pointless after a maxTokens cutoff, where the cure
+          // is a shorter batch, not better syntax.
+          const fixupRetries = truncated ? 0 : Math.max(0, settings.assistFixupRetries);
+          const fixups: string[] = [];
+          let raw = m[1].trim();
+          let lastReply = buf;
+          let fields;
+          let parsed = false;
+          let parseErr: unknown = null;
+          for (let attempt = 0; ; attempt++) {
+            try {
+              fields = JSON.parse(raw);
+              parsed = true;
+              break;
+            } catch (e) {
+              parseErr = e;
+              if (attempt >= fixupRetries || abort.signal.aborted) break;
+              console.error(`assist: fields block failed to parse, requesting fixup ${attempt + 1}/${fixupRetries}:`, e);
+              // the panel keeps showing its "drafting" indicator while this runs
+              let fixed = "";
+              try {
+                for await (const ev of streamLlm({
+                  modelRef,
+                  system,
+                  messages: [
+                    ...body.messages,
+                    { role: "assistant", content: lastReply },
+                    {
+                      role: "user",
+                      content:
+                        `Your ${OPEN} block is not valid JSON — JSON.parse failed with: ` +
+                        `${e instanceof Error ? e.message : String(e)}\n` +
+                        `Re-emit the ENTIRE block corrected: reply with only ${OPEN}...${CLOSE} — same content, valid JSON, no prose.`,
+                    },
+                  ],
+                  maxTokens: isLibrary ? 32000 : 2000,
+                  feature: "assist",
+                  signal: abort.signal,
+                })) {
+                  if (ev.type === "text") fixed += ev.text;
+                }
+              } catch (fixupErr) {
+                console.error("assist: fixup request failed:", fixupErr);
+                break;
+              }
+              fixups.push(fixed);
+              lastReply = fixed;
+              const fm = fixed.match(fieldsRe);
+              raw = (fm ? fm[1] : fixed).trim();
+            }
+          }
+          if (parsed) {
             if (body.entityType === "character") {
               // models sometimes fill the name into the tag brackets ("[Tom]") — undo that
               const selfName =
@@ -284,7 +336,8 @@ export const POST = handler(async (req: Request) => {
               });
             }
             send({ type: "fields", fields });
-          } catch (e) {
+          } else {
+            const e = parseErr;
             console.error("assist: fields block failed to parse:", e);
             send({
               type: "text",
@@ -301,12 +354,14 @@ export const POST = handler(async (req: Request) => {
                     `time: ${new Date().toISOString()}`,
                     `entityType: ${body.entityType}`,
                     `truncated by maxTokens: ${truncated}`,
+                    `fixup attempts: ${fixups.length}`,
                     "",
-                    "--- error ---",
+                    "--- error (last attempt) ---",
                     e instanceof Error ? (e.stack ?? e.message) : String(e),
                     "",
                     "--- raw model response ---",
                     buf,
+                    ...fixups.flatMap((f, i) => ["", `--- fixup attempt ${i + 1} response ---`, f]),
                   ].join("\n")
                 );
                 send({ type: "log", url });

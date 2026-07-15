@@ -456,6 +456,9 @@ export default function SettingsPage() {
             <Field label="Output reserve" hint="tokens reserved for the reply">
               <InputNumber className="w-full" integer value={settings.outputReserve} onChange={(v) => patchSettings({ outputReserve: v || 2000 })} />
             </Field>
+            <Field label="Co-writer JSON fixups" hint="retries feeding a field-data parse error back to the assistant; 0 = off">
+              <InputNumber className="w-full" integer value={settings.assistFixupRetries} onChange={(v) => patchSettings({ assistFixupRetries: Math.max(0, v ?? 1) })} />
+            </Field>
           </div>
         </section>
 
