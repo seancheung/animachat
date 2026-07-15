@@ -57,18 +57,23 @@ function useAudioLayer(url: string | null, volume: number, enabled: boolean) {
       });
     };
 
-    const desired = enabled ? url : null;
-    if (desired !== curUrl.current) {
+    // the crossfade is keyed on an actual source change; a mute only pauses (curUrl
+    // kept), so unmuting resumes from where the track was — not from 0:00
+    if (url !== curUrl.current) {
       fadeTo(0, () => {
         el.pause();
-        curUrl.current = desired;
-        if (desired) {
-          el.src = desired;
-          play();
-          fadeTo(targetVol.current);
+        curUrl.current = url;
+        if (url) {
+          el.src = url;
+          if (enabled) {
+            play();
+            fadeTo(targetVol.current);
+          }
         }
       });
-    } else if (desired) {
+    } else if (!enabled) {
+      fadeTo(0, () => el.pause());
+    } else if (url) {
       if (el.paused) play();
       fadeTo(targetVol.current);
     }
