@@ -51,6 +51,7 @@ export const POST = handler(async (req: Request) => {
   let lorebookIds: string[] = Array.isArray(b.lorebookIds) ? b.lorebookIds : [];
   let narratorEnabled = !!b.narratorEnabled;
   let storySnapshot: StorySnapshot | null = null;
+  let defaultTitle = "New chat";
 
   if (mode === "casual") {
     // characters optional when the narrator carries the chat (solo / text-adventure)
@@ -135,6 +136,15 @@ export const POST = handler(async (req: Request) => {
       );
       if (entrance) sceneId = entrance;
     }
+
+    // playthroughs are titled deterministically, never by the AI titler: a playthrough
+    // prefix plus whom the user plays (the story itself when spectating)
+    const playedName = personaCharacterId
+      ? storySnapshot.characters.find((c) => c.id === personaCharacterId)?.name
+      : personaId
+        ? getPersona(personaId)?.name
+        : null;
+    defaultTitle = `Playthrough — ${playedName ?? story.name}`;
   }
 
   // display-name fallback so history stays readable after a library character is deleted
@@ -146,7 +156,7 @@ export const POST = handler(async (req: Request) => {
   );
 
   const chat = saveChat({
-    title: b.title || "New chat",
+    title: b.title || defaultTitle,
     mode,
     characterIds,
     personaId,
