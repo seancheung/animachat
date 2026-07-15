@@ -514,6 +514,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   const stagingRules =
     ctx.snapshot && !ctx.ended
       ? `You direct the stage. To bring a cast member on, append <enter>Name</enter>; to send one off, append <leave>Name</leave> — always also describing the arrival or departure in the narration itself. Only cast members listed above can enter.\n` +
+        `An entered character takes the very next turn and speaks for themselves — stage the arrival, then stop. If an off-stage cast member's words must be heard (in person, by phone, radio, or through a wall), that IS an entrance: bring them on and end your narration.\n` +
         (secrets.some((s) => !isRevealed(ctx, s))
           ? `When the fiction genuinely uncovers a secret (its moment arrives, a holder confesses, evidence surfaces), state it plainly in the narration and append <reveal>Title</reveal> with the secret's exact title — from then on it is established truth everyone knows. If a secret already came out in play unmarked, mark it on your next turn.\n`
           : "") +
@@ -536,6 +537,11 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, null)}\n` +
+      (ctx.characters.length
+        ? `THE CAST'S VOICES ARE NEVER YOURS: never write quoted dialogue — or paraphrased lines — for any cast member (${ctx.characters
+            .map((c) => c.name)
+            .join(", ")}), on stage or off. End your narration where a cast member would speak; they speak for themselves in their own turns. Only incidental non-cast figures (a clerk, a passing voice) may speak briefly inside your narration.\n`
+        : "") +
       (ctx.ended
         ? `The story has concluded — narrate a gentle epilogue moment (2-4 sentences). No tags of any kind.`
         : `Write a short narration (2-5 sentences) that helps the plot proceed. Narration is all description — asterisks are optional for you.\n` +

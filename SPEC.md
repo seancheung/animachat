@@ -164,11 +164,12 @@ flowchart TD
     Stream --> Persist[("save message — regenerate adds
     a swipe variant; recompute stage
     (scene, presence, ended)")]
-    Persist --> Chain{"character reply
-    with &lt;mention&gt; tags?"}
-    Chain -- "yes — enqueue them (cap 8 turns unless
-    infinite mentions; never self/user,
-    no back-to-back repeats)" --> Q
+    Persist --> Chain{"reply chains a follow-up?
+    character: &lt;mention&gt; tags —
+    narrator: mid-scene &lt;enter&gt; staging"}
+    Chain -- "yes — enqueue the mentioned / the
+    entered (cap 8 turns unless infinite mentions;
+    never self/user, no back-to-back repeats)" --> Q
     Chain -- no --> More{"queue empty?"}
     More -- no --> Q
     More -- yes --> Bg["background: memory pass +
@@ -199,10 +200,11 @@ Character and narrator prompts adapt; narrator's suggested actions are written i
 Optional in casual and immersive chats; **required in playthroughs**, where it is the stage director. When enabled, it always **speaks first** in a new chat.
 
 - **Triggers:** auto — narrates when it would help (scene-setting, transitions, plot advancement); also summonable on demand via a button (the user's only pacing lever in a playthrough — there is no manual scene control).
+- **Speaker law — the cast's voices are never the narrator's:** the narrator never writes quoted dialogue (or paraphrased lines) for any cast member, on stage or off, in person or remotely (a phone call, a radio, a voice through a wall is still that character's line). Narration ends where a cast member would speak; they speak for themselves in their own turns. Only incidental non-cast figures (a clerk, a passing voice) may speak inside narration. To make an off-stage cast member heard, the narrator stages an entrance instead — see Stage presence.
 - **Suggested actions:** after narrating, offers 2–4 in-character choices rendered as buttons; clicking sends as the user's message (pre-formatted in the chat's convention/POV). Free-text input always remains available. Suppressed on a concluding message and after the story has ended.
 - **Scene progression (playthroughs):** the narrator alone advances the story to the next scene via `<next-scene/>`. There is no manual switching in any mode. The narrator sees the current scene's **contract** (goal / obstacles / exit condition) and works it: steering play toward the goal, keeping obstacles in the way, and advancing when the exit condition is genuinely met — not before the scene has done its job, not long after. A scene without a contract advances on judgment, as before.
 - **Secrets & reveals (playthroughs):** the narrator knows every secret and its reveal hint — it foreshadows and steers toward reveal moments but never states an unrevealed secret outright. When the fiction genuinely uncovers one (the hint's moment arrives, a holder confesses, evidence surfaces), the narrator discloses it in the narration and marks it with `<reveal>Title</reveal>` — from then on the secret is established truth in everyone's context. Reveals are stage events like everything else: forked timelines restore exactly which secrets were out. See Story direction for the full knowledge model.
-- **Stage presence (playthroughs):** a scene opens with its per-scene cast on stage; mid-scene the narrator may bring roster members on with `<enter>Name</enter>` or send them off with `<leave>Name</leave>` (describing it in the narration too). Only present characters speak, are drawn on stage, get prompt sheets, or can be @mentioned; the narrator sees the full roster (on/off stage) so it can stage entrances — including reacting to the user wishing someone were there. The played character is exempt (the user always speaks).
+- **Stage presence (playthroughs):** a scene opens with its per-scene cast on stage; mid-scene the narrator may bring roster members on with `<enter>Name</enter>` or send them off with `<leave>Name</leave>` (describing it in the narration too). Only present characters speak, are drawn on stage, get prompt sheets, or can be @mentioned; the narrator sees the full roster (on/off stage) so it can stage entrances — including reacting to the user wishing someone were there. The played character is exempt (the user always speaks). **A mid-scene entrance hands the entered character the next turn:** the narrator stages the arrival and stops; the entered character is queued to speak for themselves, in event order (same queue and turn cap as mention chaining). Scene changes are excluded — a new scene's opening cast doesn't all speak up unprompted.
 - **The ending (playthroughs):** when the story reaches its resolution — typically in the final scene, where `<next-scene/>` is unavailable — the narrator concludes it with `<the-end/>`. The playthrough shows a completed "The End" state (badge in the chat list, header, timeline) and the prompt context flips to a free-form **epilogue**: the chat is not locked, characters and narrator still respond knowing the story is over, but no more scene advances, staging, or suggested actions. There is no manual "end story" button; the user can always ask the narrator in-fiction to wrap up.
 - **All stage state derives from the timeline:** scene changes, enter/leave, reveals, and the ending are events stored as metadata on narrator messages, folded over visible history (`computeStage`). Forks therefore restore the scene, its background/BGM, who was on stage, which secrets were out, and the un-ended state automatically; there is no free-floating stage field to go stale. Forking from before the finale yields an alternate-ending playthrough for free.
 
@@ -258,7 +260,9 @@ flowchart TD
     (guarded) + revealed truths"]
 
     N --> T["tags on the narrator message:
-    &lt;enter&gt;/&lt;leave&gt; staging
+    &lt;enter&gt;/&lt;leave&gt; staging (a mid-scene
+    entrance queues that character to
+    speak for themselves next)
     &lt;reveal&gt;Title&lt;/reveal&gt; secret → established
     &lt;next-scene/&gt; when exit condition met
     &lt;the-end/&gt; when the destination is reached

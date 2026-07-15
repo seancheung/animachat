@@ -318,6 +318,13 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     expect(kaelReq.system).not.toContain("SECRETS KAEL KEEPS");
   });
 
+  it("the narrator carries the speaker law naming the cast", () => {
+    const req = buildNarratorRequest(storyCtx([]), modelRef);
+    expect(req.system).toContain("THE CAST'S VOICES ARE NEVER YOURS");
+    expect(req.system).toContain("Mira, Kael");
+    expect(req.system).toContain("An entered character takes the very next turn");
+  });
+
   it("the narrator sees the contract, destination, and all secrets with hints", () => {
     const req = buildNarratorRequest(storyCtx([]), modelRef);
     expect(req.system).toContain("THIS SCENE'S JOB");

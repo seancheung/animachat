@@ -430,6 +430,19 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             options,
             stage: { ...stage, ...resolveStageAssets(fresh.chat, stage) },
           });
+
+          // a mid-scene entrance hands the entered cast the next turns: the narrator
+          // stages the arrival and stops — the character speaks for themselves
+          // (scene changes excluded: a new scene's opening cast doesn't all speak up)
+          if (!regenTarget && speaker.role === "narrator" && sceneEvent?.enter?.length && !sceneEvent.sceneId && !sceneEvent.theEnd) {
+            for (const id of sceneEvent.enter) {
+              const c = turnCtx.characters.find((x) => x.id === id);
+              if (!c) continue;
+              if (!infinite && turns + queue.length >= MAX_TURNS) break;
+              if (queue[queue.length - 1]?.character?.id === c.id) continue;
+              queue.push({ role: "character", character: c });
+            }
+          }
         } else {
           send({ type: "done", message: null, options: null, stage: null });
         }
