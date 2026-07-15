@@ -89,6 +89,8 @@ export default function Tabs<T extends string | number = string>({
               <motion.span
                 aria-hidden
                 layoutId={layoutId}
+                // only re-measure when the selection changes — see segmented-control.tsx
+                layoutDependency={current}
                 className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-xs bg-primary-500"
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
               />
