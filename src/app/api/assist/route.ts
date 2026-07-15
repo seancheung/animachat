@@ -1,5 +1,6 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
+import { debugResponseLogEnabled, writeDebugLog } from "@/lib/debugLog";
 import { normalizeSelfTags } from "@/lib/ai/placeholders";
 import {
   getCharacter,
@@ -276,8 +277,30 @@ export const POST = handler(async (req: Request) => {
               });
             }
             send({ type: "fields", fields });
-          } catch {
+          } catch (e) {
+            console.error("assist: fields block failed to parse:", e);
             send({ type: "text", text: "\n(I produced malformed field data — ask me to try again.)" });
+            if (debugResponseLogEnabled()) {
+              try {
+                const url = writeDebugLog(
+                  "assist",
+                  [
+                    "AnimaChat assist debug log — the <fields> block failed to parse",
+                    `time: ${new Date().toISOString()}`,
+                    `entityType: ${body.entityType}`,
+                    "",
+                    "--- error ---",
+                    e instanceof Error ? (e.stack ?? e.message) : String(e),
+                    "",
+                    "--- raw model response ---",
+                    buf,
+                  ].join("\n")
+                );
+                send({ type: "log", url });
+              } catch (logErr) {
+                console.error("assist: could not write debug log:", logErr);
+              }
+            }
           }
         }
         send({ type: "done" });
