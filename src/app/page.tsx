@@ -8,6 +8,7 @@ import {
   Captions,
   Clapperboard,
   Coffee,
+  Download,
   Folder,
   MapPin,
   PanelRight,
@@ -32,7 +33,7 @@ import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import Toggle, { ToggleGroup } from "@/components/ui/toggle";
 import Tooltip from "@/components/ui/tooltip";
-import { api, assetUrl } from "@/lib/ui";
+import { api, assetUrl, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { POV_LABELS, type ChatMode } from "@/lib/types";
 
@@ -516,6 +517,20 @@ export default function HomePage() {
                       size="sm"
                       shape="square"
                       className="opacity-0 group-hover:opacity-100"
+                      title="Export chat archive"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await downloadBlob(await fetch(`/api/chats/${c.id}/archive`), "chat.zip");
+                      }}
+                    >
+                      <Download />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      shape="square"
+                      className="opacity-0 group-hover:opacity-100"
+                      title="Delete chat"
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
