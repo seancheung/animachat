@@ -42,7 +42,7 @@ const FIELD_DOCS: Record<string, string> = {
   story:
     `"name": string; "description": string (the PREMISE — the situation as play opens, spoiler-free: everyone sees it; put hidden truths in secrets, not here); ` +
     `"destination": string (one line naming where the story is headed and what "the end" means — seen only by the narrator; steers the ending without scripting the route); ` +
-    `"secrets": [{"title": "short handle", "content": "the hidden truth", "knownByNames": ["cast", "names", "who", "hold", "it"], "revealHint": "when/how it wants to surface"}] (the story's hidden truths — knownByNames may be empty for a truth nobody on stage knows); ` +
+    `"secrets": [{"title": "short handle", "content": "the hidden truth — PRESENT TENSE, already true as play opens", "knownByNames": ["cast", "names", "who", "ALREADY", "know", "at", "open"], "revealHint": "when/how it wants to surface"}] (the story's hidden truths — knownByNames may be empty for a truth nobody on stage knows; it lists who already knows as play OPENS, never who the secret concerns — a character meant to learn it mid-story is left out); ` +
     `"castNames": ["ordered", "character", "names"] (the story's cast — characters in the library or this batch, linked by name on save; order matters); ` +
     `"scenes": [{"sceneName": string, "castNames": ["who", "opens", "the scene"], "goal": "what the scene is FOR dramatically", "obstacles": "what resists", "exit": "what done looks like — the cue to advance"}] (ordered scene sequence with each scene's contract; goal/obstacles/exit are optional but give the scene a job); ` +
     `"lorebookNames": ["lorebook", "names"] (optional — attached to every playthrough of the story)`,
@@ -181,6 +181,8 @@ export const POST = handler(async (req: Request) => {
       ? `STORY DESIGN PRINCIPLE — author situations, not plots. A story records what is TRUE and under what PRESSURE, never a sequence of events: the player's freedom breaks sequences, it cannot break truths.\n` +
         `- The premise is the situation as play opens — a web of wants, debts and tensions, spoiler-free. Hidden truths belong in secrets, never in the premise.\n` +
         `- Secrets carry the drama: give each a holder (or none), a truth that stays true whatever the player does, and a reveal hint naming the KIND of moment that surfaces it — not a scheduled scene.\n` +
+        `- Secrets are STANDING TRUTHS in present tense: a "will happen" is authored as the intention or arrangement already in place ("she has already signed the order", not "she will sign it in scene 3").\n` +
+        `- knownByNames = who already knows as play OPENS, never who the secret concerns. A character meant to LEARN a truth mid-story starts outside it — extracting from a novel, mark who knows at the story's opening, not who knows by its end.\n` +
         `- Scene contracts are jobs, not scripts: a goal (what the scene is for), obstacles (what resists), an exit condition (what done looks like). Never "then X happens" — write what pulls and what blocks, and let play find the path.\n` +
         `- The destination names where the story is headed, not the route or the twists.\n` +
         `- If the user asks to script a beat ("then in scene 3 she betrays him"), don't put it in a scene or the premise — convert it into the truths and pressures that make that moment likely (a secret with a reveal hint, a motive in a character sheet, an obstacle), and say that's what you did.\n\n`

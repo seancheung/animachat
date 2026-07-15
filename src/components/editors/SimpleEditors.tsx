@@ -452,8 +452,10 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       </Collapsible>
       <Collapsible bordered title={`Secrets${secrets.length ? ` — ${secrets.length}` : ""}`}>
         <div className="text-xs text-content-400 mb-2">
-          the story&apos;s hidden truths — holders guard them, everyone else can&apos;t see them, the narrator reveals
-          them when the fiction earns it
+          the story&apos;s hidden truths, written in present tense (already true as play opens) — holders guard them,
+          everyone else can&apos;t see them, the narrator reveals them when the fiction earns it. &quot;known by&quot; =
+          already knows at the story&apos;s open, never &quot;it concerns them&quot; — someone meant to learn it mid-story
+          starts unchecked
         </div>
         <div className="space-y-2">
           {secrets.map((s, i) => (
@@ -462,10 +464,10 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
                 <Input className="flex-1" placeholder="title — the secret's short handle…" value={s.title} onChange={(v) => setSecret(i, { title: v })} />
                 <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, secrets: secrets.filter((_, k) => k !== i) })}><X /></Button>
               </div>
-              <Textarea className="w-full h-16" placeholder="the truth itself…" value={s.content} onChange={(v) => setSecret(i, { content: v })} />
+              <Textarea className="w-full h-16" placeholder="the truth itself — present tense, already true as play opens…" value={s.content} onChange={(v) => setSecret(i, { content: v })} />
               {cast.length > 0 && (
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="text-xs text-content-400">known by:</span>
+                  <span className="text-xs text-content-400">knows from the start:</span>
                   {cast.map((cid) => (
                     <Checkbox
                       key={cid}
