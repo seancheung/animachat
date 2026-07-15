@@ -377,7 +377,9 @@ export default function ChatPage() {
       map[streaming.characterId] = streaming.emotion;
     }
     return map;
-  }, [timeline, streaming, browseIdx, echoing]);
+    // keyed on the streamed primitives, not the streaming object (new identity per
+    // token) — the map must stay stable per chunk or useEmotionSfx re-diffs per token
+  }, [timeline, streaming?.characterId, streaming?.emotion, browseIdx, echoing]);
 
   // one-shot expression SFX on the sfx channel — follows the DISPLAYED emotion, so it
   // fires when the streamed <emo> tag lands, on swipes, and while browsing the backlog
@@ -556,15 +558,18 @@ export default function ChatPage() {
   // human-readable stage direction for a narrator message's events
   const charName = (cid: string) =>
     characters.find((c) => c.id === cid)?.name ?? chat?.nameSnapshots?.[cid] ?? "?";
+  // scene id → name, once — sceneNameFor runs per row per render, too often for a find
+  const sceneNameById: Record<string, string> = useMemo(() => {
+    // non-snapshot chats: the server resolves event scene ids to names (sceneNames)
+    const map: Record<string, string> = { ...(data?.sceneNames ?? {}) };
+    for (const s of data?.storyScenes ?? []) map[s.id] = s.name;
+    return map;
+  }, [data?.storyScenes, data?.sceneNames]);
   const sceneNameFor = (m: Message): string | null => {
     const ev = m.sceneEvent;
     if (!ev) return null;
     const parts: string[] = [];
-    if (ev.sceneId) {
-      const s = data?.storyScenes?.find((x: any) => x.id === ev.sceneId);
-      // non-snapshot chats: the server resolves event scene ids to names (sceneNames)
-      parts.push(`Scene: ${s?.name ?? data?.sceneNames?.[ev.sceneId] ?? "?"}`);
-    }
+    if (ev.sceneId) parts.push(`Scene: ${sceneNameById[ev.sceneId] ?? "?"}`);
     if (ev.enter?.length) parts.push(`Enter ${ev.enter.map(charName).join(", ")}`);
     if (ev.leave?.length) parts.push(`Exit ${ev.leave.map(charName).join(", ")}`);
     if (ev.theEnd) parts.push("The End");
@@ -791,7 +796,9 @@ export default function ChatPage() {
             personaName={personaName}
             humanNarrator={playAsNarrator}
             isLast={m.id === lastNonMarker?.id}
-            busy={busy}
+            // locked, not busy: memoized rows keep their handler closures until a
+            // compared prop changes, so drafting must disable them through this prop
+            busy={locked}
             streaming={streaming?.forMessageId === m.id ? { text: streaming.text, emotion: streaming.emotion } : null}
             sceneName={sceneNameFor(m)}
             onEdit={(patch) => patchMessage(m, patch)}

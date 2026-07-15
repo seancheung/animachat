@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   Captions,
   ChevronLeft,
@@ -35,7 +35,7 @@ function fmtReceived(ts: number): string {
   return `${date}, ${time}`;
 }
 
-export function MessageRow({
+export const MessageRow = memo(function MessageRow({
   message,
   characters,
   nameSnapshots,
@@ -247,4 +247,18 @@ export function MessageRow({
       </div>
     </div>
   );
-}
+},
+// every streamed token re-renders the chat page; rows skip when their data props are
+// unchanged. Handlers are deliberately left out of the comparison: everything they
+// close over that can change is mirrored in a compared prop (message objects get a new
+// identity on every refetch, and `busy` mirrors the page's locked state).
+(prev, next) =>
+  prev.message === next.message &&
+  prev.characters === next.characters &&
+  prev.nameSnapshots === next.nameSnapshots &&
+  prev.personaName === next.personaName &&
+  prev.humanNarrator === next.humanNarrator &&
+  prev.isLast === next.isLast &&
+  prev.busy === next.busy &&
+  prev.streaming === next.streaming &&
+  prev.sceneName === next.sceneName);
