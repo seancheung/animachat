@@ -842,12 +842,40 @@ export function updateMessage(
   const cur = getMessage(id);
   if (!cur) return null;
   const variants = patch.variants ?? cur.variants;
-  const active = Math.min(patch.activeVariant ?? cur.activeVariant, Math.max(0, variants.length - 1));
+  // clamp to a valid index — a negative/fractional value would poison the
+  // '$[n].content' JSON path pageChats builds from this column
+  const requested = Number.isInteger(patch.activeVariant) ? (patch.activeVariant as number) : cur.activeVariant;
+  const active = Math.max(0, Math.min(requested, Math.max(0, variants.length - 1)));
   const sceneEvent = patch.sceneEvent === undefined ? cur.sceneEvent : patch.sceneEvent;
   getDb()
     .prepare("UPDATE messages SET variants=?, active_variant=?, scene_event=? WHERE id=?")
     .run(J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, id);
   return getMessage(id);
+}
+
+/** Add a regenerated alternative to a message — allowed only while it is still the
+ *  chat's newest live message. The generate route streams for a long while between
+ *  its up-front tail check and this save, so tail-ness is re-verified here, inside
+ *  the synchronous call: a message frozen in the meantime (a follow-up landed, or a
+ *  concurrent regen finished first) returns null and the variant is discarded rather
+ *  than resurrected onto a frozen message. */
+export function addVariant(
+  messageId: string,
+  variant: MessageVariant,
+  sceneEvent?: SceneEvent | null
+): Message | null {
+  const cur = getMessage(messageId);
+  if (!cur) return null;
+  const tail = getDb()
+    .prepare("SELECT id FROM messages WHERE chat_id=? AND role<>'marker' ORDER BY position DESC LIMIT 1")
+    .get(cur.chatId) as Row | undefined;
+  if (tail?.id !== messageId) return null;
+  const variants = [...cur.variants, variant];
+  return updateMessage(messageId, {
+    variants,
+    activeVariant: variants.length - 1,
+    sceneEvent: sceneEvent === undefined ? cur.sceneEvent : sceneEvent,
+  });
 }
 
 export function deleteMessage(id: string) {

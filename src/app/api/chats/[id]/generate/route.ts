@@ -22,7 +22,7 @@ import {
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
-import { appendMessage, getMessage, saveChat, setRawOutput, updateMessage } from "@/lib/store";
+import { addVariant, appendMessage, getMessage, saveChat, setRawOutput } from "@/lib/store";
 import type { Character, Message, SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -432,16 +432,15 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           }
           let saved: Message | null;
           if (regenTarget) {
-            const variants = [
-              ...regenTarget.variants,
+            // tail-ness is re-verified inside addVariant — a message frozen while we
+            // streamed (follow-up landed, concurrent regen won) returns null and this
+            // variant is discarded instead of resurrecting the frozen message's swipes
+            saved = addVariant(
+              regenTarget.id,
               { content, emotion, options, createdAt: Date.now() },
-            ];
-            saved = updateMessage(regenTarget.id, {
-              variants,
-              activeVariant: variants.length - 1,
-              sceneEvent: sceneEvent ?? regenTarget.sceneEvent,
-            });
-            if (saved) setRawOutput(saved.id, variants.length - 1, raw);
+              sceneEvent ?? undefined
+            );
+            if (saved) setRawOutput(saved.id, saved.activeVariant, raw);
           } else {
             saved = appendMessage({
               chatId,
@@ -454,27 +453,31 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               sceneEvent,
             });
           }
-          savedAny = true;
-          const fresh = buildContext(chatId);
-          const stage = computeStage(fresh.chat, fresh.messages);
-          send({
-            type: "done",
-            message: saved,
-            options,
-            stage: { ...stage, ...resolveStageAssets(fresh.chat, stage) },
-          });
+          if (saved) {
+            savedAny = true;
+            const fresh = buildContext(chatId);
+            const stage = computeStage(fresh.chat, fresh.messages);
+            send({
+              type: "done",
+              message: saved,
+              options,
+              stage: { ...stage, ...resolveStageAssets(fresh.chat, stage) },
+            });
 
-          // a mid-scene entrance hands the entered cast the next turns: the narrator
-          // stages the arrival and stops — the character speaks for themselves
-          // (scene changes excluded: a new scene's opening cast doesn't all speak up)
-          if (!regenTarget && speaker.role === "narrator" && sceneEvent?.enter?.length && !sceneEvent.sceneId && !sceneEvent.theEnd) {
-            for (const id of sceneEvent.enter) {
-              const c = turnCtx.characters.find((x) => x.id === id);
-              if (!c) continue;
-              if (!infinite && turns + queue.length >= MAX_TURNS) break;
-              if (queue[queue.length - 1]?.character?.id === c.id) continue;
-              queue.push({ role: "character", character: c });
+            // a mid-scene entrance hands the entered cast the next turns: the narrator
+            // stages the arrival and stops — the character speaks for themselves
+            // (scene changes excluded: a new scene's opening cast doesn't all speak up)
+            if (!regenTarget && speaker.role === "narrator" && sceneEvent?.enter?.length && !sceneEvent.sceneId && !sceneEvent.theEnd) {
+              for (const id of sceneEvent.enter) {
+                const c = turnCtx.characters.find((x) => x.id === id);
+                if (!c) continue;
+                if (!infinite && turns + queue.length >= MAX_TURNS) break;
+                if (queue[queue.length - 1]?.character?.id === c.id) continue;
+                queue.push({ role: "character", character: c });
+              }
             }
+          } else {
+            send({ type: "done", message: null, options: null, stage: null });
           }
         } else {
           send({ type: "done", message: null, options: null, stage: null });

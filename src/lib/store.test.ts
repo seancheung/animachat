@@ -10,6 +10,7 @@ process.env.ANIMACHAT_DB_PATH = path.join(
 );
 import {
   PageError,
+  addVariant,
   appendMessage,
   decodeCursor,
   deleteCharacter,
@@ -54,6 +55,36 @@ describe("appendMessage tail freeze", () => {
       activeVariant: 1,
     });
     expect(getMessage(tail.id)!.variants).toHaveLength(2);
+  });
+});
+
+describe("updateMessage activeVariant clamp", () => {
+  it("rejects negative and fractional indexes (they would poison pageChats' JSON path)", () => {
+    const chat = saveChat({ title: "clamp" });
+    const m = appendMessage({ chatId: chat.id, role: "character", content: "only" });
+    expect(updateMessage(m.id, { activeVariant: -1 })!.activeVariant).toBe(0);
+    expect(updateMessage(m.id, { activeVariant: 0.5 })!.activeVariant).toBe(0);
+    expect(updateMessage(m.id, { activeVariant: 99 })!.activeVariant).toBe(0);
+  });
+});
+
+describe("addVariant", () => {
+  it("appends a swipe to the tail and re-reads fresh variants", () => {
+    const chat = saveChat({ title: "regen" });
+    appendMessage({ chatId: chat.id, role: "user", content: "hi" });
+    const tail = appendMessage({ chatId: chat.id, role: "character", content: "take one" });
+    const saved = addVariant(tail.id, { content: "take two", emotion: null, options: null, createdAt: 1 });
+    expect(saved!.variants.map((v) => v.content)).toEqual(["take one", "take two"]);
+    expect(saved!.activeVariant).toBe(1);
+  });
+
+  it("refuses a message that is no longer the tail (regen raced a new message)", () => {
+    const chat = saveChat({ title: "regen race" });
+    const target = appendMessage({ chatId: chat.id, role: "character", content: "old tail" });
+    appendMessage({ chatId: chat.id, role: "user", content: "moved on" });
+    const saved = addVariant(target.id, { content: "late regen", emotion: null, options: null, createdAt: 1 });
+    expect(saved).toBeNull();
+    expect(getMessage(target.id)!.variants).toHaveLength(1);
   });
 });
 
