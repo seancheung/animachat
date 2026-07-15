@@ -20,7 +20,7 @@ An AI-driven virtual character chat webapp with a visual-novel presentation. Per
 
 ## Entities
 
-All world-building entities are reusable across chats. The library page has a per-type text search (name + description + tags) and sorting (recently updated / newest / name).
+All world-building entities are reusable across chats. The library page has a per-type text search (name + tags) and sorting (recently updated / newest / name).
 
 **Tags:** every library item (character, persona, location, scene, story, lorebook) carries optional free-form tags for grouping and filtering — edited as a comma-separated field in each editor, shown as chips on library cards, and filterable via a tag dropdown on the library page (per type; the filter resets when switching type tabs). Tags travel with exported bundles. Purely organizational — never injected into prompts.
 

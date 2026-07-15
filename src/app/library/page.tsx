@@ -78,7 +78,7 @@ export default function LibraryPage() {
     const q = query.trim().toLowerCase();
     if (q)
       list = list.filter((i) =>
-        [i.name, i.description, i.setup, (i.tags ?? []).join(" ")].some(
+        [i.name, (i.tags ?? []).join(" ")].some(
           (t) => typeof t === "string" && t.toLowerCase().includes(q)
         )
       );
