@@ -11,7 +11,7 @@ import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { searchIdByName, useInvalidate } from "@/lib/queries";
-import { api } from "@/lib/ui";
+import { api, uid } from "@/lib/ui";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -168,7 +168,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
             payload.secrets = (Array.isArray(payload.secrets) ? payload.secrets : [])
               .filter((s: any) => s && typeof s === "object")
               .map((s: any) => ({
-                id: typeof s.id === "string" && s.id ? s.id : crypto.randomUUID(),
+                id: typeof s.id === "string" && s.id ? s.id : uid(),
                 title: String(s.title ?? ""),
                 content: String(s.content ?? ""),
                 knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])

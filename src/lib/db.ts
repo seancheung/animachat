@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { v4 as uuidv4 } from "uuid";
 
 // ANIMACHAT_DATA_DIR relocates everything (db + assets) — lets a test instance
 // run fully isolated; ANIMACHAT_DB_PATH additionally overrides just the db file
@@ -243,4 +244,4 @@ export function getDb(): Database.Database {
 }
 
 export const now = () => Date.now();
-export const uid = () => crypto.randomUUID();
+export const uid = () => uuidv4();

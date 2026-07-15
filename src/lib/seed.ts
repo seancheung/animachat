@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import {
   listCharacters,
   listLocations,
@@ -113,7 +114,7 @@ export function seedPresets() {
     description: "Shared world facts for the starter story",
     entries: [
       {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         title: "The Ashen Guild",
         keywords: ["ashen", "guild", "collectors", "debt"],
         content:
@@ -121,7 +122,7 @@ export function seedPresets() {
         scanDepth: 8,
       },
       {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         title: "Moonmilk",
         keywords: ["moonmilk", "glow", "cellar"],
         content:
@@ -139,7 +140,7 @@ export function seedPresets() {
       "Ends at dawn, when the Guild's collectors knock — with Mira's debt settled, dodged, or paid in something worse than coin.",
     secrets: [
       {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         title: "Kael's own debt",
         content:
           "Kael owes the Ashen Guild too — his calm is a professional's, from years of managing collectors. He answered the notice hoping to settle both debts with one job, and he recognizes the grey gloves on sight.",
@@ -147,7 +148,7 @@ export function seedPresets() {
         revealHint: "When the Guild is named to his face, or when Mira's debt comes out in the open.",
       },
       {
-        id: crypto.randomUUID(),
+        id: uuidv4(),
         title: "What sleeps in the cellar",
         content:
           "The locked cellar sits on old temple stone where moonmilk has been forming for years. Mira has been farming it in secret — enough to clear any debt, and enough to hang her under the Alchemists' Concord if a soul finds out.",

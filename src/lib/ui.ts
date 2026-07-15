@@ -2,6 +2,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { v4 as uuidv4 } from "uuid";
+
 export async function fetchJson<T = any>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -65,12 +67,9 @@ export async function streamSse(
   }
 }
 
-/** Client-side id — crypto.randomUUID doesn't exist on insecure origins (plain-HTTP LAN access). */
+/** Client-side id — uuid instead of crypto.randomUUID, which doesn't exist on insecure origins (plain-HTTP LAN access). */
 export function uid(): string {
-  return (
-    crypto.randomUUID?.() ??
-    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-  );
+  return uuidv4();
 }
 
 export function assetUrl(id: string | null | undefined): string | null {

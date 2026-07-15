@@ -444,7 +444,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
       out.secrets = partial.secrets
         .filter((s: any) => s && typeof s === "object")
         .map((s: any) => ({
-          id: typeof s.id === "string" && s.id ? s.id : crypto.randomUUID(),
+          id: typeof s.id === "string" && s.id ? s.id : uid(),
           title: String(s.title ?? ""),
           content: String(s.content ?? ""),
           knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])
@@ -643,7 +643,7 @@ export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onS
             onClick={() =>
               setForm({
                 ...form,
-                secrets: [...secrets, { id: crypto.randomUUID(), title: "", content: "", knownBy: [], revealHint: "" }],
+                secrets: [...secrets, { id: uid(), title: "", content: "", knownBy: [], revealHint: "" }],
               })
             }
           >
