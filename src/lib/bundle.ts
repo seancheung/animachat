@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
@@ -67,6 +68,18 @@ export function assetIdsOf(type: BundleItemType, data: any): string[] {
     default:
       return [];
   }
+}
+
+/** Write an imported asset only if its bytes hash to its claimed id (ids are
+ *  content addresses, so an existing file is by definition identical and is never
+ *  overwritten — a manifest can't replace another asset's bytes on disk).
+ *  False = the bytes don't match the id; the asset is skipped. */
+export function writeVerifiedAsset(id: string, data: Buffer): boolean {
+  const file = path.join(ASSETS_DIR, id);
+  if (fs.existsSync(file)) return true;
+  if (crypto.createHash("sha256").update(data).digest("hex").slice(0, 32) !== id) return false;
+  fs.writeFileSync(file, data);
+  return true;
 }
 
 /** Build a zip bundle for the given items. Stories pull in their cast, scenes and
@@ -191,7 +204,7 @@ export async function importBundle(
     const f = zip.file(`assets/${a.id}`);
     if (!f || !/^[a-f0-9]{32}$/.test(a.id)) continue;
     const data = await f.async("nodebuffer");
-    fs.writeFileSync(path.join(ASSETS_DIR, a.id), data);
+    if (!writeVerifiedAsset(a.id, data)) continue;
     registerAsset(a.id, a.filename, a.mime, data.length);
   }
 

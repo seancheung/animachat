@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
 import { ASSETS_DIR } from "./db";
-import { assetIdsOf } from "./bundle";
+import { assetIdsOf, writeVerifiedAsset } from "./bundle";
 import {
   appendMessage,
   getAsset,
@@ -93,7 +93,7 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
     const f = zip.file(`assets/${a.id}`);
     if (!f || !/^[a-f0-9]{32}$/.test(a.id)) continue;
     const data = await f.async("nodebuffer");
-    fs.writeFileSync(path.join(ASSETS_DIR, a.id), data);
+    if (!writeVerifiedAsset(a.id, data)) continue;
     registerAsset(a.id, a.filename, a.mime, data.length);
   }
 
