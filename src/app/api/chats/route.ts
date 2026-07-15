@@ -27,6 +27,11 @@ export const GET = handler(() => {
       messageCount: msgs.length,
       lastMessage: last ? (last.variants[last.activeVariant]?.content ?? "").slice(0, 120) : "",
       characterNames: c.characterIds.map((id) => getCharacter(id)?.name ?? c.nameSnapshots[id] ?? "?"),
+      personaName: c.personaId
+        ? (getPersona(c.personaId)?.name ?? null)
+        : c.personaCharacterId
+          ? (c.nameSnapshots[c.personaCharacterId] ?? null)
+          : null,
     };
   });
   return ok(chats);

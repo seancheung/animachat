@@ -149,7 +149,6 @@ CREATE TABLE IF NOT EXISTS messages (
   variants TEXT NOT NULL DEFAULT '[]',
   active_variant INTEGER NOT NULL DEFAULT 0,
   scene_event TEXT,
-  search_text TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, position);

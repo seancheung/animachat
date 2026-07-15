@@ -766,10 +766,6 @@ export function getMessage(id: string): Message | null {
   return r ? messageFromRow(r) : null;
 }
 
-function searchTextOf(variants: MessageVariant[]): string {
-  return variants.map((v) => v.content).join("\n");
-}
-
 export function appendMessage(m: {
   chatId: string;
   role: Message["role"];
@@ -807,8 +803,8 @@ export function appendMessage(m: {
   };
   const id = uid();
   db.prepare(
-    `INSERT INTO messages (id, chat_id, position, role, character_id, variants, active_variant, scene_event, search_text, created_at)
-     VALUES (?,?,?,?,?,?,0,?,?,?)`
+    `INSERT INTO messages (id, chat_id, position, role, character_id, variants, active_variant, scene_event, created_at)
+     VALUES (?,?,?,?,?,?,0,?,?)`
   ).run(
     id,
     m.chatId,
@@ -817,7 +813,6 @@ export function appendMessage(m: {
     m.characterId ?? null,
     J.str([variant]),
     m.sceneEvent ? J.str(m.sceneEvent) : null,
-    searchTextOf([variant]),
     now()
   );
   touchChat(m.chatId);
@@ -847,28 +842,13 @@ export function updateMessage(
   const active = Math.min(patch.activeVariant ?? cur.activeVariant, Math.max(0, variants.length - 1));
   const sceneEvent = patch.sceneEvent === undefined ? cur.sceneEvent : patch.sceneEvent;
   getDb()
-    .prepare("UPDATE messages SET variants=?, active_variant=?, scene_event=?, search_text=? WHERE id=?")
-    .run(J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, searchTextOf(variants), id);
+    .prepare("UPDATE messages SET variants=?, active_variant=?, scene_event=? WHERE id=?")
+    .run(J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, id);
   return getMessage(id);
 }
 
 export function deleteMessage(id: string) {
   getDb().prepare("DELETE FROM messages WHERE id=?").run(id);
-}
-
-export function searchMessages(q: string, limit = 50): { message: Message; chat: Chat }[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT m.* FROM messages m JOIN chats c ON c.id = m.chat_id
-       WHERE m.search_text LIKE ? ESCAPE '\\' ORDER BY m.created_at DESC LIMIT ?`
-    )
-    .all(`%${q.replace(/[%_\\]/g, (ch) => "\\" + ch)}%`, limit) as Row[];
-  const out: { message: Message; chat: Chat }[] = [];
-  for (const r of rows) {
-    const chat = getChat(r.chat_id);
-    if (chat) out.push({ message: messageFromRow(r), chat });
-  }
-  return out;
 }
 
 /* ---------------- memory: summaries, facts, relationships ---------------- */

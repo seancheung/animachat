@@ -425,10 +425,18 @@ export default function HomePage() {
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("");
   const importRef = useRef<HTMLInputElement>(null);
-  const { data: searchResults } = useSWR<any[]>(q.trim() ? `/api/search?q=${encodeURIComponent(q)}` : null, api.get);
 
   const folders = useMemo(() => [...new Set((chats ?? []).map((c) => c.folder).filter(Boolean))].sort(), [chats]);
-  const visible = (chats ?? []).filter((c) => !folder || c.folder === folder);
+  const needle = q.trim().toLowerCase();
+  const visible = (chats ?? [])
+    .filter((c) => !folder || c.folder === folder)
+    .filter(
+      (c) =>
+        !needle ||
+        [c.title, ...(c.tags ?? []), ...c.characterNames, c.personaName, c.storyName].some(
+          (s: string | null) => s && s.toLowerCase().includes(needle)
+        )
+    );
 
   return (
     <div className="h-full overflow-y-auto">
@@ -486,102 +494,90 @@ export default function HomePage() {
           </ToggleGroup>
         )}
 
-        {q.trim() ? (
-          <div className="space-y-2">
-            <div className="text-xs uppercase tracking-wider text-content-300">Search results</div>
-            {searchResults?.map((r) => (
-              <div key={r.messageId} className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors" onClick={() => router.push(`/chat/${r.chatId}`)}>
-                <div className="text-sm font-medium">{r.chatTitle}</div>
-                <div className="text-xs text-content-300 mt-1">{r.snippet}</div>
-              </div>
-            ))}
-            {searchResults?.length === 0 && <EmptyState>No matches.</EmptyState>}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {chats?.length === 0 && (
-              <EmptyState>
-                Welcome to AnimaChat ✦ Set up a provider in Settings, create a character in the
-                Library, then start your first chat.
-              </EmptyState>
-            )}
-            {visible.map((c) => (
-              <div
-                key={c.id}
-                className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group flex items-center gap-3"
-                onClick={() => router.push(`/chat/${c.id}`)}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-medium truncate">{c.title}</span>
-                    {c.ended && (
-                      <Badge size="sm" rounded className="shrink-0">
-                        The End
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-xs min-w-0">
-                    <span className="shrink-0 size-6 rounded-full bg-base-300 flex items-center justify-center text-content-300">
-                      {MODE_ICONS[c.mode] ?? null}
-                    </span>
-                    <span className="min-w-0 truncate flex items-center gap-1 text-content-300">
-                      {c.characterNames.join(", ")}
-                      {c.narratorEnabled && <ScrollText size={11} className="shrink-0" />}
-                    </span>
-                    {c.tags?.map((t: string) => (
-                      <Badge key={t} variant="secondary" size="sm" rounded className="shrink-0">
-                        {t}
-                      </Badge>
-                    ))}
-                    {c.mode === "story" && c.storyName && (
-                      <Badge variant="secondary" size="sm" rounded className="shrink-0">
-                        {c.storyName}
-                      </Badge>
-                    )}
-                  </div>
-                  {c.lastMessage && (
-                    <div className="mt-0.5 text-xs text-content-400 truncate">{c.lastMessage}</div>
+        <div className="space-y-2">
+          {chats?.length === 0 && (
+            <EmptyState>
+              Welcome to AnimaChat ✦ Set up a provider in Settings, create a character in the
+              Library, then start your first chat.
+            </EmptyState>
+          )}
+          {needle && (chats?.length ?? 0) > 0 && visible.length === 0 && <EmptyState>No matches.</EmptyState>}
+          {visible.map((c) => (
+            <div
+              key={c.id}
+              className="panel p-3 cursor-pointer hover:border-primary-500 transition-colors group flex items-center gap-3"
+              onClick={() => router.push(`/chat/${c.id}`)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium truncate">{c.title}</span>
+                  {c.ended && (
+                    <Badge size="sm" rounded className="shrink-0">
+                      The End
+                    </Badge>
                   )}
                 </div>
-                <div className="relative shrink-0 self-stretch min-w-16">
-                  <div className="h-full flex flex-col items-end justify-center transition-opacity group-hover:opacity-0">
-                    <span className="text-xs text-content-300">{fmtWhen(c.updatedAt)}</span>
-                    <span className="text-tiny text-content-400">{c.messageCount} msgs</span>
-                  </div>
-                  <div className="absolute inset-0 flex items-center justify-end gap-1 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      shape="square"
-                      title="Export chat archive"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        await downloadBlob(await fetch(`/api/chats/${c.id}/archive`), "chat.zip");
-                      }}
-                    >
-                      <Download />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      shape="square"
-                      title="Delete chat"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
-                          await api.del(`/api/chats/${c.id}`);
-                          mutate();
-                        }
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-xs min-w-0">
+                  <span className="shrink-0 size-6 rounded-full bg-base-300 flex items-center justify-center text-content-300">
+                    {MODE_ICONS[c.mode] ?? null}
+                  </span>
+                  <span className="min-w-0 truncate flex items-center gap-1 text-content-300">
+                    {c.characterNames.join(", ")}
+                    {c.narratorEnabled && <ScrollText size={11} className="shrink-0" />}
+                  </span>
+                  {c.tags?.map((t: string) => (
+                    <Badge key={t} variant="secondary" size="sm" rounded className="shrink-0">
+                      {t}
+                    </Badge>
+                  ))}
+                  {c.mode === "story" && c.storyName && (
+                    <Badge variant="secondary" size="sm" rounded className="shrink-0">
+                      {c.storyName}
+                    </Badge>
+                  )}
+                </div>
+                {c.lastMessage && (
+                  <div className="mt-0.5 text-xs text-content-400 truncate">{c.lastMessage}</div>
+                )}
+              </div>
+              <div className="relative shrink-0 self-stretch min-w-16">
+                <div className="h-full flex flex-col items-end justify-center transition-opacity group-hover:opacity-0">
+                  <span className="text-xs text-content-300">{fmtWhen(c.updatedAt)}</span>
+                  <span className="text-tiny text-content-400">{c.messageCount} msgs</span>
+                </div>
+                <div className="absolute inset-0 flex items-center justify-end gap-1 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    shape="square"
+                    title="Export chat archive"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await downloadBlob(await fetch(`/api/chats/${c.id}/archive`), "chat.zip");
+                    }}
+                  >
+                    <Download />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    shape="square"
+                    title="Delete chat"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
+                        await api.del(`/api/chats/${c.id}`);
+                        mutate();
+                      }
+                    }}
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
       <NewChatWizard open={wizard} onClose={() => setWizard(false)} />
     </div>
