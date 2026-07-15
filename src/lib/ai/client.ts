@@ -24,9 +24,14 @@ export interface ResolvedModel {
 
 export class AiConfigError extends Error {}
 
-/** ~4 chars per token is a decent cross-provider estimate; the output reserve absorbs the error. */
+/** ~4 chars per token holds for ASCII prose, but CJK (and other non-ASCII scripts)
+ *  run ~1 token per char — weight them separately so multilingual chats don't blow
+ *  the context budget 4× under-counted. The output reserve absorbs the remainder. */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  let ascii = 0;
+  let wide = 0;
+  for (let i = 0; i < text.length; i++) (text.charCodeAt(i) < 128 ? ascii++ : wide++);
+  return Math.ceil(ascii / 4 + wide);
 }
 
 /**
@@ -82,18 +87,28 @@ async function* sseLines(res: Response): AsyncGenerator<string> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop()!;
-    for (const line of lines) {
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop()!;
+      for (const line of lines) {
+        const t = line.trim();
+        if (t.startsWith("data:")) yield t.slice(5).trim();
+      }
+    }
+    buf += decoder.decode(); // flush a stream ending mid-multibyte character
+    for (const line of buf.split("\n")) {
       const t = line.trim();
       if (t.startsWith("data:")) yield t.slice(5).trim();
     }
+  } finally {
+    // an in-stream provider error (or a consumer breaking early) must not leave
+    // the HTTP body open until GC
+    reader.cancel().catch(() => {});
   }
-  if (buf.trim().startsWith("data:")) yield buf.trim().slice(5).trim();
 }
 
 async function raiseHttpError(res: Response, provider: Provider): Promise<never> {
@@ -229,33 +244,42 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
   const gen = req.modelRef.provider.type === "anthropic" ? streamAnthropic(req) : streamOpenAi(req);
   let collected = "";
   let usage: { input: number; cacheRead: number; cacheWrite: number; output: number } | null = null;
-  for await (const ev of gen) {
-    if (ev.type === "text") {
-      collected += ev.text;
-      yield ev;
-    } else if (ev.type === "usage") {
-      usage = ev;
-    } else {
-      yield ev;
+  let input = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
+  let output = 0;
+  try {
+    for await (const ev of gen) {
+      if (ev.type === "text") {
+        collected += ev.text;
+        yield ev;
+      } else if (ev.type === "usage") {
+        usage = ev;
+      } else {
+        yield ev;
+      }
     }
+  } finally {
+    // log even when the stream is aborted (Stop button) or the provider errors
+    // mid-reply — the prompt was billed either way; estimate what wasn't reported
+    const promptText = req.system + req.messages.map((m) => m.content).join("\n");
+    cacheRead = usage?.cacheRead ?? 0;
+    cacheWrite = usage?.cacheWrite ?? 0;
+    // estimate only when the provider reported no prompt usage at all — a fully
+    // cached prompt legitimately has input 0
+    input = usage && usage.input + cacheRead + cacheWrite > 0 ? usage.input : estimateTokens(promptText);
+    output = usage?.output || estimateTokens(collected);
+    logUsage({
+      provider: req.modelRef.provider.name,
+      model: req.modelRef.model.modelId,
+      feature: req.feature,
+      chatId: req.chatId ?? null,
+      inputTokens: input,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+      outputTokens: output,
+    });
   }
-  const promptText = req.system + req.messages.map((m) => m.content).join("\n");
-  const cacheRead = usage?.cacheRead ?? 0;
-  const cacheWrite = usage?.cacheWrite ?? 0;
-  // estimate only when the provider reported no prompt usage at all — a fully cached
-  // prompt legitimately has input 0
-  const input = usage && usage.input + cacheRead + cacheWrite > 0 ? usage.input : estimateTokens(promptText);
-  const output = usage?.output || estimateTokens(collected);
-  logUsage({
-    provider: req.modelRef.provider.name,
-    model: req.modelRef.model.modelId,
-    feature: req.feature,
-    chatId: req.chatId ?? null,
-    inputTokens: input,
-    cacheReadTokens: cacheRead,
-    cacheWriteTokens: cacheWrite,
-    outputTokens: output,
-  });
   yield { type: "usage", input, cacheRead, cacheWrite, output };
 }
 
