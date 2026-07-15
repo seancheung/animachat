@@ -216,7 +216,8 @@ export function MentionInputBox({
         e.preventDefault();
         return setIndex((i) => (i - 1 + candidates.length) % candidates.length);
       }
-      if (e.key === "Enter" || e.key === "Tab") {
+      // the Enter that commits an IME composition must not pick a mention
+      if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
         e.preventDefault();
         return pick(candidates[index]);
       }

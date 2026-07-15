@@ -655,7 +655,7 @@ export default function ChatPage() {
         disabled={locked}
         onChange={setInput}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             send();
           }
@@ -1190,7 +1190,7 @@ function DialogueLayout({
               disabled={busy}
               onChange={setInput}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && input.trim()) {
+                if (e.key === "Enter" && !e.shiftKey && input.trim() && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   send();
                 }
