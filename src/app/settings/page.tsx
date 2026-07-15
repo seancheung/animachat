@@ -35,7 +35,7 @@ function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: numbe
   );
 }
 
-/** Typewriter speed in characters per second; 0 = off (text appears as it streams in). */
+/** Typewriter speed in characters per second (dialogue-box layout only); 0 = off (text appears as it streams in). */
 function TypingSpeedSlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
   const [v, setV] = useState(value);
   const commit = () => v !== value && onCommit(v);
@@ -402,7 +402,7 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Interface</h2>
           <div className="panel p-4 grid md:grid-cols-2 gap-3">
-            <Field label="Typing sound">
+            <Field label="Typing sound" hint="VN typing blips while a reply types out, in the dialogue-box layout">
               <Switch
                 className="h-8"
                 value={settings.typingSfxEnabled}
@@ -410,7 +410,7 @@ export default function SettingsPage() {
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
-            <Field label="Typing speed" hint="characters per second the reply types out at; off = it appears as it streams in">
+            <Field label="Typing speed" hint="characters per second the reply types out at, in the dialogue-box layout; off = it appears as it streams in. The side panel always shows text as it arrives">
               <TypingSpeedSlider
                 value={settings.typingSpeed}
                 onCommit={(v) => patchSettings({ typingSpeed: v })}

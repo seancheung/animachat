@@ -391,7 +391,8 @@ export interface Settings {
   chunkThreshold: number;
   outputReserve: number;
   typingSfxEnabled: boolean;
-  /** VN typewriter reveal, in characters per second; 0 = off (text appears as it streams in) */
+  /** VN typewriter reveal, in characters per second (dialogue-box layout only — the side
+   *  panel always shows text as it arrives); 0 = off (text appears as it streams in) */
   typingSpeed: number;
   /** music channel: the active scene/location BGM, 0..1 */
   bgmVolume: number;

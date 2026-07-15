@@ -260,17 +260,25 @@ export default function ChatPage() {
   // characters-per-second rate, and the blip follows the reveal rather than the network.
   // In the dialogue box the reveal stops at the end of each page and waits for the reader
   // (picture mode has no dialogue box to click, so it types straight through).
+  // The side panel skips the reveal entirely (speed 0): text appears as it arrives.
   const [streamPage, setStreamPage] = useState(0);
   const revealedRef = useRef(0);
   const typewriter = useTypewriter({
-    speed: settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed,
+    speed: layout === "dialogue" ? (settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed) : 0,
     paginate: layout === "dialogue" && !pictureMode,
     pageIndex: streamPage,
     onReveal: ({ text, pageDone, hasMore }) => {
       setStreaming((s) => (s ? { ...s, text, pageDone, hasMore } : s));
       if (text) dropEcho(); // the reply has begun to appear — the user's line steps aside
-      // only blip on characters actually typed (the reveal also re-emits on page turns)
-      if (text.length > revealedRef.current && settings?.typingSfxEnabled && !muted) {
+      // only blip on characters actually typed (the reveal also re-emits on page turns),
+      // and only where there IS a reveal — the side panel shows text as it arrives, and
+      // blipping on raw network chunks would sound like a typewriter that isn't there
+      if (
+        text.length > revealedRef.current &&
+        layout === "dialogue" &&
+        settings?.typingSfxEnabled &&
+        !muted
+      ) {
         blip.play(blipUrlRef.current, sfxVolume * MIX.blip);
       }
       revealedRef.current = text.length;
