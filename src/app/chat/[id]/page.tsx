@@ -1069,6 +1069,9 @@ function DialogueLayout({
       const typing =
         document.activeElement?.tagName === "TEXTAREA" || document.activeElement?.tagName === "INPUT";
       if (typing) return;
+      // a focused control keeps its keys — Enter/Space must press the button (options,
+      // corner controls), not advance the page underneath it
+      if ((e.target as HTMLElement | null)?.closest?.('button, a, select, [role="button"], [contenteditable]')) return;
       if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") {
         e.preventDefault();
         navRef.current.advance();
