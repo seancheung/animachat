@@ -416,7 +416,7 @@ export default function SettingsPage() {
                 onCommit={(v) => patchSettings({ typingSpeed: v })}
               />
             </Field>
-            <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel">
+            <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel & the VN dialogue box">
               <Switch
                 className="h-8"
                 value={settings.chatPanelBlur}

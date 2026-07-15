@@ -118,6 +118,20 @@ function ChannelSlider({
   );
 }
 
+/** Commit-on-release percent slider (mirrors the settings page's OpacitySlider). */
+function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [v, setV] = useState(value);
+  const commit = () => v !== value && onCommit(v);
+  return (
+    <div className="flex items-center gap-2 h-8">
+      <div className="flex-1 flex items-center">
+        <Slider min={0.1} max={1} step={0.05} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
+      </div>
+      <span className="text-sm text-content-300 w-9 text-right">{Math.round(v * 100)}%</span>
+    </div>
+  );
+}
+
 interface Streaming {
   role: "character" | "narrator";
   characterId: string | null;
@@ -229,8 +243,9 @@ export default function ChatPage() {
   const sfxVolume = settings?.sfxVolume ?? DEFAULT_SETTINGS.sfxVolume;
   const muted = settings?.audioMuted ?? DEFAULT_SETTINGS.audioMuted;
   // written straight to the global settings (they outlive the chat, like the other
-  // presentation knobs); optimistic so a slider drag doesn't wait on the round trip
-  const patchAudio = useCallback(
+  // presentation knobs); optimistic so a slider drag doesn't wait on the round trip.
+  // The drawer's audio, panel-opacity and panel-blur controls all patch through here.
+  const patchSettings = useCallback(
     (patch: Partial<Settings>) => {
       queryClient.setQueryData<Settings>(["/api/settings"], (s) => (s ? { ...s, ...patch } : s));
       void api.put("/api/settings", patch).then(() => mutateSettings());
@@ -571,6 +586,8 @@ export default function ChatPage() {
     ? (stageStyleVars(stageStyle) as React.CSSProperties)
     : undefined;
   const chatOpacity = settings?.chatPanelOpacity ?? 0.3;
+  // one blur setting for both chat layouts: the side panel and the VN dialogue box
+  const panelBlur = settings?.chatPanelBlur !== false;
   const panelInline: React.CSSProperties = {
     backgroundColor: stagePanelBackground(stageStyle?.panelBg, chatOpacity),
     ...(styleVars ?? {}),
@@ -735,7 +752,7 @@ export default function ChatPage() {
       <div
         className={cn(
           "absolute inset-y-0 right-0 z-10 w-full sm:w-104 xl:w-120 flex flex-col sm:border-l border-base-400/60",
-          settings?.chatPanelBlur !== false && "backdrop-blur-md"
+          panelBlur && "backdrop-blur-md"
         )}
         style={panelInline}
       >
@@ -813,6 +830,7 @@ export default function ChatPage() {
         <DialogueLayout
           data={data}
           styleVars={styleVars}
+          panelBlur={panelBlur}
           characters={characters}
           streaming={streaming}
           skipTyping={typewriter.skip}
@@ -877,7 +895,7 @@ export default function ChatPage() {
           shape="circle"
           className="shadow-lg"
           title={muted ? "Unmute" : "Mute music & sound effects"}
-          onClick={() => patchAudio({ audioMuted: !muted })}
+          onClick={() => patchSettings({ audioMuted: !muted })}
         >
           {muted ? <VolumeX /> : <Volume2 />}
         </Button>
@@ -890,7 +908,9 @@ export default function ChatPage() {
           muted={muted}
           bgmVolume={bgmVolume}
           sfxVolume={sfxVolume}
-          onAudio={patchAudio}
+          panelOpacity={chatOpacity}
+          panelBlur={panelBlur}
+          onSettings={patchSettings}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
@@ -906,6 +926,7 @@ export default function ChatPage() {
 function DialogueLayout({
   data,
   styleVars,
+  panelBlur,
   characters,
   streaming,
   skipTyping,
@@ -1117,7 +1138,7 @@ function DialogueLayout({
             </Alert>
           </div>
         )}
-        <div className="msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 backdrop-blur px-5 py-4 shadow-2xl">
+        <div className={cn("msg-bubble vn-dialog relative flex max-h-[38vh] min-h-28 flex-col rounded-lg border border-base-400 px-5 py-4 shadow-2xl", panelBlur && "backdrop-blur")}>
           {speakerName && <div className="vn-speaker text-sm font-semibold mb-1 shrink-0">{speakerName}</div>}
           <div ref={textRef} className="min-h-0 flex-1 overflow-y-auto text-[1.02rem] leading-relaxed">
             <MessageText text={displayText} streaming={isStreamingShown} />
@@ -1330,7 +1351,9 @@ function ChatDrawer({
   muted,
   bgmVolume,
   sfxVolume,
-  onAudio,
+  panelOpacity,
+  panelBlur,
+  onSettings,
   onPatch,
 }: any) {
   const chat = data.chat;
@@ -1353,20 +1376,33 @@ function ChatDrawer({
           ]}
         />
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Panel opacity" hint="chat panel & VN dialogue box — a global setting">
+          <OpacitySlider value={panelOpacity} onCommit={(v) => onSettings({ chatPanelOpacity: v })} />
+        </Field>
+        <Field label="Panel blur" hint="backdrop blur behind the panel & dialogue box — a global setting">
+          <Switch
+            className="h-8"
+            value={panelBlur}
+            onChange={(v: boolean) => onSettings({ chatPanelBlur: v })}
+            label={panelBlur ? "Enabled" : "Disabled"}
+          />
+        </Field>
+      </div>
       <Field label="Music" hint="the scene/location BGM">
         <ChannelSlider
           muted={muted}
           value={bgmVolume}
-          onMute={() => onAudio({ audioMuted: !muted })}
-          onChange={(v: number) => onAudio({ bgmVolume: v })}
+          onMute={() => onSettings({ audioMuted: !muted })}
+          onChange={(v: number) => onSettings({ bgmVolume: v })}
         />
       </Field>
       <Field label="Sound effects" hint="ambient loops and typing blips">
         <ChannelSlider
           muted={muted}
           value={sfxVolume}
-          onMute={() => onAudio({ audioMuted: !muted })}
-          onChange={(v: number) => onAudio({ sfxVolume: v })}
+          onMute={() => onSettings({ audioMuted: !muted })}
+          onChange={(v: number) => onSettings({ sfxVolume: v })}
         />
       </Field>
       <Field label="Title">
