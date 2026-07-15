@@ -167,6 +167,7 @@ export default function ChatPage() {
   const [userEcho, setUserEcho] = useState<string | null>(null);
   const echoUntil = useRef(0);
   const echoDropping = useRef(false);
+  const echoTimer = useRef(0);
   // the AI is drafting the user's own reply (impersonate) — the input is its output slot,
   // so it stays locked until the draft lands
   const [drafting, setDrafting] = useState(false);
@@ -270,7 +271,7 @@ export default function ChatPage() {
   const dropEcho = useCallback(() => {
     if (echoDropping.current) return;
     echoDropping.current = true;
-    window.setTimeout(
+    echoTimer.current = window.setTimeout(
       () => {
         setUserEcho(null);
         echoDropping.current = false;
@@ -420,6 +421,8 @@ export default function ChatPage() {
         // MIN_ECHO_MS so an instant reply can't flash it past them
         setUserEcho(body.userText);
         echoUntil.current = Date.now() + MIN_ECHO_MS;
+        // a drop scheduled by the previous turn must not wipe this turn's echo
+        window.clearTimeout(echoTimer.current);
         echoDropping.current = false;
       }
       const abort = new AbortController();
