@@ -161,6 +161,33 @@ export function deleteModel(id: string) {
   getDb().prepare("DELETE FROM models WHERE id=?").run(id);
 }
 
+/* Id-preserving insert-or-update, for settings transfer between instances —
+   keeps model ids stable so defaultModelId/taskModels references survive. */
+
+export function upsertProvider(p: Omit<Provider, "createdAt">): Provider {
+  getDb()
+    .prepare(
+      `INSERT INTO providers (id, name, type, base_url, api_key, created_at) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, base_url=excluded.base_url, api_key=excluded.api_key`
+    )
+    .run(p.id, p.name, p.type, p.baseUrl, p.apiKey, now());
+  return getProvider(p.id)!;
+}
+
+export function upsertModel(m: Omit<Model, "createdAt">): Model {
+  getDb()
+    .prepare(
+      `INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id, model_id=excluded.model_id, display_name=excluded.display_name, context_window=excluded.context_window, input_price=excluded.input_price, cache_read_price=excluded.cache_read_price, cache_write_price=excluded.cache_write_price, output_price=excluded.output_price, custom_body=excluded.custom_body`
+    )
+    .run(
+      m.id, m.providerId, m.modelId, m.displayName, m.contextWindow,
+      m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
+      m.customBody ? J.str(m.customBody) : null, now()
+    );
+  return getModel(m.id)!;
+}
+
 /* ---------------- generic entity helpers ---------------- */
 
 function touch<T extends { updatedAt: number }>(o: T): T {

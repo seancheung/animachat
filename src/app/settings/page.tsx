@@ -322,6 +322,7 @@ export default function SettingsPage() {
   const { data: storage, mutate: mutateStorage } = useSWR<{ count: number; bytes: number }>("/api/assets", api.get);
   const [addingProvider, setAddingProvider] = useState<any | null>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
+  const importSettingsRef = useRef<HTMLInputElement>(null);
 
   async function patchSettings(patch: Partial<Settings>) {
     await api.put("/api/settings", patch);
@@ -504,6 +505,55 @@ export default function SettingsPage() {
         <section className="space-y-3 pb-10">
           <h2 className="text-lg font-semibold">Backup</h2>
           <Row>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                const res = await fetch("/api/settings/export");
+                await downloadBlob(res, "animachat-settings.json");
+              }}
+            >
+              <Download /> Export settings
+            </Button>
+            <Button variant="secondary" onClick={() => importSettingsRef.current?.click()}>
+              <Upload /> Import settings…
+            </Button>
+            <input
+              ref={importSettingsRef}
+              type="file"
+              hidden
+              accept=".json,application/json"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                let parsed;
+                try {
+                  parsed = JSON.parse(await f.text());
+                } catch {
+                  return void toast.error("Not a valid JSON file");
+                }
+                if (
+                  !(await confirmDialog({
+                    title: "Import settings",
+                    message:
+                      "This overwrites global settings (default & per-task models, roleplay and interface preferences) and updates providers & models — including API keys — from the file. Library content and chats are untouched. Continue?",
+                    confirmLabel: "Import",
+                    danger: true,
+                  }))
+                )
+                  return;
+                try {
+                  const res = await api.post("/api/settings/import", parsed);
+                  toast.success(
+                    `Imported ${res.providers} provider${res.providers === 1 ? "" : "s"}, ${res.models} model${res.models === 1 ? "" : "s"}` +
+                      (res.skippedModels ? ` (${res.skippedModels} skipped)` : "")
+                  );
+                  location.reload();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Import failed");
+                }
+              }}
+            />
             <Button
               variant="secondary"
               onClick={async () => {
