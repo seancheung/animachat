@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
 const variants = cva(
@@ -51,6 +52,10 @@ export default function Input({
   onChange,
   ...props
 }: InputProps) {
+  // IME-aware: while a composition is in flight the uncommitted text lives in a
+  // local draft (the field must keep displaying it — freezing a controlled input
+  // mid-composition breaks the IME), and onChange only reports committed values
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <div className={variants({ className, size, error, disabled })}>
       {icon}
@@ -58,9 +63,14 @@ export default function Input({
         {...props}
         disabled={disabled}
         className="w-0 flex-1 border-none bg-transparent outline-none"
-        value={value === null ? "" : value}
+        value={value === undefined ? undefined : (draft ?? (value === null ? "" : value))}
         defaultValue={defaultValue}
-        onChange={(e) => onChange?.(e.target.value)}
+        onChange={(e) => (draft !== null ? setDraft(e.target.value) : onChange?.(e.target.value))}
+        onCompositionStart={(e) => setDraft(e.currentTarget.value)}
+        onCompositionEnd={(e) => {
+          setDraft(null);
+          onChange?.(e.currentTarget.value);
+        }}
       />
     </div>
   );

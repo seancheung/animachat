@@ -123,11 +123,18 @@ export default function MultiCombobox<T = unknown>({
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // IME-aware: `inputValue` is what the field displays (including an uncommitted
+  // composition); `committedValue` is what filtering/onSearch sees — the two only
+  // diverge while a composition is in flight
   const [inputValue, setInputValue] = useState("");
+  const [committedValue, setCommittedValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) setInputValue("");
+    if (!open) {
+      setInputValue("");
+      setCommittedValue("");
+    }
   }, [open]);
 
   const tags = values.map((v) => {
@@ -141,7 +148,7 @@ export default function MultiCombobox<T = unknown>({
       : tags;
   const hiddenCount = hideTags ? 0 : tags.length - visibleTags.length;
 
-  const trimmed = inputValue.trim();
+  const trimmed = committedValue.trim();
   const query = trimmed.toLowerCase();
   const isSearching = open && query.length > 0;
 
@@ -239,6 +246,7 @@ export default function MultiCombobox<T = unknown>({
 
   function resetSearch() {
     setInputValue("");
+    setCommittedValue("");
     onSearch?.("");
     setActiveIndex(null);
   }
@@ -363,13 +371,22 @@ export default function MultiCombobox<T = unknown>({
               setInputValue(next);
               if (!open) setOpen(true);
               setActiveIndex(0);
-              onSearch?.(next);
+              if (!(e.nativeEvent as InputEvent).isComposing) {
+                setCommittedValue(next);
+                onSearch?.(next);
+              }
+            },
+            onCompositionEnd(e: React.CompositionEvent<HTMLInputElement>) {
+              setInputValue(e.currentTarget.value);
+              setCommittedValue(e.currentTarget.value);
+              onSearch?.(e.currentTarget.value);
             },
             onFocus() {
               if (!disabled && !open) setOpen(true);
             },
             onKeyDown(e) {
-              if (e.key === "Enter") {
+              // the Enter that commits an IME composition must not select an option
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 if (activeIndex !== null && items[activeIndex]) {
                   e.preventDefault();
                   handleSelectIndex(activeIndex);

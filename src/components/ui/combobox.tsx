@@ -126,15 +126,26 @@ export default function Combobox<T = unknown>({
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // IME-aware: `inputValue` is what the field displays (including an uncommitted
+  // composition); `committedValue` is what filtering/onSearch sees — the two only
+  // diverge while a composition is in flight
   const [inputValue, setInputValue] = useState(displayLabel);
+  const [committedValue, setCommittedValue] = useState(displayLabel);
+  const setText = (next: string) => {
+    setInputValue(next);
+    setCommittedValue(next);
+  };
 
   useEffect(() => {
-    if (!open) setInputValue(displayLabel);
+    if (!open) {
+      setInputValue(displayLabel);
+      setCommittedValue(displayLabel);
+    }
   }, [open, displayLabel]);
 
-  const trimmed = inputValue.trim();
+  const trimmed = committedValue.trim();
   const query = trimmed.toLowerCase();
-  const isSearching = open && query.length > 0 && inputValue !== displayLabel;
+  const isSearching = open && query.length > 0 && committedValue !== displayLabel;
 
   // When onSearch is provided, treat options as already filtered server-side
   const filtered = onSearch
@@ -226,7 +237,7 @@ export default function Combobox<T = unknown>({
     if (opt.disabled) return;
     if (!isControlled) setInternalValue(opt.value);
     onChange?.(opt.value);
-    setInputValue(opt.label);
+    setText(opt.label);
     setOpen(false);
     setActiveIndex(null);
   }
@@ -234,7 +245,7 @@ export default function Combobox<T = unknown>({
   function commitCustom(text: string) {
     if (!isControlled) setInternalValue(text as T);
     onChange?.(text as T);
-    setInputValue(text);
+    setText(text);
     setOpen(false);
     setActiveIndex(null);
   }
@@ -249,7 +260,7 @@ export default function Combobox<T = unknown>({
   function handleClear() {
     if (!isControlled) setInternalValue(undefined);
     onClear?.();
-    setInputValue("");
+    setText("");
     onSearch?.("");
     setOpen(false);
     setActiveIndex(null);
@@ -308,13 +319,21 @@ export default function Combobox<T = unknown>({
               setInputValue(next);
               if (!open) setOpen(true);
               setActiveIndex(0);
-              onSearch?.(next);
+              if (!(e.nativeEvent as InputEvent).isComposing) {
+                setCommittedValue(next);
+                onSearch?.(next);
+              }
+            },
+            onCompositionEnd(e: React.CompositionEvent<HTMLInputElement>) {
+              setText(e.currentTarget.value);
+              onSearch?.(e.currentTarget.value);
             },
             onFocus() {
               if (!disabled && !open) setOpen(true);
             },
             onKeyDown(e) {
-              if (e.key === "Enter") {
+              // the Enter that commits an IME composition must not select an option
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 if (activeIndex !== null && items[activeIndex]) {
                   e.preventDefault();
                   handleSelectIndex(activeIndex);
