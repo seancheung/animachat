@@ -26,6 +26,9 @@ export const POST = handler(async (req: Request) => {
       ? LISTS.flatMap(([type, list]) => list().map((x) => ({ type, id: x.id })))
       : ((b.items ?? []) as { type: BundleItemType; id: string }[]);
   if (!items.length) return bad(b.all === true ? "The library is empty" : "items required");
+  const types = new Set<string>(LISTS.map(([t]) => t));
+  const badItem = items.find((it) => !types.has(it?.type) || typeof it?.id !== "string");
+  if (badItem) return bad(`unknown item type: ${String(badItem?.type)}`);
   const buf = await exportBundle(items);
   return new Response(new Uint8Array(buf), {
     headers: {

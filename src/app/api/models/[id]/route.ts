@@ -5,7 +5,11 @@ export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
   const b = await req.json();
   if (typeof b.customBody === "string") {
-    b.customBody = b.customBody.trim() ? JSON.parse(b.customBody) : null;
+    try {
+      b.customBody = b.customBody.trim() ? JSON.parse(b.customBody) : null;
+    } catch {
+      return bad("custom request body is not valid JSON");
+    }
   }
   for (const k of ["inputPrice", "cacheReadPrice", "cacheWritePrice", "outputPrice"] as const) {
     if (k in b) b[k] = price(b[k]);

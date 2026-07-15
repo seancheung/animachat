@@ -8,7 +8,11 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   if (!b.modelId) return bad("modelId is required");
   let customBody = null;
   if (b.customBody != null && b.customBody !== "") {
-    customBody = typeof b.customBody === "string" ? JSON.parse(b.customBody) : b.customBody;
+    try {
+      customBody = typeof b.customBody === "string" ? JSON.parse(b.customBody) : b.customBody;
+    } catch {
+      return bad("custom request body is not valid JSON");
+    }
   }
   return ok(
     createModel({
