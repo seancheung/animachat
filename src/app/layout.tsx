@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppNav } from "@/components/AppNav";
+import { Providers } from "@/components/Providers";
 import { Confirmer } from "@/components/confirm";
 import { Toaster } from "@/components/ui/toast";
 import "./globals.css";
@@ -38,10 +39,12 @@ export default function RootLayout({
             __html: `try{var m=localStorage.getItem("animachat-theme");if(m!=="dark"&&m!=="light"){m=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=m}catch(e){document.documentElement.dataset.theme="light"}`,
           }}
         />
-        <AppNav />
-        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
-        <Toaster position="bottom-right" />
-        <Confirmer />
+        <Providers>
+          <AppNav />
+          <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
+          <Toaster position="bottom-right" />
+          <Confirmer />
+        </Providers>
       </body>
     </html>
   );

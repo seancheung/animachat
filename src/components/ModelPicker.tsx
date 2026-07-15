@@ -1,12 +1,11 @@
 "use client";
 
-import useSWR from "swr";
 import Select from "@/components/ui/select";
-import { api } from "@/lib/ui";
+import { useGet } from "@/lib/queries";
 import type { Model, Provider } from "@/lib/types";
 
 export function useProviders() {
-  return useSWR<{ providers: Provider[]; models: Model[] }>("/api/providers", api.get);
+  return useGet<{ providers: Provider[]; models: Model[] }>("/api/providers");
 }
 
 /** Provider→model select. Empty value = inherit/default. */

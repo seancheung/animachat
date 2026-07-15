@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import useSWR from "swr";
 import {
   BookOpen,
   Captions,
@@ -27,12 +26,15 @@ import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
+import LoadMoreSentinel from "@/components/ui/load-more";
+import MultiCombobox from "@/components/ui/multi-combobox";
 import SegmentedControl from "@/components/ui/segmented-control";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import Toggle, { ToggleGroup } from "@/components/ui/toggle";
 import Tooltip from "@/components/ui/tooltip";
+import { useComboboxSearch, useDebouncedValue, useGet, useInvalidate, usePagedList } from "@/lib/queries";
 import { api, assetUrl, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import { POV_LABELS, type ChatMode } from "@/lib/types";
@@ -83,12 +85,7 @@ function fmtWhen(ts: number): string {
 
 function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
-  const { data: characters } = useSWR<any[]>("/api/characters", api.get);
-  const { data: personas } = useSWR<any[]>("/api/personas", api.get);
-  const { data: stories } = useSWR<any[]>("/api/stories", api.get);
-  const { data: scenes } = useSWR<any[]>("/api/scenes", api.get);
-  const { data: locations } = useSWR<any[]>("/api/locations", api.get);
-  const { data: lorebooks } = useSWR<any[]>("/api/lorebooks", api.get);
+  const invalidate = useInvalidate();
   const [form, setForm] = useState<any>({
     mode: "casual",
     characterIds: [],
@@ -106,31 +103,78 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     layout: "panel",
   });
   const [busy, setBusy] = useState(false);
+  // server-searched pickers only hold the current result page — labels of picked ids
+  // and the full cards of picked characters are kept locally so narrowing a search
+  // (or paging) can never blank them out
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const remember = (id: string, label: string) =>
+    setLabels((p) => (p[id] === label ? p : { ...p, [id]: label }));
+  const [picked, setPicked] = useState<Record<string, any>>({});
 
-  const toggleCharacter = (id: string) => {
+  const [charQ, setCharQ] = useState("");
+  const debouncedCharQ = useDebouncedValue(charQ.trim());
+  const charList = usePagedList<any>(
+    "/api/characters",
+    { q: debouncedCharQ || undefined },
+    { enabled: open && form.mode !== "story" }
+  );
+  const personaSearch = useComboboxSearch("/api/personas", {
+    enabled: open,
+    selected: form.personaId ? { value: form.personaId, label: labels[form.personaId] ?? "…" } : null,
+  });
+  const storySearch = useComboboxSearch("/api/stories", {
+    enabled: open && form.mode === "story",
+    selected: form.storyId ? { value: form.storyId, label: labels[form.storyId] ?? "…" } : null,
+  });
+  const sceneSearch = useComboboxSearch("/api/scenes", {
+    enabled: open && form.mode === "immersive",
+    toOption: (s: any) => ({ value: `scene:${s.id}`, label: s.name }),
+  });
+  const locSearch = useComboboxSearch("/api/locations", {
+    enabled: open && form.mode === "immersive",
+    toOption: (l: any) => ({ value: `location:${l.id}`, label: l.name }),
+  });
+  const loreSearch = useComboboxSearch("/api/lorebooks", { enabled: open && form.mode !== "story" });
+  // the story's cast & scene names come from the decorated story GET, not the full lists
+  const { data: storyDetail } = useGet<any>(`/api/stories/${form.storyId}`, {
+    enabled: open && !!form.storyId,
+  });
+  const storyCast: { id: string; name: string }[] = storyDetail?.castRefs ?? [];
+  const storyScenes: { id: string; name: string }[] = storyDetail?.sceneRefs ?? [];
+
+  const toggleCharacter = (c: any) => {
     const cur: string[] = form.characterIds;
+    if (!cur.includes(c.id)) setPicked((p) => ({ ...p, [c.id]: c }));
     setForm({
       ...form,
-      characterIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+      characterIds: cur.includes(c.id) ? cur.filter((x) => x !== c.id) : [...cur, c.id],
     });
   };
-  const toggleLorebook = (id: string) => {
-    const cur: string[] = form.lorebookIds;
-    setForm({ ...form, lorebookIds: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
-  };
+  // picked characters render first (from their captured cards), the rest from the search page
+  const gridItems: any[] = [
+    ...form.characterIds.map((id: string) => picked[id]).filter(Boolean),
+    ...charList.items.filter((c) => !form.characterIds.includes(c.id)),
+  ];
 
-  const story = stories?.find((s) => s.id === form.storyId);
-  const storyCast: any[] = story
-    ? story.characterIds.map((cid: string) => characters?.find((c) => c.id === cid)).filter(Boolean)
-    : [];
-  const storyScenes: any[] = story
-    ? story.scenes.map((e: any) => scenes?.find((s) => s.id === e.sceneId)).filter(Boolean)
-    : [];
-
-  const settingOptions = [
-    ...(scenes?.map((s) => ({ value: `scene:${s.id}`, label: s.name })) ?? []),
-    ...(locations?.map((l) => ({ value: `location:${l.id}`, label: l.name })) ?? []),
-  ].sort((a, b) => a.label.localeCompare(b.label));
+  const settingValue = form.sceneId
+    ? `scene:${form.sceneId}`
+    : form.locationId
+      ? `location:${form.locationId}`
+      : null;
+  const settingOptions = useMemo(() => {
+    const out = [...sceneSearch.options, ...locSearch.options].sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+    if (settingValue && !out.some((o) => o.value === settingValue))
+      out.unshift({ value: settingValue, label: labels[form.sceneId ?? form.locationId] ?? "…" });
+    return out;
+  }, [sceneSearch.options, locSearch.options, settingValue, labels, form.sceneId, form.locationId]);
+  const loreOptions = useMemo(() => {
+    const out = [...loreSearch.options];
+    for (const id of form.lorebookIds as string[])
+      if (!out.some((o) => o.value === id)) out.unshift({ value: id, label: labels[id] ?? "?" });
+    return out;
+  }, [loreSearch.options, form.lorebookIds, labels]);
   // typed option rows: the icon carries the entity type, so labels stay clean names
   const typedOption = (icons: Record<string, React.ReactNode>) =>
     function TypedOption(o: { value: string; label: string }) {
@@ -192,8 +236,15 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             label={form.mode === "casual" ? "Characters" : "Characters (required)"}
             hint="pick in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
           >
+            <Input
+              className="w-full mb-2"
+              icon={<Search />}
+              placeholder="Search characters…"
+              value={charQ}
+              onChange={setCharQ}
+            />
             <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-              {characters?.map((c) => {
+              {gridItems.map((c) => {
                 const idx = form.characterIds.indexOf(c.id);
                 return (
                   <button
@@ -202,7 +253,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                       "panel overflow-hidden text-left transition-colors relative cursor-pointer",
                       idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
                     )}
-                    onClick={() => toggleCharacter(c.id)}
+                    onClick={() => toggleCharacter(c)}
                   >
                     {idx !== -1 && (
                       <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
@@ -225,12 +276,19 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                   </button>
                 );
               })}
-              {characters?.length === 0 && (
+              {!charList.isLoading && gridItems.length === 0 && (
                 <div className="col-span-full text-sm text-content-300">
-                  No characters yet — create one in the Library first.
+                  {debouncedCharQ
+                    ? `Nothing matches “${debouncedCharQ}”.`
+                    : "No characters yet — create one in the Library first."}
                 </div>
               )}
             </div>
+            <LoadMoreSentinel
+              hasMore={!!charList.hasNextPage}
+              isFetching={charList.isFetchingNextPage}
+              onLoadMore={() => void charList.fetchNextPage()}
+            />
           </Field>
         )}
 
@@ -241,8 +299,19 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 <Combobox
                   className="w-full"
                   value={form.storyId}
-                  onChange={(v) => setForm({ ...form, storyId: v, sceneId: null, personaCharacterId: null })}
-                  options={stories?.map((s) => ({ value: s.id, label: s.name })) ?? []}
+                  onChange={(v) => {
+                    if (v) {
+                      const opt = storySearch.options.find((o) => o.value === v);
+                      if (opt) remember(v, opt.label);
+                    }
+                    setForm({ ...form, storyId: v, sceneId: null, personaCharacterId: null });
+                  }}
+                  options={storySearch.options}
+                  loading={storySearch.loading}
+                  hasMore={storySearch.hasMore}
+                  isFetchingMore={storySearch.isFetchingMore}
+                  onLoadMore={storySearch.onLoadMore}
+                  onSearch={storySearch.onSearch}
                   placeholder="choose…"
                 />
               </Field>
@@ -258,6 +327,10 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                   }
                   onChange={(v) => {
                     const [kind, pid] = (v as string).split(":");
+                    if (kind === "persona") {
+                      const opt = personaSearch.options.find((o) => o.value === pid);
+                      if (opt) remember(pid, opt.label);
+                    }
                     setForm({
                       ...form,
                       personaCharacterId: kind === "char" ? pid : null,
@@ -265,9 +338,15 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                     });
                   }}
                   options={[
+                    // the authored cast is small and always fully listed; personas search server-side
                     ...storyCast.map((c) => ({ value: `char:${c.id}`, label: c.name })),
-                    ...(personas?.map((p) => ({ value: `persona:${p.id}`, label: p.name })) ?? []),
+                    ...personaSearch.options.map((o) => ({ value: `persona:${o.value}`, label: o.label })),
                   ]}
+                  loading={personaSearch.loading}
+                  hasMore={personaSearch.hasMore}
+                  isFetchingMore={personaSearch.isFetchingMore}
+                  onLoadMore={personaSearch.onLoadMore}
+                  onSearch={personaSearch.onSearch}
                   renderOption={playAsOption}
                   placeholder="(spectator)"
                   clearable
@@ -293,14 +372,25 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             <Field label="Setting (required)" hint="fixed for the whole chat">
               <Combobox
                 className="w-full"
-                value={
-                  form.sceneId ? `scene:${form.sceneId}` : form.locationId ? `location:${form.locationId}` : null
-                }
+                value={settingValue}
                 onChange={(v) => {
                   const [kind, id] = (v as string).split(":");
+                  const opt = settingOptions.find((o) => o.value === v);
+                  if (opt) remember(id, opt.label);
                   setForm({ ...form, sceneId: kind === "scene" ? id : null, locationId: kind === "location" ? id : null });
                 }}
                 options={settingOptions}
+                loading={sceneSearch.loading || locSearch.loading}
+                hasMore={sceneSearch.hasMore || locSearch.hasMore}
+                isFetchingMore={sceneSearch.isFetchingMore || locSearch.isFetchingMore}
+                onLoadMore={() => {
+                  if (sceneSearch.hasMore) sceneSearch.onLoadMore();
+                  if (locSearch.hasMore) locSearch.onLoadMore();
+                }}
+                onSearch={(q) => {
+                  sceneSearch.onSearch(q);
+                  locSearch.onSearch(q);
+                }}
                 renderOption={settingOption}
                 placeholder="choose a scene or location…"
               />
@@ -311,8 +401,19 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               <Combobox
                 className="w-full"
                 value={form.personaId}
-                onChange={(v) => setForm({ ...form, personaId: v })}
-                options={personas?.map((p) => ({ value: p.id, label: p.name })) ?? []}
+                onChange={(v) => {
+                  if (v) {
+                    const opt = personaSearch.options.find((o) => o.value === v);
+                    if (opt) remember(v, opt.label);
+                  }
+                  setForm({ ...form, personaId: v });
+                }}
+                options={personaSearch.options}
+                loading={personaSearch.loading}
+                hasMore={personaSearch.hasMore}
+                isFetchingMore={personaSearch.isFetchingMore}
+                onLoadMore={personaSearch.onLoadMore}
+                onSearch={personaSearch.onSearch}
                 placeholder="(none)"
                 clearable
                 onClear={() => setForm({ ...form, personaId: null })}
@@ -382,14 +483,24 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           )}
           {form.mode !== "story" && (
             <Field label="Lorebooks">
-              <div className="flex flex-wrap gap-1.5">
-                {lorebooks?.map((l) => (
-                  <Toggle key={l.id} value={form.lorebookIds.includes(l.id)} onChange={() => toggleLorebook(l.id)}>
-                    {l.name}
-                  </Toggle>
-                ))}
-                {lorebooks?.length === 0 && <span className="text-xs text-content-400">none</span>}
-              </div>
+              <MultiCombobox
+                className="w-full"
+                placeholder="+ attach lorebooks…"
+                value={form.lorebookIds}
+                options={loreOptions}
+                loading={loreSearch.loading}
+                hasMore={loreSearch.hasMore}
+                isFetchingMore={loreSearch.isFetchingMore}
+                onLoadMore={loreSearch.onLoadMore}
+                onSearch={loreSearch.onSearch}
+                onChange={(vals) => {
+                  for (const v of vals) {
+                    const opt = loreOptions.find((o) => o.value === v);
+                    if (opt) remember(v, opt.label);
+                  }
+                  setForm({ ...form, lorebookIds: vals });
+                }}
+              />
             </Field>
           )}
         </div>
@@ -404,6 +515,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 greetings: greetingsAvailable && form.greetings,
                 overrides: form.layout === "dialogue" ? { layout: "dialogue" } : {},
               });
+              void invalidate("/api/chats", "/api/chats/folders");
               router.push(`/chat/${chat.id}`);
             } catch (e: any) {
               toast.error(e.message);
@@ -420,23 +532,23 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
 
 export default function HomePage() {
   const router = useRouter();
-  const { data: chats, mutate } = useSWR<any[]>("/api/chats", api.get);
   const [wizard, setWizard] = useState(false);
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("");
   const importRef = useRef<HTMLInputElement>(null);
+  const invalidate = useInvalidate();
 
-  const folders = useMemo(() => [...new Set((chats ?? []).map((c) => c.folder).filter(Boolean))].sort(), [chats]);
-  const needle = q.trim().toLowerCase();
-  const visible = (chats ?? [])
-    .filter((c) => !folder || c.folder === folder)
-    .filter(
-      (c) =>
-        !needle ||
-        [c.title, ...(c.tags ?? []), ...c.characterNames, c.personaName, c.storyName].some(
-          (s: string | null) => s && s.toLowerCase().includes(needle)
-        )
-    );
+  // search & folder filter are server-side (title, tags, character/persona/story names)
+  const needle = useDebouncedValue(q.trim());
+  const list = usePagedList<any>("/api/chats", {
+    q: needle || undefined,
+    folder: folder || undefined,
+  });
+  const visible = list.items;
+  const filtered = !!(needle || folder);
+  const { data: folderData } = useGet<{ folders: string[] }>("/api/chats/folders");
+  const folders = folderData?.folders ?? [];
+  const refresh = () => invalidate("/api/chats", "/api/chats/folders");
 
   return (
     <div className="h-full overflow-y-auto">
@@ -476,7 +588,7 @@ export default function HomePage() {
             const res = await fetch("/api/chats/import", { method: "POST", body: fd });
             const data = await res.json();
             if (!res.ok) return toast.error(data?.error ?? "Import failed");
-            await mutate();
+            void refresh();
             router.push(`/chat/${data.chat.id}`);
           }}
         />
@@ -495,13 +607,13 @@ export default function HomePage() {
         )}
 
         <div className="space-y-2">
-          {chats?.length === 0 && (
+          {!list.isLoading && visible.length === 0 && !filtered && (
             <EmptyState>
               Welcome to AnimaChat ✦ Set up a provider in Settings, create a character in the
               Library, then start your first chat.
             </EmptyState>
           )}
-          {needle && (chats?.length ?? 0) > 0 && visible.length === 0 && <EmptyState>No matches.</EmptyState>}
+          {!list.isLoading && visible.length === 0 && filtered && <EmptyState>No matches.</EmptyState>}
           {visible.map((c) => (
             <div
               key={c.id}
@@ -567,7 +679,7 @@ export default function HomePage() {
                       e.stopPropagation();
                       if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
                         await api.del(`/api/chats/${c.id}`);
-                        mutate();
+                        refresh();
                       }
                     }}
                   >
@@ -577,6 +689,11 @@ export default function HomePage() {
               </div>
             </div>
           ))}
+          <LoadMoreSentinel
+            hasMore={!!list.hasNextPage}
+            isFetching={list.isFetchingNextPage}
+            onLoadMore={() => void list.fetchNextPage()}
+          />
         </div>
       </div>
       <NewChatWizard open={wizard} onClose={() => setWizard(false)} />

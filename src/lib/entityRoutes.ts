@@ -1,11 +1,13 @@
-import { bad, handler, ok, type IdParams } from "./api";
+import { bad, handler, ok, pageOpts, type IdParams } from "./api";
+import type { Page, PageOpts } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** Factory for the standard entity CRUD route handlers. */
-export function collectionRoutes<T>(list: () => T[], save: (x: any) => T) {
+/** Factory for the standard entity CRUD route handlers.
+ *  GET is paginated: `?limit=&cursor=&q=&sort=&tag=` → `{ items, nextCursor }`. */
+export function collectionRoutes<T>(page: (o: PageOpts) => Page<T>, save: (x: any) => T) {
   return {
-    GET: handler(() => ok(list())),
+    GET: handler((req: Request) => ok(page(pageOpts(req)))),
     POST: handler(async (req: Request) => {
       const body = await req.json();
       delete body.id; // creation never trusts a client id

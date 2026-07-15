@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import useSWR from "swr";
 import { Download, Eraser, Plus, Upload, X } from "lucide-react";
 import { Field, Modal, Row } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
@@ -16,6 +15,7 @@ import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { useGet } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
 import { AI_TASKS, POV_LABELS, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
@@ -266,7 +266,7 @@ function ProviderCard({ provider, models, mutate }: { provider: Provider; models
 
 function UsagePanel() {
   const [days, setDays] = useState(30);
-  const { data } = useSWR<any>(`/api/usage?days=${days}`, api.get);
+  const { data } = useGet<any>(`/api/usage?days=${days}`);
   if (!data) return null;
   const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
   const fmtCost = (n: number | null) => (n == null ? "—" : n > 0 && n < 0.01 ? "< $0.01" : `$${n.toFixed(2)}`);
@@ -317,9 +317,9 @@ function UsagePanel() {
 }
 
 export default function SettingsPage() {
-  const { data: pm, mutate } = useProviders();
-  const { data: settings, mutate: mutateSettings } = useSWR<Settings>("/api/settings", api.get);
-  const { data: storage, mutate: mutateStorage } = useSWR<{ count: number; bytes: number }>("/api/assets", api.get);
+  const { data: pm, refetch: mutate } = useProviders();
+  const { data: settings, refetch: mutateSettings } = useGet<Settings>("/api/settings");
+  const { data: storage, refetch: mutateStorage } = useGet<{ count: number; bytes: number }>("/api/assets");
   const [addingProvider, setAddingProvider] = useState<any | null>(null);
   const importSettingsRef = useRef<HTMLInputElement>(null);
 

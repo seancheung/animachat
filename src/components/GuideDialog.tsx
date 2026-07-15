@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { mutate } from "swr";
 import { Trash2 } from "lucide-react";
 import { AssistPanel } from "@/components/AssistPanel";
 import { Field, Modal } from "@/components/app";
@@ -11,6 +10,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { searchIdByName, useInvalidate } from "@/lib/queries";
 import { api } from "@/lib/ui";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -57,6 +57,7 @@ const SAVE_ORDER = ["location", "scene", "character", "lorebook", "story", "pers
 export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [items, setItems] = useState<GuideItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const invalidate = useInvalidate();
 
   /** Merge a `{items:[…]}` payload from the co-writer: (type, name) identifies an item. */
   const applyFields = (partial: Record<string, unknown>) => {
@@ -92,17 +93,39 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
     if (!items.length || saving) return;
     setSaving(true);
     try {
-      const [locs, scenes, chars, lores] = await Promise.all([
-        api.get("/api/locations"),
-        api.get("/api/scenes"),
-        api.get("/api/characters"),
-        api.get("/api/lorebooks"),
-      ]);
       const norm = (n: unknown) => String(n ?? "").trim().toLowerCase();
-      const locIds = new Map<string, string>(locs.map((l: any) => [norm(l.name), l.id]));
-      const sceneIds = new Map<string, string>(scenes.map((s: any) => [norm(s.name), s.id]));
-      const charIds = new Map<string, string>(chars.map((c: any) => [norm(c.name), c.id]));
-      const loreIds = new Map<string, string>(lores.map((l: any) => [norm(l.name), l.id]));
+      const locIds = new Map<string, string>();
+      const sceneIds = new Map<string, string>();
+      const charIds = new Map<string, string>();
+      const loreIds = new Map<string, string>();
+      const maps: Record<string, Map<string, string>> = {
+        location: locIds,
+        scene: sceneIds,
+        character: charIds,
+        lorebook: loreIds,
+      };
+      // resolve each referenced name once against the library; items saved from this
+      // batch override these below as they are POSTed
+      const resolve = async (type: string, name: unknown) => {
+        const key = norm(name);
+        if (!key || maps[type].has(key)) return;
+        const id = await searchIdByName(type, name);
+        if (id) maps[type].set(key, id);
+      };
+      const refs: [string, unknown][] = [];
+      for (const item of items) {
+        if (item.type === "scene" && item.locationName) refs.push(["location", item.locationName]);
+        if (item.type === "story") {
+          for (const n of item.castNames ?? []) refs.push(["character", n]);
+          for (const e of item.scenes ?? []) {
+            if (e?.sceneName) refs.push(["scene", e.sceneName]);
+            for (const s of e?.successors ?? []) if (s?.sceneName) refs.push(["scene", s.sceneName]);
+          }
+          for (const s of item.secrets ?? []) for (const n of s?.knownByNames ?? []) refs.push(["character", n]);
+          for (const n of item.lorebookNames ?? []) refs.push(["lorebook", n]);
+        }
+      }
+      await Promise.all(refs.map(([t, n]) => resolve(t, n)));
       let saved = 0;
       for (const type of SAVE_ORDER) {
         for (const item of items.filter((i) => i.type === type)) {
@@ -170,7 +193,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
       }
       toast.success(`Saved ${saved} item${saved === 1 ? "" : "s"} to the library`);
       setItems([]);
-      for (const t of LIBRARY_TYPES) void mutate(t.url);
+      void invalidate(...LIBRARY_TYPES.map((t) => t.url), "/api/library/tags", "/api/library/search");
       onClose();
     } catch (e) {
       // saves run one by one — earlier items may already be in the library

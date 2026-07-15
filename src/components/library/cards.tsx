@@ -11,12 +11,12 @@ import {
   UserRound,
   VenetianMask,
 } from "lucide-react";
-import { mutate } from "swr";
 import { Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { useInvalidate } from "@/lib/queries";
 import { EMOTIONS } from "@/lib/types";
 import { api, assetUrl } from "@/lib/ui";
 import { cn } from "@/utils/cn";
@@ -158,6 +158,7 @@ function CharacterPreview({
 
 export function CharacterCard(props: LibraryCardProps) {
   const [preview, setPreview] = useState(false);
+  const invalidate = useInvalidate();
   const avatar = assetUrl(props.item.avatarAsset);
   const neutral = assetUrl(props.item.sprites?.neutral);
   const createPersona = async () => {
@@ -173,7 +174,7 @@ export function CharacterCard(props: LibraryCardProps) {
       // in a persona sheet the self-tag is [user_name]; a positional [char_name] would be wrong
       const description = (props.item.description ?? "").replace(/\[char_name\]/gi, "[user_name]");
       await api.post("/api/personas", { name: props.item.name, description });
-      await mutate("/api/personas");
+      await invalidate("/api/personas", "/api/library/search");
       toast.success(`Persona "${props.item.name}" created`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));

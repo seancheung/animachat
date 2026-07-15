@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PageError, clampLimit, type LibrarySort, type PageOpts } from "./store";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -18,9 +19,26 @@ export function handler<Args extends any[]>(
     try {
       return await fn(...args);
     } catch (e: any) {
+      if (e instanceof PageError) return bad(e.message, 400);
       console.error(e);
       return bad(e?.message ?? "Internal error", 500);
     }
+  };
+}
+
+const SORTS = new Set(["updated", "created", "name"]);
+
+/** Read the standard pagination params off a collection GET. */
+export function pageOpts(req: Request): PageOpts {
+  const sp = new URL(req.url).searchParams;
+  const sort = sp.get("sort") ?? undefined;
+  if (sort && !SORTS.has(sort)) throw new PageError("invalid sort");
+  return {
+    limit: clampLimit(sp.get("limit")),
+    cursor: sp.get("cursor"),
+    q: sp.get("q") ?? undefined,
+    tag: sp.get("tag") ?? undefined,
+    sort: sort as LibrarySort | undefined,
   };
 }
 

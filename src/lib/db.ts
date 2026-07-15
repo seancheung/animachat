@@ -201,6 +201,25 @@ CREATE TABLE IF NOT EXISTS usage_log (
   cache_write_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_characters_name    ON characters(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_characters_updated ON characters(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_characters_created ON characters(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_personas_name      ON personas(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_personas_updated   ON personas(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_personas_created   ON personas(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_locations_name     ON locations(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_locations_updated  ON locations(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_locations_created  ON locations(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_scenes_name        ON scenes(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_scenes_updated     ON scenes(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_scenes_created     ON scenes(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_stories_name       ON stories(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_stories_updated    ON stories(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_stories_created    ON stories(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_lorebooks_name     ON lorebooks(name COLLATE NOCASE, id);
+CREATE INDEX IF NOT EXISTS idx_lorebooks_updated  ON lorebooks(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_lorebooks_created  ON lorebooks(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_chats_updated      ON chats(updated_at, id);
 `;
 
 declare global {

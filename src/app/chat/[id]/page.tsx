@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import useSWR from "swr";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Asterisk,
@@ -46,6 +46,7 @@ import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import { computeStage, resolveStageAssets } from "@/lib/stage";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
+import { useGet } from "@/lib/queries";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import {
@@ -133,9 +134,9 @@ interface Streaming {
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data, mutate } = useSWR<any>(`/api/chats/${id}`, api.get);
-  const { data: settings, mutate: mutateSettings } = useSWR<Settings>("/api/settings", api.get);
-  const { data: allScenes } = useSWR<any[]>("/api/scenes", api.get);
+  const { data, refetch: mutate } = useGet<any>(`/api/chats/${id}`);
+  const { data: settings, refetch: mutateSettings } = useGet<Settings>("/api/settings");
+  const queryClient = useQueryClient();
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
   // a turn is in flight from the very click: Continue/Narrate carry no user text and the
@@ -227,10 +228,10 @@ export default function ChatPage() {
   // presentation knobs); optimistic so a slider drag doesn't wait on the round trip
   const patchAudio = useCallback(
     (patch: Partial<Settings>) => {
-      void mutateSettings((s) => (s ? { ...s, ...patch } : s), { revalidate: false });
+      queryClient.setQueryData<Settings>(["/api/settings"], (s) => (s ? { ...s, ...patch } : s));
       void api.put("/api/settings", patch).then(() => mutateSettings());
     },
-    [mutateSettings]
+    [queryClient, mutateSettings]
   );
 
   useChatAudio({
@@ -513,10 +514,9 @@ export default function ChatPage() {
     if (!ev) return null;
     const parts: string[] = [];
     if (ev.sceneId) {
-      const s =
-        data?.storyScenes?.find((x: any) => x.id === ev.sceneId) ??
-        allScenes?.find((x) => x.id === ev.sceneId);
-      parts.push(`Scene: ${s?.name ?? "?"}`);
+      const s = data?.storyScenes?.find((x: any) => x.id === ev.sceneId);
+      // non-snapshot chats: the server resolves event scene ids to names (sceneNames)
+      parts.push(`Scene: ${s?.name ?? data?.sceneNames?.[ev.sceneId] ?? "?"}`);
     }
     if (ev.enter?.length) parts.push(`Enter ${ev.enter.map(charName).join(", ")}`);
     if (ev.leave?.length) parts.push(`Exit ${ev.leave.map(charName).join(", ")}`);

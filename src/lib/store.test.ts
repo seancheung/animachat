@@ -8,7 +8,25 @@ process.env.ANIMACHAT_DB_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
   "test.db"
 );
-import { appendMessage, getMessage, saveChat, saveScene, saveStory, updateMessage } from "./store";
+import {
+  PageError,
+  appendMessage,
+  decodeCursor,
+  deleteCharacter,
+  encodeCursor,
+  getMessage,
+  listChatFolders,
+  listDistinctTags,
+  pageCharacters,
+  pageChats,
+  saveChat,
+  saveCharacter,
+  savePersona,
+  saveScene,
+  saveStory,
+  searchLibraryNames,
+  updateMessage,
+} from "./store";
 
 describe("appendMessage tail freeze", () => {
   it("collapses the previous tail's variants to the active one when a follow-up lands", () => {
@@ -62,5 +80,173 @@ describe("saveStory scene entries", () => {
     });
     expect(story.scenes[0]).toMatchObject({ goal: "", obstacles: "", exit: "", pressures: "", successors: [] });
     expect(story.scenes[1].successors).toEqual([{ sceneId: a.id, hint: "back to the start" }]);
+  });
+});
+
+/* The test db is shared across describes — pagination tests isolate their rows
+   with distinctive name prefixes / folders and filter with q. */
+
+describe("cursors", () => {
+  it("round-trips", () => {
+    expect(decodeCursor(encodeCursor({ v: "Mira", id: "x" }))).toEqual({ v: "Mira", id: "x" });
+    expect(decodeCursor(encodeCursor({ v: 42, id: "y" }))).toEqual({ v: 42, id: "y" });
+  });
+  it("rejects garbage", () => {
+    expect(decodeCursor("not-base64-json")).toBeNull();
+    expect(decodeCursor("")).toBeNull();
+    expect(() => pageCharacters({ cursor: "garbage" })).toThrow(PageError);
+    // type mismatch: a name-shaped cursor against a numeric sort
+    expect(() => pageCharacters({ sort: "updated", cursor: encodeCursor({ v: "abc", id: "x" }) })).toThrow(
+      PageError
+    );
+  });
+});
+
+describe("pageCharacters", () => {
+  it("walks all pages without dupes or gaps and terminates", () => {
+    for (let i = 0; i < 7; i++) saveCharacter({ name: `pgwalk-${i}` });
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let rounds = 0;
+    do {
+      const page = pageCharacters({ q: "pgwalk-", limit: 3, cursor, sort: "name" });
+      seen.push(...page.items.map((c) => c.name));
+      cursor = page.nextCursor;
+      if (++rounds > 10) throw new Error("cursor never terminated");
+    } while (cursor);
+    expect(seen).toEqual([...Array(7)].map((_, i) => `pgwalk-${i}`));
+  });
+
+  it("orders name sort case-insensitively", () => {
+    saveCharacter({ name: "pgsort-Zed" });
+    saveCharacter({ name: "pgsort-alice" });
+    const { items } = pageCharacters({ q: "pgsort-", sort: "name" });
+    expect(items.map((c) => c.name)).toEqual(["pgsort-alice", "pgsort-Zed"]);
+  });
+
+  it("updated sort is newest-first and pages stably across an id tiebreak", () => {
+    // same-millisecond saves share updated_at, forcing the id tiebreaker
+    const made = [...Array(5)].map((_, i) => saveCharacter({ name: `pgtie-${i}` }));
+    const a = pageCharacters({ q: "pgtie-", limit: 2, sort: "updated" });
+    const b = pageCharacters({ q: "pgtie-", limit: 2, sort: "updated", cursor: a.nextCursor });
+    const c = pageCharacters({ q: "pgtie-", limit: 2, sort: "updated", cursor: b.nextCursor });
+    const ids = [...a.items, ...b.items, ...c.items].map((x) => x.id);
+    expect(new Set(ids).size).toBe(5);
+    expect(new Set(made.map((m) => m.id))).toEqual(new Set(ids));
+    expect(c.nextCursor).toBeNull();
+  });
+
+  it("q matches name and tag text, with LIKE wildcards escaped", () => {
+    saveCharacter({ name: "pgq-100%" });
+    saveCharacter({ name: "pgq-100x" });
+    saveCharacter({ name: "pgq-plain", tags: ["pgq-taghit"] });
+    expect(pageCharacters({ q: "pgq-100%" }).items.map((c) => c.name)).toEqual(["pgq-100%"]);
+    expect(pageCharacters({ q: "pgq-taghit" }).items.map((c) => c.name)).toEqual(["pgq-plain"]);
+  });
+
+  it("tag filter is exact (json_each), immune to quoted-tag substring hits", () => {
+    saveCharacter({ name: `pgtag-quoted`, tags: [`pre"war`] });
+    saveCharacter({ name: `pgtag-war`, tags: ["war"] });
+    expect(pageCharacters({ q: "pgtag-", tag: "war" }).items.map((c) => c.name)).toEqual(["pgtag-war"]);
+    expect(pageCharacters({ q: "pgtag-", tag: `pre"war` }).items.map((c) => c.name)).toEqual(["pgtag-quoted"]);
+  });
+});
+
+describe("pageChats", () => {
+  it("computes decorations in SQL: count, active-variant last message, marker skip, ended", () => {
+    const chat = saveChat({ title: "pgchat-deco", folder: "pgchat" });
+    appendMessage({ chatId: chat.id, role: "user", content: "first" });
+    const tail = appendMessage({ chatId: chat.id, role: "character", content: "long ".repeat(50) });
+    updateMessage(tail.id, {
+      variants: [...getMessage(tail.id)!.variants, { content: "picked variant", emotion: null, options: null, createdAt: 1 }],
+      activeVariant: 1,
+    });
+    appendMessage({ chatId: chat.id, role: "marker", content: "marker noise" });
+
+    const row = pageChats({ folder: "pgchat" }).items.find((c) => c.id === chat.id)!;
+    expect(row.messageCount).toBe(3);
+    expect(row.lastMessage).toBe("picked variant"); // active variant, marker skipped
+    expect(row.ended).toBe(false);
+
+    appendMessage({ chatId: chat.id, role: "narrator", content: "fin", sceneEvent: { theEnd: true } });
+    const after = pageChats({ folder: "pgchat" }).items.find((c) => c.id === chat.id)!;
+    expect(after.ended).toBe(true);
+    expect(after.lastMessage.length).toBeLessThanOrEqual(120);
+  });
+
+  it("q matches title, tags, live/snapshot character names, persona and story names", () => {
+    const char = saveCharacter({ name: "pgchats-Mirabel" });
+    const persona = savePersona({ name: "pgchats-Wanderer" });
+    const byTitle = saveChat({ title: "pgchats-title-hit", folder: "pgchatq" });
+    const byTag = saveChat({ title: "x", folder: "pgchatq", tags: ["pgchats-tagged"] });
+    const byChar = saveChat({ title: "y", folder: "pgchatq", characterIds: [char.id] });
+    const byPersona = saveChat({ title: "z", folder: "pgchatq", personaId: persona.id });
+    const byStory = saveChat({
+      title: "w",
+      folder: "pgchatq",
+      storySnapshot: { name: "pgchats-Saga" } as never,
+    });
+    const bySnapshot = saveChat({
+      title: "v",
+      folder: "pgchatq",
+      characterIds: ["gone"],
+      nameSnapshots: { gone: "pgchats-Ghost" },
+    });
+
+    const hit = (q: string) => pageChats({ q, folder: "pgchatq" }).items.map((c) => c.id);
+    expect(hit("pgchats-title")).toEqual([byTitle.id]);
+    expect(hit("pgchats-tagged")).toEqual([byTag.id]);
+    expect(hit("pgchats-Mirabel")).toEqual([byChar.id]);
+    expect(hit("pgchats-Wanderer")).toEqual([byPersona.id]);
+    expect(hit("pgchats-Saga")).toEqual([byStory.id]);
+    expect(hit("pgchats-Ghost")).toEqual([bySnapshot.id]);
+
+    // deleting the character falls back to the chat's own name snapshot
+    const snap = saveChat({
+      title: "u",
+      folder: "pgchatq",
+      characterIds: [char.id],
+      nameSnapshots: { [char.id]: "pgchats-Mirabel" },
+    });
+    deleteCharacter(char.id);
+    expect(hit("pgchats-Mirabel")).toEqual([snap.id]);
+  });
+});
+
+describe("searchLibraryNames", () => {
+  it("merges types in name order and continues across a type boundary", () => {
+    saveCharacter({ name: "pgmix-a" });
+    saveScene({ name: "pgmix-b" });
+    saveCharacter({ name: "pgmix-c" });
+    const one = searchLibraryNames({ q: "pgmix-", limit: 2 });
+    expect(one.items.map((i) => [i.type, i.name])).toEqual([
+      ["character", "pgmix-a"],
+      ["scene", "pgmix-b"],
+    ]);
+    const two = searchLibraryNames({ q: "pgmix-", limit: 2, cursor: one.nextCursor });
+    expect(two.items.map((i) => [i.type, i.name])).toEqual([["character", "pgmix-c"]]);
+    expect(two.nextCursor).toBeNull();
+  });
+
+  it("narrows to one type", () => {
+    const { items } = searchLibraryNames({ q: "pgmix-", type: "scene" });
+    expect(items.map((i) => i.name)).toEqual(["pgmix-b"]);
+  });
+});
+
+describe("distinct tags & folders", () => {
+  it("dedupes and sorts tags per type", () => {
+    saveCharacter({ name: "pgdt-1", tags: ["pgdt-Beta", "pgdt-alpha"] });
+    saveCharacter({ name: "pgdt-2", tags: ["pgdt-alpha"] });
+    const tags = listDistinctTags("character").filter((t) => t.startsWith("pgdt-"));
+    expect(tags).toEqual(["pgdt-alpha", "pgdt-Beta"]);
+  });
+
+  it("lists non-empty chat folders", () => {
+    saveChat({ title: "pgf", folder: "pgfolder-a" });
+    saveChat({ title: "pgf2", folder: "" });
+    const folders = listChatFolders();
+    expect(folders).toContain("pgfolder-a");
+    expect(folders).not.toContain("");
   });
 });

@@ -3,38 +3,39 @@ import { substitutePlaceholders } from "@/lib/ai/placeholders";
 import { entranceSceneId } from "@/lib/stage";
 import {
   appendMessage,
+  clampLimit,
   getCharacter,
   getLocation,
   getLorebook,
   getPersona,
   getScene,
   getStory,
-  listChats,
-  listMessages,
+  pageChats,
   saveChat,
 } from "@/lib/store";
 import type { Character, ChatMode, Location, Lorebook, StorySnapshot } from "@/lib/types";
 
-export const GET = handler(() => {
-  const chats = listChats().map((c) => {
-    const msgs = listMessages(c.id);
-    const last = [...msgs].reverse().find((m) => m.role !== "marker");
-    return {
+export const GET = handler((req: Request) => {
+  const sp = new URL(req.url).searchParams;
+  const page = pageChats({
+    q: sp.get("q") ?? undefined,
+    folder: sp.get("folder") ?? undefined,
+    limit: clampLimit(sp.get("limit")),
+    cursor: sp.get("cursor"),
+  });
+  return ok({
+    items: page.items.map((c) => ({
       ...c,
       storySnapshot: undefined, // heavy; the chat page fetches it via /api/chats/[id]
-      storyName: c.storySnapshot?.name ?? null,
-      ended: msgs.some((m) => m.sceneEvent?.theEnd),
-      messageCount: msgs.length,
-      lastMessage: last ? (last.variants[last.activeVariant]?.content ?? "").slice(0, 120) : "",
       characterNames: c.characterIds.map((id) => getCharacter(id)?.name ?? c.nameSnapshots[id] ?? "?"),
       personaName: c.personaId
         ? (getPersona(c.personaId)?.name ?? null)
         : c.personaCharacterId
           ? (c.nameSnapshots[c.personaCharacterId] ?? null)
           : null,
-    };
+    })),
+    nextCursor: page.nextCursor,
   });
-  return ok(chats);
 });
 
 export const POST = handler(async (req: Request) => {

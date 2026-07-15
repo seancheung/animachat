@@ -1,4 +1,4 @@
 import { collectionRoutes } from "@/lib/entityRoutes";
-import { listStories, saveStory } from "@/lib/store";
+import { pageStories, saveStory } from "@/lib/store";
 
-export const { GET, POST } = collectionRoutes(listStories, saveStory);
+export const { GET, POST } = collectionRoutes(pageStories, saveStory);

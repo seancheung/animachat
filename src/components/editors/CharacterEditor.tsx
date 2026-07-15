@@ -1,6 +1,5 @@
 "use client";
 
-import useSWR from "swr";
 import { Heart, Plus, Trash2, X } from "lucide-react";
 import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
@@ -11,6 +10,7 @@ import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
+import { useGet } from "@/lib/queries";
 import { api } from "@/lib/ui";
 import { EMOTIONS, type Character, type CustomExpression } from "@/lib/types";
 import { EditorShell, TagsField, useEditor } from "./SimpleEditors";
@@ -19,10 +19,10 @@ const PLACEHOLDER_HINT =
   "placeholders work here: [char_name], [char2_name], [user_name], [loc_name], [scene_name], [story_name]";
 
 function RelationshipsCard({ characterId }: { characterId: string }) {
-  const { data, mutate } = useSWR<{
+  const { data, refetch: mutate } = useGet<{
     personas: { personaId: string; personaName: string; affinity: number; notes: string }[];
     characters: { otherId: string; otherName: string; affinity: number; notes: string }[];
-  }>(`/api/characters/${characterId}/relationships`, api.get);
+  }>(`/api/characters/${characterId}/relationships`);
   const rows = [
     ...(data?.personas ?? []).map((r) => ({ key: `p-${r.personaId}`, name: r.personaName, ...r })),
     ...(data?.characters ?? []).map((r) => ({ key: `c-${r.otherId}`, name: r.otherName, ...r })),

@@ -851,6 +851,251 @@ export function deleteMessage(id: string) {
   getDb().prepare("DELETE FROM messages WHERE id=?").run(id);
 }
 
+/* ---------------- pagination ---------------- */
+
+/** Invalid client-supplied paging input — the route layer maps it to a 400. */
+export class PageError extends Error {}
+
+export type LibrarySort = "updated" | "created" | "name";
+export interface PageOpts {
+  limit?: number;
+  cursor?: string | null;
+  q?: string;
+  tag?: string;
+  sort?: LibrarySort;
+}
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+const PAGE_LIMIT_DEFAULT = 30;
+const PAGE_LIMIT_MAX = 100;
+export function clampLimit(n: unknown): number {
+  if (n == null || n === "") return PAGE_LIMIT_DEFAULT;
+  const v = Math.floor(Number(n));
+  return Number.isFinite(v) ? Math.min(Math.max(v, 1), PAGE_LIMIT_MAX) : PAGE_LIMIT_DEFAULT;
+}
+
+export function encodeCursor(c: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(c)).toString("base64url");
+}
+export function decodeCursor(s: string | null | undefined): Row | null {
+  if (!s) return null;
+  try {
+    const v = JSON.parse(Buffer.from(s, "base64url").toString("utf8"));
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => "\\" + ch);
+}
+const like = (q: string) => `%${escapeLike(q)}%`;
+
+/** One keyset page over a table. Appends the cursor predicate, ORDER BY and LIMIT n+1
+ *  to the caller's filters, and mints the next cursor from the last row served.
+ *  The expanded predicate (not a row-value tuple) is used so the name sort can carry
+ *  COLLATE NOCASE, matching the ORDER BY and the (name COLLATE NOCASE, id) indexes. */
+function pageQuery<T>(cfg: {
+  select: string; // "SELECT t.* FROM characters t" — filters/cursor become the WHERE
+  alias?: string; // defaults to "t"
+  fromRow: (r: Row) => T;
+  where: string[];
+  args: unknown[];
+  sort: LibrarySort;
+  limit: number;
+  cursor: string | null;
+}): Page<T> {
+  const t = cfg.alias ?? "t";
+  const where = [...cfg.where];
+  const args = [...cfg.args];
+  const col = cfg.sort === "name" ? "name" : cfg.sort === "created" ? "created_at" : "updated_at";
+  const cur = decodeCursor(cfg.cursor);
+  if (cfg.cursor && (!cur || typeof cur.id !== "string" || typeof cur.v !== (cfg.sort === "name" ? "string" : "number")))
+    throw new PageError("invalid cursor");
+  if (cur) {
+    if (cfg.sort === "name") {
+      where.push(`(${t}.name COLLATE NOCASE > ? OR (${t}.name COLLATE NOCASE = ? AND ${t}.id > ?))`);
+    } else {
+      where.push(`(${t}.${col} < ? OR (${t}.${col} = ? AND ${t}.id < ?))`);
+    }
+    args.push(cur.v, cur.v, cur.id);
+  }
+  const order =
+    cfg.sort === "name" ? `${t}.name COLLATE NOCASE, ${t}.id` : `${t}.${col} DESC, ${t}.id DESC`;
+  const sql = `${cfg.select}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order} LIMIT ?`;
+  const rows = getDb().prepare(sql).all(...args, cfg.limit + 1) as Row[];
+  const more = rows.length > cfg.limit;
+  const page = rows.slice(0, cfg.limit);
+  const last = page[page.length - 1];
+  return {
+    items: page.map(cfg.fromRow),
+    nextCursor:
+      more && last ? encodeCursor({ v: cfg.sort === "name" ? last.name : last[col], id: last.id }) : null,
+  };
+}
+
+function pageLibrary<T>(table: string, fromRow: (r: Row) => T, opts: PageOpts): Page<T> {
+  const where: string[] = [];
+  const args: unknown[] = [];
+  const q = opts.q?.trim();
+  if (q) {
+    // free-text q may fuzzily hit the raw tags JSON; the exact-match tag filter below uses json_each
+    where.push(`(t.name LIKE ? ESCAPE '\\' OR t.tags LIKE ? ESCAPE '\\')`);
+    args.push(like(q), like(q));
+  }
+  if (opts.tag) {
+    where.push("EXISTS (SELECT 1 FROM json_each(t.tags) jt WHERE jt.value = ?)");
+    args.push(opts.tag);
+  }
+  return pageQuery({
+    select: `SELECT t.* FROM ${table} t`,
+    fromRow,
+    where,
+    args,
+    sort: opts.sort ?? "updated",
+    limit: clampLimit(opts.limit),
+    cursor: opts.cursor ?? null,
+  });
+}
+
+export const pageCharacters = (o: PageOpts = {}) => pageLibrary("characters", characterFromRow, o);
+export const pagePersonas = (o: PageOpts = {}) => pageLibrary("personas", personaFromRow, o);
+export const pageLocations = (o: PageOpts = {}) => pageLibrary("locations", locationFromRow, o);
+export const pageScenes = (o: PageOpts = {}) => pageLibrary("scenes", sceneFromRow, o);
+export const pageStories = (o: PageOpts = {}) => pageLibrary("stories", storyFromRow, o);
+export const pageLorebooks = (o: PageOpts = {}) => pageLibrary("lorebooks", lorebookFromRow, o);
+
+export interface ChatListRow extends Chat {
+  messageCount: number;
+  lastMessage: string;
+  ended: boolean;
+  storyName: string | null;
+}
+
+/** Chat list page, newest-updated first, with the row decorations computed in SQL
+ *  (the message subqueries ride idx_messages_chat) instead of hydrating timelines. */
+export function pageChats(
+  opts: { limit?: number; cursor?: string | null; q?: string; folder?: string } = {}
+): Page<ChatListRow> {
+  const where: string[] = [];
+  const args: unknown[] = [];
+  if (opts.folder) {
+    where.push("c.folder = ?");
+    args.push(opts.folder);
+  }
+  const q = opts.q?.trim();
+  if (q) {
+    const l = like(q);
+    // live character names first (renames keep matching); name_snapshots covers deleted ones
+    where.push(`(c.title LIKE ? ESCAPE '\\'
+       OR c.tags LIKE ? ESCAPE '\\'
+       OR c.name_snapshots LIKE ? ESCAPE '\\'
+       OR p.name LIKE ? ESCAPE '\\'
+       OR json_extract(c.story_snapshot, '$.name') LIKE ? ESCAPE '\\'
+       OR EXISTS (SELECT 1 FROM json_each(c.character_ids) je
+                  JOIN characters ch ON ch.id = je.value
+                  WHERE ch.name LIKE ? ESCAPE '\\'))`);
+    args.push(l, l, l, l, l, l);
+  }
+  const select = `SELECT c.*,
+    (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) AS _message_count,
+    (SELECT substr(json_extract(m.variants, '$[' || m.active_variant || '].content'), 1, 120)
+       FROM messages m WHERE m.chat_id = c.id AND m.role <> 'marker'
+       ORDER BY m.position DESC LIMIT 1) AS _last_message,
+    EXISTS (SELECT 1 FROM messages m
+       WHERE m.chat_id = c.id AND json_extract(m.scene_event, '$.theEnd')) AS _ended,
+    json_extract(c.story_snapshot, '$.name') AS _story_name
+  FROM chats c LEFT JOIN personas p ON p.id = c.persona_id`;
+  return pageQuery({
+    select,
+    alias: "c",
+    fromRow: (r) => ({
+      ...chatFromRow(r),
+      messageCount: r._message_count ?? 0,
+      lastMessage: r._last_message ?? "",
+      ended: !!r._ended,
+      storyName: r._story_name ?? null,
+    }),
+    where,
+    args,
+    sort: "updated",
+    limit: clampLimit(opts.limit),
+    cursor: opts.cursor ?? null,
+  });
+}
+
+const LIBRARY_TABLES = {
+  character: "characters",
+  persona: "personas",
+  location: "locations",
+  scene: "scenes",
+  story: "stories",
+  lorebook: "lorebooks",
+} as const;
+export type LibraryType = keyof typeof LIBRARY_TABLES;
+export const LIBRARY_TYPE_KEYS = Object.keys(LIBRARY_TABLES) as LibraryType[];
+
+export interface LibraryNameRef {
+  type: LibraryType;
+  id: string;
+  name: string;
+}
+
+/** Name search across the whole library (or one type): one merged, name-ordered
+ *  stream with a single 3-part cursor {v: name, t: type, id}. */
+export function searchLibraryNames(
+  opts: { q?: string; type?: LibraryType; limit?: number; cursor?: string | null } = {}
+): Page<LibraryNameRef> {
+  const types = opts.type ? [opts.type] : LIBRARY_TYPE_KEYS;
+  const q = opts.q?.trim();
+  const limit = clampLimit(opts.limit);
+  const parts: string[] = [];
+  const args: unknown[] = [];
+  for (const ty of types) {
+    parts.push(`SELECT '${ty}' AS type, id, name FROM ${LIBRARY_TABLES[ty]}${q ? ` WHERE name LIKE ? ESCAPE '\\'` : ""}`);
+    if (q) args.push(like(q));
+  }
+  const cur = decodeCursor(opts.cursor ?? null);
+  if (
+    opts.cursor &&
+    (!cur || typeof cur.v !== "string" || typeof cur.t !== "string" || typeof cur.id !== "string")
+  )
+    throw new PageError("invalid cursor");
+  let sql = `SELECT * FROM (${parts.join(" UNION ALL ")})`;
+  if (cur) {
+    sql += ` WHERE (name COLLATE NOCASE > ? OR (name COLLATE NOCASE = ? AND (type > ? OR (type = ? AND id > ?))))`;
+    args.push(cur.v, cur.v, cur.t, cur.t, cur.id);
+  }
+  sql += ` ORDER BY name COLLATE NOCASE, type, id LIMIT ?`;
+  const rows = getDb().prepare(sql).all(...args, limit + 1) as Row[];
+  const more = rows.length > limit;
+  const page = rows.slice(0, limit) as LibraryNameRef[];
+  const last = page[page.length - 1];
+  return {
+    items: page,
+    nextCursor: more && last ? encodeCursor({ v: last.name, t: last.type, id: last.id }) : null,
+  };
+}
+
+export function listDistinctTags(type: LibraryType): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT DISTINCT jt.value AS tag FROM ${LIBRARY_TABLES[type]} t, json_each(t.tags) jt ORDER BY tag COLLATE NOCASE`
+    )
+    .all() as Row[];
+  return rows.map((r) => String(r.tag));
+}
+
+export function listChatFolders(): string[] {
+  return (
+    getDb().prepare("SELECT DISTINCT folder FROM chats WHERE folder <> '' ORDER BY folder").all() as Row[]
+  ).map((r) => r.folder);
+}
+
 /* ---------------- memory: summaries, facts, relationships ---------------- */
 
 export function getSummary(chatId: string): { content: string; coveredPosition: number } {
