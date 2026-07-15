@@ -37,6 +37,26 @@ function useAudioLayer(url: string | null, volume: number, enabled: boolean) {
       raf = requestAnimationFrame(step);
     };
 
+    // autoplay is blocked until the tab's first interaction — retry on the first gesture
+    let retry: (() => void) | null = null;
+    const disarmRetry = () => {
+      if (!retry) return;
+      document.removeEventListener("pointerdown", retry);
+      document.removeEventListener("keydown", retry);
+      retry = null;
+    };
+    const play = () => {
+      el.play().catch(() => {
+        if (cancelled || retry) return;
+        retry = () => {
+          disarmRetry();
+          if (!cancelled) el.play().catch(() => {});
+        };
+        document.addEventListener("pointerdown", retry);
+        document.addEventListener("keydown", retry);
+      });
+    };
+
     const desired = enabled ? url : null;
     if (desired !== curUrl.current) {
       fadeTo(0, () => {
@@ -44,17 +64,18 @@ function useAudioLayer(url: string | null, volume: number, enabled: boolean) {
         curUrl.current = desired;
         if (desired) {
           el.src = desired;
-          el.play().catch(() => {});
+          play();
           fadeTo(targetVol.current);
         }
       });
     } else if (desired) {
-      if (el.paused) el.play().catch(() => {});
+      if (el.paused) play();
       fadeTo(targetVol.current);
     }
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      disarmRetry();
     };
   }, [url, volume, enabled]);
 
