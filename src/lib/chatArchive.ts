@@ -86,6 +86,8 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
   const manifest = JSON.parse(await mf.async("string")) as ChatArchive;
   if (manifest.app !== "animachat" || manifest.kind !== "chat")
     throw new Error("Not an AnimaChat chat archive");
+  if ((manifest.version ?? 1) > 1)
+    throw new Error(`This chat archive uses format version ${manifest.version} — made by a newer AnimaChat`);
 
   // assets are content-addressed — identical files land on the same id
   fs.mkdirSync(ASSETS_DIR, { recursive: true });

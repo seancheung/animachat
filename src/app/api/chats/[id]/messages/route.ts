@@ -12,6 +12,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   const b = await req.json();
   if (typeof b.content !== "string" || !b.content.trim()) return bad("content required");
   const present = buildContext(id).present.map((c) => c.name);
-  const msg = appendMessage({ chatId: id, role: "user", content: tagMentions(b.content.trim(), present) });
+  // playing as narrator, the user's messages ARE narrator messages (same rule as
+  // the generate route's append)
+  const msg = appendMessage({
+    chatId: id,
+    role: chat.playAsNarrator ? "narrator" : "user",
+    content: tagMentions(b.content.trim(), present),
+  });
   return ok({ message: msg });
 });
