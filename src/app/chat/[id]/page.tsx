@@ -142,6 +142,10 @@ export default function ChatPage() {
   // a turn is in flight from the very click: Continue/Narrate carry no user text and the
   // first reply only starts streaming once the orchestrator has picked a speaker
   const [generating, setGenerating] = useState(false);
+  // the turn's stream has ended and every reply is saved — only the typewriter reveal is
+  // still pending (the dialogue box parked at a page break). Nothing is left to stop, so
+  // the Stop button hands back to Send even though the turn still counts as busy.
+  const [streamDone, setStreamDone] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   // the user's own line, held in the dialogue box until the reply starts arriving
   const [userEcho, setUserEcho] = useState<string | null>(null);
@@ -390,6 +394,7 @@ export default function ChatPage() {
       if (locked) return;
       setError(null);
       setGenerating(true);
+      setStreamDone(false);
       if (body.userText) {
         setPendingUser(body.userText);
         // the dialogue box shows the user's line straight away, and keeps it for at least
@@ -410,6 +415,11 @@ export default function ChatPage() {
           body,
           async (ev) => {
             if (ev.type === "start") {
+              // a turn can queue several speakers — let the previous reply finish typing
+              // (and be read to its last page) before the next one takes the box. Waiting
+              // here rather than on "done" keeps the read loop free to see the stream
+              // close, so streamDone below flips while the last reveal is still parked.
+              await typewriter.finish();
               setPendingUser(null);
               void mutate(); // pick up the just-appended user message
               const speaker = characters.find((c) => c.id === ev.speaker.characterId);
@@ -433,15 +443,14 @@ export default function ChatPage() {
               // Honouring a stray later tag would swap the sprite mid-message and then
               // snap it back the moment the saved message (tagged with the first) lands.
               setStreaming((s) => (s ? { ...s, emotion: s.emotion ?? ev.name } : s));
-            } else if (ev.type === "done") {
-              // a turn can queue several speakers — let this reply finish typing first
-              await typewriter.finish();
             } else if (ev.type === "error") {
               setError(ev.message);
             }
           },
           abort.signal
         );
+        // every reply has arrived and is saved; only the reveal remains to be read
+        setStreamDone(true);
         await typewriter.finish();
       } catch (e) {
         typewriter.flush();
@@ -814,6 +823,7 @@ export default function ChatPage() {
           personaName={personaName}
           busy={locked}
           generating={busy}
+          streamDone={streamDone}
           stopGenerating={() => abortRef.current?.abort()}
           drafting={drafting}
           stopDrafting={() => draftAbortRef.current?.abort()}
@@ -906,6 +916,7 @@ function DialogueLayout({
   personaName,
   busy,
   generating,
+  streamDone,
   stopGenerating,
   drafting,
   stopDrafting,
@@ -1156,7 +1167,7 @@ function DialogueLayout({
               {data.chat.narratorEnabled && (
                 <Button variant="ghost" size="sm" shape="square" title="Summon the narrator" disabled={busy} onClick={() => generate({ mode: "narrator" })}><ScrollText /></Button>
               )}
-              {generating ? (
+              {generating && !streamDone ? (
                 <Button variant="danger" size="sm" shape="square" title="Stop generating" onClick={stopGenerating}><Square /></Button>
               ) : (
                 <Button size="sm" shape="square" title="Send (Enter)" disabled={busy || !input.trim()} onClick={() => send()}><SendHorizontal /></Button>
