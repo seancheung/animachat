@@ -333,7 +333,7 @@ export default function ChatPage() {
     if (!el) return;
     pinnedRef.current = true;
     setPinned(true);
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: streaming ? "auto" : "smooth" });
   };
 
   useEffect(() => {
@@ -351,8 +351,10 @@ export default function ChatPage() {
       setPinned(true);
       return;
     }
-    // afterwards only follow the tail if the user hasn't scrolled back to read
-    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    // afterwards only follow the tail if the user hasn't scrolled back to read. While
+    // streaming the follow is instant: chunks landing mid-smooth-scroll grow the gap
+    // past the pin threshold, and the scroll handler would unpin the tail mid-reply
+    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: streaming ? "auto" : "smooth" });
   }, [messages.length, streaming?.text, pendingUser, layout, pictureMode]);
 
   /* ---- stage emotions: each character's emotion as of the message on screen ---- */
