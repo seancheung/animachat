@@ -802,6 +802,7 @@ export function appendMessage(m: {
     content: m.content,
     emotion: m.emotion ?? null,
     options: m.options ?? null,
+    sceneEvent: m.sceneEvent ?? null,
     createdAt: now(),
   };
   const id = uid();
@@ -841,12 +842,22 @@ export function updateMessage(
 ): Message | null {
   const cur = getMessage(id);
   if (!cur) return null;
-  const variants = patch.variants ?? cur.variants;
+  const variants = [...(patch.variants ?? cur.variants)];
   // clamp to a valid index — a negative/fractional value would poison the
   // '$[n].content' JSON path pageChats builds from this column
   const requested = Number.isInteger(patch.activeVariant) ? (patch.activeVariant as number) : cur.activeVariant;
   const active = Math.max(0, Math.min(requested, Math.max(0, variants.length - 1)));
-  const sceneEvent = patch.sceneEvent === undefined ? cur.sceneEvent : patch.sceneEvent;
+  // the message-level event is always the ACTIVE variant's: an explicit patch is
+  // mirrored onto that variant, and switching variants re-derives it — variants
+  // from before events lived on them fall back to the message-level value
+  let sceneEvent: SceneEvent | null;
+  if (patch.sceneEvent !== undefined) {
+    sceneEvent = patch.sceneEvent;
+    if (variants[active]) variants[active] = { ...variants[active], sceneEvent };
+  } else {
+    const v = variants[active];
+    sceneEvent = v?.sceneEvent !== undefined ? v.sceneEvent : cur.sceneEvent;
+  }
   getDb()
     .prepare("UPDATE messages SET variants=?, active_variant=?, scene_event=? WHERE id=?")
     .run(J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, id);
@@ -859,11 +870,7 @@ export function updateMessage(
  *  the synchronous call: a message frozen in the meantime (a follow-up landed, or a
  *  concurrent regen finished first) returns null and the variant is discarded rather
  *  than resurrected onto a frozen message. */
-export function addVariant(
-  messageId: string,
-  variant: MessageVariant,
-  sceneEvent?: SceneEvent | null
-): Message | null {
+export function addVariant(messageId: string, variant: MessageVariant): Message | null {
   const cur = getMessage(messageId);
   if (!cur) return null;
   const tail = getDb()
@@ -871,11 +878,8 @@ export function addVariant(
     .get(cur.chatId) as Row | undefined;
   if (tail?.id !== messageId) return null;
   const variants = [...cur.variants, variant];
-  return updateMessage(messageId, {
-    variants,
-    activeVariant: variants.length - 1,
-    sceneEvent: sceneEvent === undefined ? cur.sceneEvent : sceneEvent,
-  });
+  // the message-level sceneEvent re-derives from the new active variant inside updateMessage
+  return updateMessage(messageId, { variants, activeVariant: variants.length - 1 });
 }
 
 export function deleteMessage(id: string) {

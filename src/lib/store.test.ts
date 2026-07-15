@@ -88,6 +88,53 @@ describe("addVariant", () => {
   });
 });
 
+describe("per-variant sceneEvent", () => {
+  it("swiping switches the message's stage event to the active variant's", () => {
+    const chat = saveChat({ title: "per-variant events" });
+    appendMessage({ chatId: chat.id, role: "user", content: "hi" });
+    const tail = appendMessage({
+      chatId: chat.id,
+      role: "narrator",
+      content: "v1 ends it",
+      sceneEvent: { theEnd: true },
+    });
+    const saved = addVariant(tail.id, {
+      content: "v2 keeps going",
+      emotion: null,
+      options: null,
+      sceneEvent: null,
+      createdAt: 1,
+    })!;
+    expect(saved.sceneEvent).toBeNull(); // the regen carried no stage tags
+    expect(updateMessage(tail.id, { activeVariant: 0 })!.sceneEvent).toEqual({ theEnd: true });
+    expect(updateMessage(tail.id, { activeVariant: 1 })!.sceneEvent).toBeNull();
+  });
+
+  it("variants from before events lived on them keep the message-level event", () => {
+    const chat = saveChat({ title: "legacy variants" });
+    const m = appendMessage({
+      chatId: chat.id,
+      role: "narrator",
+      content: "old row",
+      sceneEvent: { theEnd: true },
+    });
+    // simulate a pre-field row: variant without the sceneEvent key
+    updateMessage(m.id, { variants: [{ content: "old row", emotion: null, options: null, createdAt: 1 }] });
+    expect(getMessage(m.id)!.sceneEvent).toEqual({ theEnd: true });
+  });
+
+  it("an explicit sceneEvent edit is mirrored onto the active variant", () => {
+    const chat = saveChat({ title: "event edit" });
+    appendMessage({ chatId: chat.id, role: "user", content: "hi" });
+    const tail = appendMessage({ chatId: chat.id, role: "narrator", content: "v1", sceneEvent: null });
+    addVariant(tail.id, { content: "v2", emotion: null, options: null, sceneEvent: null, createdAt: 1 });
+    updateMessage(tail.id, { sceneEvent: { theEnd: true } }); // edit while v2 is active
+    updateMessage(tail.id, { activeVariant: 0 });
+    const back = updateMessage(tail.id, { activeVariant: 1 })!; // swipe away and back
+    expect(back.sceneEvent).toEqual({ theEnd: true });
+  });
+});
+
 describe("saveStory scene entries", () => {
   it("normalizes missing contract/branching fields and prunes dangling/self successors", () => {
     const a = saveScene({ name: "A" });

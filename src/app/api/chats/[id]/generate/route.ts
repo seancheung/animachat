@@ -435,11 +435,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             // tail-ness is re-verified inside addVariant — a message frozen while we
             // streamed (follow-up landed, concurrent regen won) returns null and this
             // variant is discarded instead of resurrecting the frozen message's swipes
-            saved = addVariant(
-              regenTarget.id,
-              { content, emotion, options, createdAt: Date.now() },
-              sceneEvent ?? undefined
-            );
+            saved = addVariant(regenTarget.id, {
+              content,
+              emotion,
+              options,
+              sceneEvent,
+              createdAt: Date.now(),
+            });
             if (saved) setRawOutput(saved.id, saved.activeVariant, raw);
           } else {
             saved = appendMessage({

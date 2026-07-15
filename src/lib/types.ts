@@ -315,6 +315,11 @@ export interface MessageVariant {
   content: string;
   emotion: string | null;
   options: string[] | null;
+  /** stage events this variant's text produced — the message-level field always
+   *  mirrors the ACTIVE variant's, so swipes/regens can't leave the stage
+   *  reflecting a discarded alternative (absent on rows from before this field:
+   *  those keep the message-level value) */
+  sceneEvent?: SceneEvent | null;
   createdAt: number;
 }
 // The model's raw output before tag parsing lives in the raw_outputs table
