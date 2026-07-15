@@ -149,18 +149,21 @@ export function MentionInputBox({
     };
 
     const onBeforeInput = (ev: InputEvent) => {
-      if (ev.isComposing || ev.inputType === "insertCompositionText" || !ev.data) return;
+      if (ev.isComposing || ev.inputType === "insertCompositionText") return;
+      // paste/drop carry their text in dataTransfer, not data — same fuse rule applies
+      const data = ev.data ?? ev.dataTransfer?.getData("text/plain") ?? "";
+      if (!data) return;
       const { value, mentionNames, onChange } = latest.current;
       const runs = runsOf(value, mentionNames);
       const s = el.selectionStart;
       const e = el.selectionEnd;
-      const fuseLeft = runs.some((r) => r.end === s) && /^[\p{L}\p{N}_]/u.test(ev.data);
-      const fuseRight = runs.some((r) => r.start === e) && /\S$/.test(ev.data);
+      const fuseLeft = runs.some((r) => r.end === s) && /^[\p{L}\p{N}_]/u.test(data);
+      const fuseRight = runs.some((r) => r.start === e) && /\S$/.test(data);
       if (!fuseLeft && !fuseRight) return;
       ev.preventDefault();
-      const insert = (fuseLeft ? " " : "") + ev.data + (fuseRight ? " " : "");
+      const insert = (fuseLeft ? " " : "") + data + (fuseRight ? " " : "");
       onChange(value.slice(0, s) + insert + value.slice(e));
-      const pos = s + (fuseLeft ? 1 : 0) + ev.data.length;
+      const pos = s + (fuseLeft ? 1 : 0) + data.length;
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(pos, pos);
