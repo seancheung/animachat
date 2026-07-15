@@ -23,18 +23,24 @@ function referencedIds(): Set<string> {
   return refs;
 }
 
+/** Fresh uploads sit unreferenced until their editor is saved — leave them alone. */
+const PRUNE_GRACE_MS = 60 * 60 * 1000;
+
 /** Orphans: asset rows and stray files on disk that no entity references. */
 function collectOrphans(): { ids: string[]; bytes: number } {
   const refs = referencedIds();
   const rows = listAssets();
   const known = new Set(rows.map((r) => r.id));
+  const cutoff = Date.now() - PRUNE_GRACE_MS;
   const orphans = new Map<string, number>();
-  for (const r of rows) if (!refs.has(r.id)) orphans.set(r.id, r.size);
+  for (const r of rows) if (!refs.has(r.id) && r.createdAt < cutoff) orphans.set(r.id, r.size);
   if (fs.existsSync(ASSETS_DIR)) {
     for (const f of fs.readdirSync(ASSETS_DIR)) {
       if (!/^[a-f0-9]{32}$/.test(f) || known.has(f) || refs.has(f)) continue;
       // file without a DB row (e.g. leftover from an interrupted upload)
-      orphans.set(f, fs.statSync(path.join(ASSETS_DIR, f)).size);
+      const stat = fs.statSync(path.join(ASSETS_DIR, f));
+      if (stat.mtimeMs >= cutoff) continue;
+      orphans.set(f, stat.size);
     }
   }
   let bytes = 0;

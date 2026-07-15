@@ -1358,9 +1358,9 @@ export function getAsset(id: string): { id: string; filename: string; mime: stri
   return r ? { id: r.id, filename: r.filename, mime: r.mime, size: r.size } : null;
 }
 
-export function listAssets(): { id: string; size: number }[] {
-  const rows = getDb().prepare("SELECT id, size FROM assets").all() as Row[];
-  return rows.map((r) => ({ id: r.id, size: r.size }));
+export function listAssets(): { id: string; size: number; createdAt: number }[] {
+  const rows = getDb().prepare("SELECT id, size, created_at FROM assets").all() as Row[];
+  return rows.map((r) => ({ id: r.id, size: r.size, createdAt: r.created_at }));
 }
 
 export function deleteAssets(ids: string[]) {
