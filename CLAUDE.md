@@ -20,7 +20,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Single
 - `src/app/api/` — REST + SSE routes; entity CRUD via `src/lib/entityRoutes.ts` factory
 - `src/components/` — UI; chat page at `src/app/chat/[id]/page.tsx`
 - `src/components/ui/` — vendored [retuned-ui](../retuned-ui) components (shadcn-style: we own the code; `"use client"` added for Next). Theme tokens in `src/app/theme.css` (dark-first amber; `base-*` surfaces, `content-*` text ladder, `primary-*` accent). App-level primitives (Modal/Field/Row/EmptyState) in `src/components/app.tsx`; `confirmDialog()` (promise-based window.confirm replacement, outlet in layout) in `src/components/confirm.tsx`; class merging via `cn` from `src/utils/cn.ts`.
-- `src/lib/seed.ts` — starter cast, runs once via `src/instrumentation.ts` when the library is empty
+- `src/lib/seed.ts` — starter cast, runs once via `src/instrumentation.ts` when the library is empty; `ANIMACHAT_SKIP_SEED=1` bypasses it (useful for isolated test instances)
 
 ## Core invariants (violating these breaks features)
 

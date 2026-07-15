@@ -13,8 +13,12 @@ import {
   saveStory,
 } from "./store";
 
-/** Ship a small starter cast so a fresh install isn't an empty shell. Runs once. */
+/** Ship a small starter cast so a fresh install isn't an empty shell. Runs once.
+ *  ANIMACHAT_SKIP_SEED bypasses it for installs that should start empty
+ *  ("0"/"false"/"off" count as unset, anything else skips). */
 export function seedPresets() {
+  const skip = process.env.ANIMACHAT_SKIP_SEED?.trim();
+  if (skip && !["0", "false", "off"].includes(skip.toLowerCase())) return;
   if (
     listCharacters().length ||
     listLocations().length ||

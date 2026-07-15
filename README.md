@@ -12,7 +12,7 @@ npm run dev
 Open http://localhost:3000 (or the port Next picks), then:
 
 1. **Settings** → add a provider (Anthropic or any OpenAI-compatible endpoint), add a model under it (with its context window size), and set it as the **global default model**.
-2. **Library** → a starter cast is seeded on first run (Mira, Kael, the Moonlit Tavern, a two-scene story and a lorebook). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
+2. **Library** → a starter cast is seeded on first run (Mira, Kael, the Moonlit Tavern, a two-scene story and a lorebook; set `ANIMACHAT_SKIP_SEED=1` to start empty). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
 3. **Chats** → **+ New chat**, then pick a mode: **Casual** (characters + persona, or narrator-only text adventure), **Immersive** (a fixed scene or location), or **Playthrough** (run a story — its cast and scenes, directed by the narrator; play as a cast member or a persona).
 
 All data lives in `./data` (SQLite + uploaded assets). `Settings → Backup` exports/restores the whole thing as one zip.
