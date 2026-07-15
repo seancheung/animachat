@@ -49,7 +49,12 @@ export function inTransaction<T>(fn: () => T): T {
 export function getSettings(): Settings {
   const rows = getDb().prepare("SELECT key, value FROM settings").all() as Row[];
   const stored: Record<string, unknown> = {};
-  for (const r of rows) stored[r.key] = J.parse(r.value, null);
+  for (const r of rows) {
+    // a corrupt row must not override a good default with null (a stored JSON
+    // "null" — e.g. defaultModelId — still parses and lands normally)
+    const v = J.parse<unknown>(r.value, undefined);
+    if (v !== undefined) stored[r.key] = v;
+  }
   return { ...DEFAULT_SETTINGS, ...stored } as Settings;
 }
 
