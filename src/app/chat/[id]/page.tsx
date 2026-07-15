@@ -179,15 +179,26 @@ export default function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const draftAbortRef = useRef<AbortController | null>(null);
   const openedRef = useRef(false);
+  // "pinned" as a ref (the scroll effect reads it without re-binding) and as state
+  // (the jump-to-latest button renders off it) — declared up here because the
+  // chat-switch reset below also writes it
+  const pinnedRef = useRef(true);
+  const [pinned, setPinned] = useState(true);
+  // a fork navigates chat→chat without unmounting — reset synchronously during
+  // render (the adjust-state-on-prop-change pattern) so the new chat never renders
+  // the old one's error banner, draft text, or read-back scroll state
+  const [chatIdRendered, setChatIdRendered] = useState(id);
+  if (chatIdRendered !== id) {
+    setChatIdRendered(id);
+    setError(null);
+    setInput("");
+    setPinned(true);
+  }
   // leaving the page (or switching chats) cancels in-flight generation like a Stop press:
   // the server aborts with the dropped request instead of finishing a reply nobody awaits
   useEffect(() => {
-    // a fork navigates chat→chat without unmounting — the new chat must not inherit the
-    // old one's error banner, draft text, or read-back scroll state
-    setError(null);
-    setInput("");
+    // the ref side of "pinned" resets here — post-commit, before any scroll event fires
     pinnedRef.current = true;
-    setPinned(true);
     return () => {
       abortRef.current?.abort();
       draftAbortRef.current?.abort();
@@ -315,10 +326,6 @@ export default function ChatPage() {
   });
 
   /* ---- panel scrolling: pinned to the newest message unless the user reads back ---- */
-  // "pinned" as a ref (the scroll effect reads it without re-binding) and as state (the
-  // jump-to-latest button renders off it)
-  const pinnedRef = useRef(true);
-  const [pinned, setPinned] = useState(true);
   // the opening jump is instant and must happen again whenever the panel remounts
   const landedRef = useRef(false);
   useEffect(() => {
@@ -341,6 +348,7 @@ export default function ChatPage() {
     el.scrollTo({ top: el.scrollHeight, behavior: streaming ? "auto" : "smooth" });
   };
 
+  const isStreaming = !!streaming;
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
@@ -359,10 +367,14 @@ export default function ChatPage() {
     // afterwards only follow the tail if the user hasn't scrolled back to read. While
     // streaming the follow is instant: chunks landing mid-smooth-scroll grow the gap
     // past the pin threshold, and the scroll handler would unpin the tail mid-reply
-    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: streaming ? "auto" : "smooth" });
-  }, [messages.length, streaming?.text, pendingUser, layout, pictureMode]);
+    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
+  }, [messages.length, streaming?.text, isStreaming, pendingUser, layout, pictureMode]);
 
   /* ---- stage emotions: each character's emotion as of the message on screen ---- */
+  // the streamed primitives, not the streaming object (new identity per token) —
+  // the emotions map must stay stable per chunk or useEmotionSfx re-diffs per token
+  const streamingCharacterId = streaming?.characterId ?? null;
+  const streamingEmotion = streaming?.emotion ?? null;
   const emotions: StageEmotions = useMemo(() => {
     const upto = browseIdx ?? timeline.length - 1;
     const map: StageEmotions = {};
@@ -373,13 +385,11 @@ export default function ChatPage() {
       }
     }
     // the live reply's emotion only applies at the live end, once it is on screen
-    if (browseIdx === null && !echoing && streaming?.characterId && streaming.emotion) {
-      map[streaming.characterId] = streaming.emotion;
+    if (browseIdx === null && !echoing && streamingCharacterId && streamingEmotion) {
+      map[streamingCharacterId] = streamingEmotion;
     }
     return map;
-    // keyed on the streamed primitives, not the streaming object (new identity per
-    // token) — the map must stay stable per chunk or useEmotionSfx re-diffs per token
-  }, [timeline, streaming?.characterId, streaming?.emotion, browseIdx, echoing]);
+  }, [timeline, streamingCharacterId, streamingEmotion, browseIdx, echoing]);
 
   // one-shot expression SFX on the sfx channel — follows the DISPLAYED emotion, so it
   // fires when the streamed <emo> tag lands, on swipes, and while browsing the backlog

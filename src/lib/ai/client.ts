@@ -30,7 +30,10 @@ export class AiConfigError extends Error {}
 export function estimateTokens(text: string): number {
   let ascii = 0;
   let wide = 0;
-  for (let i = 0; i < text.length; i++) (text.charCodeAt(i) < 128 ? ascii++ : wide++);
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) < 128) ascii++;
+    else wide++;
+  }
   return Math.ceil(ascii / 4 + wide);
 }
 
