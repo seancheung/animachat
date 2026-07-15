@@ -61,9 +61,14 @@ export function computeStage(
     const ev = m.sceneEvent;
     if (!ev) continue;
     if (ev.sceneId) {
-      state.sceneId = ev.sceneId;
-      state.locationId = chatScene(chat, ev.sceneId, lib)?.locationId ?? null;
-      state.present = castOf(ev.sceneId);
+      // fail-soft like tag payloads: an id the snapshot doesn't know (e.g. a
+      // hand-edited stage event) keeps the current scene instead of emptying the stage
+      const known = !snap || snap.scenes.some((s) => s.scene.id === ev.sceneId);
+      if (known) {
+        state.sceneId = ev.sceneId;
+        state.locationId = chatScene(chat, ev.sceneId, lib)?.locationId ?? null;
+        state.present = castOf(ev.sceneId);
+      }
     }
     if (state.present && (ev.enter?.length || ev.leave?.length)) {
       const cur = new Set(state.present);
@@ -99,22 +104,6 @@ export function entranceSceneId(
   const chosen = chosenId ? entries.find((e) => e.id === chosenId) : null;
   if (chosen?.cast.includes(playedId)) return chosen.id;
   return entries.find((e) => e.cast.includes(playedId))?.id ?? null;
-}
-
-/** The next scene after `currentId` — skipping, for a played cast member, scenes
- *  they are not in (those unfold offstage). Null = nothing ahead: the current
- *  scene is this playthrough's final one. */
-export function nextSceneIdAfter(
-  entries: SceneCastRef[],
-  currentId: string | null,
-  playedId?: string | null
-): string | null {
-  const idx = entries.findIndex((e) => e.id === currentId);
-  if (idx === -1) return null;
-  for (let i = idx + 1; i < entries.length; i++) {
-    if (!playedId || entries[i].cast.includes(playedId)) return entries[i].id;
-  }
-  return null;
 }
 
 /** The roads open from `currentId` — empty = the current scene is this playthrough's

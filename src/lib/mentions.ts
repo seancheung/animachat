@@ -17,9 +17,11 @@ export function tagMentions(text: string, names: string[]): string {
   let out = text.replace(/(^|\s)@all(?![\p{L}\p{N}_])/giu, "$1<mention/>");
   for (const name of [...names].sort((a, b) => b.length - a.length)) {
     if (!name.trim()) continue;
+    // replacer function, not a template string — a name containing `$&`/`$$`
+    // would expand inside a template and corrupt the stored tag
     out = out.replace(
       new RegExp(`(^|\\s)@${escapeRe(name)}(?![\\p{L}\\p{N}_])`, "giu"),
-      `$1<mention>${name}</mention>`
+      (_m, pre) => `${pre}<mention>${name}</mention>`
     );
   }
   return out;

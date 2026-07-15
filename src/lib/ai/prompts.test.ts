@@ -12,7 +12,7 @@ import {
   type ChatContext,
 } from "./prompts";
 import { substitutePlaceholders } from "./placeholders";
-import { allowedNextScenes, entranceSceneId, nextSceneIdAfter } from "@/lib/stage";
+import { allowedNextScenes, entranceSceneId } from "@/lib/stage";
 import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
@@ -380,10 +380,10 @@ describe("played-character immersion helpers", () => {
   });
 
   it("advance skips scenes the played character is not in; nothing ahead = final", () => {
-    expect(nextSceneIdAfter(entries, "s2", "side")).toBe("s4"); // s3 unfolds offstage
-    expect(nextSceneIdAfter(entries, "s3", "lead")).toBeNull(); // s4 excludes the lead → s3 is their finale
-    expect(nextSceneIdAfter(entries, "s1", null)).toBe("s2"); // not playing a cast member → plain order
-    expect(nextSceneIdAfter(entries, "missing", "side")).toBeNull();
+    expect(allowedNextScenes(entries, "s2", "side")).toEqual(["s4"]); // s3 unfolds offstage
+    expect(allowedNextScenes(entries, "s3", "lead")).toEqual([]); // s4 excludes the lead → s3 is their finale
+    expect(allowedNextScenes(entries, "s1", null)).toEqual(["s2"]); // not playing a cast member → plain order
+    expect(allowedNextScenes(entries, "missing", "side")).toEqual([]);
   });
 });
 

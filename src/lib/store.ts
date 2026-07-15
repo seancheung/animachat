@@ -1338,7 +1338,7 @@ export function usageReport(sinceTs = 0) {
     )
     .all(sinceTs) as Row[];
   const byDay = db
-    .prepare(`SELECT date(u.ts/1000, 'unixepoch') AS day, ${SUMS} ${FROM} GROUP BY day ORDER BY day`)
+    .prepare(`SELECT date(u.ts/1000, 'unixepoch', 'localtime') AS day, ${SUMS} ${FROM} GROUP BY day ORDER BY day`)
     .all(sinceTs) as Row[];
   return { totals, byFeature, byModel, byDay };
 }

@@ -131,8 +131,17 @@ export function useEntityName(url: string | null): string | undefined {
 export async function searchIdByName(type: string, name: unknown): Promise<string | undefined> {
   const q = String(name ?? "").trim();
   if (!q) return undefined;
-  const page = (await api.get(
-    `/api/library/search?type=${type}&q=${encodeURIComponent(q)}&limit=50`
-  )) as Page<{ id: string; name: string }>;
-  return page.items.find((i) => i.name.trim().toLowerCase() === q.toLowerCase())?.id;
+  // page through all contains-matches — with >50 of them the exact-named item can
+  // sort beyond the first page and would read as nonexistent
+  let cursor: string | null = null;
+  do {
+    const page = (await api.get(
+      `/api/library/search?type=${type}&q=${encodeURIComponent(q)}&limit=50` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "")
+    )) as Page<{ id: string; name: string }>;
+    const hit = page.items.find((i) => i.name.trim().toLowerCase() === q.toLowerCase());
+    if (hit) return hit.id;
+    cursor = page.nextCursor;
+  } while (cursor);
+  return undefined;
 }

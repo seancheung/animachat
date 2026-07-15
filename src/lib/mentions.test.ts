@@ -27,6 +27,11 @@ describe("tagMentions", () => {
   it("escapes regex metacharacters in names", () => {
     expect(tagMentions("hi @R2 (unit)", ["R2 (unit)"])).toBe("hi <mention>R2 (unit)</mention>");
   });
+
+  it("keeps $-sequences in names literal (no replacement-template expansion)", () => {
+    expect(tagMentions("hi @Big $$ Bob", ["Big $$ Bob"])).toBe("hi <mention>Big $$ Bob</mention>");
+    expect(tagMentions("hi @M$&x", ["M$&x"])).toBe("hi <mention>M$&x</mention>");
+  });
 });
 
 describe("parseMentions", () => {

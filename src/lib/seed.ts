@@ -1,6 +1,7 @@
 import {
   listCharacters,
   listLocations,
+  listLorebooks,
   listPersonas,
   listScenes,
   listStories,
@@ -24,7 +25,8 @@ export function seedPresets() {
     listLocations().length ||
     listScenes().length ||
     listStories().length ||
-    listPersonas().length
+    listPersonas().length ||
+    listLorebooks().length
   )
     return;
 

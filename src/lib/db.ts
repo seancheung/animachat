@@ -221,6 +221,8 @@ CREATE INDEX IF NOT EXISTS idx_lorebooks_name     ON lorebooks(name COLLATE NOCA
 CREATE INDEX IF NOT EXISTS idx_lorebooks_updated  ON lorebooks(updated_at, id);
 CREATE INDEX IF NOT EXISTS idx_lorebooks_created  ON lorebooks(created_at, id);
 CREATE INDEX IF NOT EXISTS idx_chats_updated      ON chats(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_facts_character    ON facts(character_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_usage_ts           ON usage_log(ts);
 `;
 
 declare global {
