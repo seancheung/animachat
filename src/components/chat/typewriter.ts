@@ -172,7 +172,11 @@ export function useTypewriter({
       /** The reader turned the page (or the gate moved): reveal on into it. */
       retarget() {
         const s = st.current;
-        if (speedRef.current <= 0) s.shown = limit();
+        const cap = limit();
+        // the gate can also move BACK below what's shown (pagination switched on
+        // mid-stream, e.g. panel → dialogue layout): re-park at the new page end so
+        // paging and typing behave as if the reveal had run paged from the start
+        s.shown = speedRef.current <= 0 ? cap : Math.min(s.shown, cap);
         emit();
         if (s.shown < limit()) run();
         else settle();
