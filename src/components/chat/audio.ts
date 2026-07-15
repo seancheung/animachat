@@ -101,6 +101,16 @@ export function useBlip() {
   const buffers = useRef(new Map<string, AudioBuffer>());
   const lastPlay = useRef(0);
 
+  // browsers cap live AudioContexts — leaking one per chat visit eventually mutes the app
+  useEffect(
+    () => () => {
+      void ctxRef.current?.close().catch(() => {});
+      ctxRef.current = null;
+      buffers.current.clear();
+    },
+    []
+  );
+
   async function ensureBuffer(url: string): Promise<AudioBuffer | null> {
     if (!ctxRef.current) {
       try {
