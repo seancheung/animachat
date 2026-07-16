@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, Info, Plus, Trash2, X } from "lucide-react";
+import { Heart, Plus, Trash2, X } from "lucide-react";
 import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
@@ -11,7 +11,6 @@ import Progress from "@/components/ui/progress";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
-import Tooltip from "@/components/ui/tooltip";
 import { useGet } from "@/lib/queries";
 import { api } from "@/lib/ui";
 import {
@@ -68,14 +67,23 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** A control plus an info-icon tooltip carrying its long description. */
-function Trait({ tip, children }: { tip: string; children: React.ReactNode }) {
+/** A settings row: label + muted description on the left, the control on the right. */
+function TraitRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-1.5">
-      {children}
-      <Tooltip content={tip}>
-        <Info size={13} className="text-content-400 shrink-0" />
-      </Tooltip>
+    <div className="flex items-center gap-4 py-2.5">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">{label}</div>
+        <div className="text-xs text-content-400 mt-0.5">{description}</div>
+      </div>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }
@@ -87,30 +95,41 @@ function AlivenessFields({ form, setForm }: { form: any; setForm: (f: any) => vo
   const patch = (p: Partial<Aliveness>) => setForm({ ...form, aliveness: { ...a, ...p } });
   return (
     <Collapsible bordered title="Aliveness">
-      <div className="text-xs text-content-400 mb-2">all off by default — casual & immersive chats only</div>
-      <div className="space-y-2">
-        <Trait tip="A life of their own: they bring up their own topics, opinions, moods and wants, call back to things they remember, disagree, change the subject. Off = purely reactive.">
-          <Switch value={a.initiative} onChange={(v) => patch({ initiative: v })} label="Initiative" />
-        </Trait>
-        <Trait tip="They notice how long you've been away and remember when things happened. Uses real elapsed time — leave off for characters living in period or fantasy settings.">
-          <Switch value={a.timeAware} onChange={(v) => patch({ timeAware: v })} label="Time awareness" />
-        </Trait>
-        <Trait tip="They carry an evolving mood, current wants and unresolved threads between sessions. Kept per chat, updated by the memory pass.">
-          <Switch value={a.mindState} onChange={(v) => patch({ mindState: v })} label="State of mind" />
-        </Trait>
-        <Field label="Off-screen life">
-          <Trait tip="Returning to a casual chat after 6+ hours, they've been up to something meanwhile. Background: it colors their replies. Texts first: they also send the first message when you come back.">
-            <Select<OffscreenLifeMode>
-              value={a.offscreenLife}
-              onChange={(v) => patch({ offscreenLife: v })}
-              options={[
-                { value: "off", label: "Off" },
-                { value: "context", label: "Background" },
-                { value: "texts", label: "Texts first" },
-              ]}
-            />
-          </Trait>
-        </Field>
+      <div className="text-xs text-content-400">all off by default — applies in casual & immersive chats</div>
+      <div className="divide-y divide-base-400">
+        <TraitRow
+          label="Initiative"
+          description="They bring up their own topics, opinions, moods and wants — callbacks, disagreements, subject changes. Off = purely reactive."
+        >
+          <Switch value={a.initiative} onChange={(v) => patch({ initiative: v })} />
+        </TraitRow>
+        <TraitRow
+          label="Time awareness"
+          description="Notices how long you've been away and remembers when things happened. Real elapsed time — leave off for period or fantasy characters."
+        >
+          <Switch value={a.timeAware} onChange={(v) => patch({ timeAware: v })} />
+        </TraitRow>
+        <TraitRow
+          label="State of mind"
+          description="Carries an evolving mood, wants and unresolved threads between sessions. Kept per chat, updated by the memory pass."
+        >
+          <Switch value={a.mindState} onChange={(v) => patch({ mindState: v })} />
+        </TraitRow>
+        <TraitRow
+          label="Off-screen life"
+          description="After 6+ hours away (casual chats), they've been up to something meanwhile. Background colors their replies; Texts first also has them open the conversation when you return."
+        >
+          <Select<OffscreenLifeMode>
+            value={a.offscreenLife}
+            onChange={(v) => patch({ offscreenLife: v })}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "context", label: "Background" },
+              { value: "texts", label: "Texts first" },
+            ]}
+            className="min-w-0"
+          />
+        </TraitRow>
       </div>
     </Collapsible>
   );
