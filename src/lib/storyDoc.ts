@@ -22,6 +22,15 @@ const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 const rec = <T,>(v: unknown, fallback: T): T =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as T) : fallback;
 
+// playthroughs ignore aliveness (pacing belongs to the director/narrator), but the
+// traits still travel with an embedded copy so copy-to-library keeps them intact
+const normalizeAliveness = (a: any): Character["aliveness"] => ({
+  initiative: a?.initiative === true,
+  timeAware: a?.timeAware === true,
+  mindState: a?.mindState === true,
+  offscreenLife: a?.offscreenLife === "context" || a?.offscreenLife === "texts" ? a.offscreenLife : "off",
+});
+
 export const normalizeCharacter = (c: any): Character => ({
   id: str(c?.id) || uuidv4(),
   name: str(c?.name, "Unnamed"),
@@ -37,6 +46,7 @@ export const normalizeCharacter = (c: any): Character => ({
     .filter((x) => x.name),
   typingSfxAsset: str(c?.typingSfxAsset) || null,
   trackRelationship: c?.trackRelationship !== false,
+  aliveness: normalizeAliveness(c?.aliveness),
   idleMotion: c?.idleMotion !== false,
   tags: arr(c?.tags).map((t) => str(t)).filter(Boolean),
   createdAt: Number(c?.createdAt) || Date.now(),

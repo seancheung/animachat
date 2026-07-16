@@ -50,7 +50,9 @@ import { useGet } from "@/lib/queries";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import {
+  alivenessOf,
   DEFAULT_SETTINGS,
+  OFFSCREEN_GAP_MS,
   POV_LABELS,
   type Character,
   type ChatLayout,
@@ -179,6 +181,8 @@ export default function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const draftAbortRef = useRef<AbortController | null>(null);
   const openedRef = useRef(false);
+  // the off-screen-life return trigger fires at most once per chat visit
+  const returnedRef = useRef(false);
   // "pinned" as a ref (the scroll effect reads it without re-binding) and as state
   // (the jump-to-latest button renders off it) — declared up here because the
   // chat-switch reset below also writes it
@@ -202,8 +206,9 @@ export default function ChatPage() {
     return () => {
       abortRef.current?.abort();
       draftAbortRef.current?.abort();
-      // …and the next chat gets its own opener
+      // …and the next chat gets its own opener & return trigger
       openedRef.current = false;
+      returnedRef.current = false;
     };
   }, [id]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -589,6 +594,25 @@ export default function ChatPage() {
     openedRef.current = true;
     void generate({ mode: "narrator" });
   }, [data, messages.length, busy, generate]);
+
+  // returning to a casual chat after a real gap: have the server refresh the
+  // opted-in characters' off-screen lives, and let one of them text first.
+  // The gap check here only saves a pointless request — the server re-validates,
+  // and an empty SSE response (someone else's turn already landed) is a no-op.
+  useEffect(() => {
+    if (returnedRef.current || !chat || busy) return;
+    if (chat.mode !== "casual" || chat.playAsNarrator || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (Date.now() - last.createdAt < OFFSCREEN_GAP_MS) return;
+    if (!characters.some((c) => alivenessOf(c).offscreenLife !== "off")) return;
+    returnedRef.current = true;
+    void api
+      .post<{ generated: string[]; texter: string | null }>(`/api/chats/${id}/return`)
+      .then((r) => {
+        if (r?.texter) void generate({ mode: "return", characterId: r.texter });
+      })
+      .catch(() => {}); // a return that fails is just a normal chat-open
+  }, [chat, messages, busy, characters, id, generate]);
 
   if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
 

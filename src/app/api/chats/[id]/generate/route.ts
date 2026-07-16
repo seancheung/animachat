@@ -19,6 +19,7 @@ import {
   resolveStageAssets,
   type ChatContext,
 } from "@/lib/ai/prompts";
+import { returnTurnEligible } from "@/lib/ai/offscreen";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
@@ -28,8 +29,9 @@ import type { Character, Message, SceneEvent } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 interface GenerateBody {
-  /** auto = orchestrator decides; character/narrator force a speaker */
-  mode?: "auto" | "character" | "narrator";
+  /** auto = orchestrator decides; character/narrator force a speaker;
+   *  return = a texts-first turn after the user came back (characterId required) */
+  mode?: "auto" | "character" | "narrator" | "return";
   characterId?: string;
   /** append this user message before generating (omit to just continue) */
   userText?: string;
@@ -40,6 +42,8 @@ interface GenerateBody {
 interface Speaker {
   role: "character" | "narrator";
   character: Character | null;
+  /** texts-first turn: the character re-opens the conversation after the user's absence */
+  returning?: boolean;
 }
 
 /** Hard cap on AI turns per request — characters chaining mentions can't loop forever
@@ -149,10 +153,10 @@ async function pickSpeakers(ctx: ChatContext, body: GenerateBody): Promise<Speak
     if (ctx.chat.playAsNarrator) throw new Error("You are the narrator in this chat");
     return [{ role: "narrator", character: null }];
   }
-  if (body.mode === "character" && body.characterId) {
+  if ((body.mode === "character" || body.mode === "return") && body.characterId) {
     const c = ctx.present.find((x) => x.id === body.characterId);
     if (!c) throw new Error("Character not on stage in this chat");
-    return [{ role: "character", character: c }];
+    return [{ role: "character", character: c, returning: body.mode === "return" }];
   }
   const text = body.userText?.trim() ?? "";
   if (text && ctx.present.length > 0) {
@@ -231,6 +235,20 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   }
 
   let ctx = buildContext(chatId);
+
+  // texts-first re-guard: between the return pass and this request the tail may
+  // have moved (another tab's turn landed) — then the return is already spoken
+  // for, and the right response is silence, not an error banner
+  if (body.mode === "return" && !returnTurnEligible(ctx, body.characterId)) {
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" } }
+    );
+  }
 
   // regeneration targets an existing message; context stops before it
   let regenTarget: Message | null = null;
@@ -339,7 +357,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         const built =
           speaker.role === "narrator"
             ? buildNarratorRequest(turnCtx, modelRef)
-            : buildCharacterRequest(turnCtx, speaker.character!, modelRef);
+            : buildCharacterRequest(turnCtx, speaker.character!, modelRef, {
+                returning: speaker.returning,
+              });
 
         let content = "";
         let raw = ""; // the model's output verbatim, before tag parsing — kept for debugging

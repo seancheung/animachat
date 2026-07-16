@@ -31,6 +31,47 @@ export interface CustomExpression {
   description: string;
 }
 
+/** Off-screen life between conversations (casual chats): "context" = a generated
+ *  "what they've been up to" note colors their replies after a real-time gap;
+ *  "texts" = additionally, they send the first message when the user returns. */
+export type OffscreenLifeMode = "off" | "context" | "texts";
+
+/**
+ * Per-character aliveness traits — how much of a life of their own a character
+ * has in casual/immersive chats (playthroughs ignore all of these: pacing there
+ * belongs to the story's director and narrator). Each is independently togglable;
+ * off = today's purely reactive behavior for that trait.
+ */
+export interface Aliveness {
+  /** drives & opinions: own topics, moods, wants, callbacks — not purely reactive */
+  initiative: boolean;
+  /** real elapsed time reaches the prompt: conversation gaps + dated memories */
+  timeAware: boolean;
+  /** the memory pass maintains an evolving per-chat "what's on their mind" note */
+  mindState: boolean;
+  /** generated off-screen life when the user returns after a gap (casual chats) */
+  offscreenLife: OffscreenLifeMode;
+}
+
+/** All off — aliveness is strictly opt-in, per character. */
+export const DEFAULT_ALIVENESS: Aliveness = {
+  initiative: false,
+  timeAware: false,
+  mindState: false,
+  offscreenLife: "off",
+};
+
+/** A character's aliveness with defaults filled in — rows and embedded copies
+ *  from before the feature simply have no (or a partial) aliveness object. */
+export function alivenessOf(c: { aliveness?: Partial<Aliveness> | null }): Aliveness {
+  return { ...DEFAULT_ALIVENESS, ...(c.aliveness ?? {}) };
+}
+
+/** Real-time gap after which returning to a casual chat counts as a "return"
+ *  (off-screen life notes + texts-first) — shared by the client trigger and the
+ *  server's authoritative guard. */
+export const OFFSCREEN_GAP_MS = 6 * 60 * 60 * 1000;
+
 export interface Character {
   id: string;
   name: string;
@@ -50,6 +91,8 @@ export interface Character {
   typingSfxAsset: string | null;
   /** affinity/relationship tracking with personas (global per character) */
   trackRelationship: boolean;
+  /** aliveness traits (initiative, time awareness, state of mind, off-screen life) */
+  aliveness: Aliveness;
   /** subtle breathing idle motion on the VN stage */
   idleMotion: boolean;
   /** free-form labels for grouping & filtering in the library */
@@ -365,12 +408,34 @@ export interface Fact {
   createdAt: number;
 }
 
+/** A character's evolving inner state within one chat — mood, current wants,
+ *  unresolved threads. Maintained by the memory pass (aliveness.mindState);
+ *  per character × chat so moods never leak between unrelated fictions. */
+export interface MindState {
+  characterId: string;
+  chatId: string;
+  content: string;
+  updatedAt: number;
+}
+
+/** What a character has been up to between conversations — generated when the
+ *  user returns to a casual chat after a real-time gap (aliveness.offscreenLife).
+ *  One row per character × chat, replaced on each qualifying return; createdAt
+ *  doubles as the "this return was already handled" guard. */
+export interface OffscreenNote {
+  characterId: string;
+  chatId: string;
+  content: string;
+  createdAt: number;
+}
+
 export type AiTask =
   | "chat"
   | "narrator"
   | "orchestrator"
   | "director"
   | "memory"
+  | "offscreen"
   | "assist"
   | "impersonate"
   | "title"
@@ -382,6 +447,7 @@ export const AI_TASKS: AiTask[] = [
   "orchestrator",
   "director",
   "memory",
+  "offscreen",
   "assist",
   "impersonate",
   "title",

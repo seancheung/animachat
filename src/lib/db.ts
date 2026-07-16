@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS characters (
   custom_expressions TEXT NOT NULL DEFAULT '[]',
   typing_sfx_asset TEXT,
   track_relationship INTEGER NOT NULL DEFAULT 1,
+  aliveness TEXT NOT NULL DEFAULT '{}',
   idle_motion INTEGER NOT NULL DEFAULT 1,
   tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
@@ -193,6 +194,23 @@ CREATE TABLE IF NOT EXISTS char_relationships (
   notes TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL,
   UNIQUE (character_id, other_id)
+);
+-- aliveness: a character's evolving inner state, per chat (memory pass output)
+CREATE TABLE IF NOT EXISTS mind_states (
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  content TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (character_id, chat_id)
+);
+-- aliveness: what a character has been up to between conversations, per chat
+-- (regenerated on each qualifying return; created_at guards double-fires)
+CREATE TABLE IF NOT EXISTS offscreen_notes (
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  content TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (character_id, chat_id)
 );
 CREATE TABLE IF NOT EXISTS usage_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

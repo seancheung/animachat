@@ -8,7 +8,9 @@ import type {
   Location,
   Message,
   MessageVariant,
+  MindState,
   Model,
+  OffscreenNote,
   Persona,
   Provider,
   Relationship,
@@ -17,7 +19,7 @@ import type {
   Settings,
   Story,
 } from "./types";
-import { DEFAULT_SETTINGS } from "./types";
+import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { normalizeStoryDoc } from "./storyDoc";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -222,6 +224,8 @@ const characterFromRow = (r: Row): Character => ({
   customExpressions: J.parse(r.custom_expressions, []),
   typingSfxAsset: r.typing_sfx_asset,
   trackRelationship: !!r.track_relationship,
+  // stored sparse — missing keys mean the defaults, so pre-feature rows are alive
+  aliveness: { ...DEFAULT_ALIVENESS, ...J.parse(r.aliveness, {}) },
   idleMotion: !!r.idle_motion,
   tags: J.parse(r.tags, []),
   createdAt: r.created_at,
@@ -252,6 +256,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     customExpressions: [],
     typingSfxAsset: null,
     trackRelationship: true,
+    aliveness: { ...DEFAULT_ALIVENESS },
     idleMotion: true,
     tags: [],
     createdAt: existing?.createdAt ?? now(),
@@ -261,11 +266,11 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
   });
   getDb()
     .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,idle_motion,tags,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@spriteSfx,@custom,@sfx,@trackRel,@idle,@tags,@created,@updated)
+      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
+       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@spriteSfx,@custom,@sfx,@trackRel,@aliveness,@idle,@tags,@created,@updated)
        ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, description=@description, greeting=@greeting,
          example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, sprite_sfx=@spriteSfx, custom_expressions=@custom, typing_sfx_asset=@sfx,
-         track_relationship=@trackRel, idle_motion=@idle, tags=@tags, updated_at=@updated`
+         track_relationship=@trackRel, aliveness=@aliveness, idle_motion=@idle, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -280,6 +285,7 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
       custom: J.str(m.customExpressions),
       sfx: m.typingSfxAsset,
       trackRel: m.trackRelationship ? 1 : 0,
+      aliveness: J.str({ ...DEFAULT_ALIVENESS, ...m.aliveness }),
       idle: m.idleMotion ? 1 : 0,
       tags: J.str(m.tags),
       created: m.createdAt,
@@ -1215,6 +1221,44 @@ export function putRelationship(characterId: string, personaId: string, affinity
        ON CONFLICT(character_id, persona_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`
     )
     .run(uid(), characterId, personaId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now());
+}
+
+/* ---- aliveness: per-chat mind states & off-screen life notes ---- */
+
+export function getMindState(characterId: string, chatId: string): MindState | null {
+  const r = getDb()
+    .prepare("SELECT * FROM mind_states WHERE character_id=? AND chat_id=?")
+    .get(characterId, chatId) as Row | undefined;
+  return r
+    ? { characterId: r.character_id, chatId: r.chat_id, content: r.content, updatedAt: r.updated_at }
+    : null;
+}
+
+export function putMindState(characterId: string, chatId: string, content: string) {
+  getDb()
+    .prepare(
+      `INSERT INTO mind_states (character_id, chat_id, content, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`
+    )
+    .run(characterId, chatId, content, now());
+}
+
+export function getOffscreenNote(characterId: string, chatId: string): OffscreenNote | null {
+  const r = getDb()
+    .prepare("SELECT * FROM offscreen_notes WHERE character_id=? AND chat_id=?")
+    .get(characterId, chatId) as Row | undefined;
+  return r
+    ? { characterId: r.character_id, chatId: r.chat_id, content: r.content, createdAt: r.created_at }
+    : null;
+}
+
+export function putOffscreenNote(characterId: string, chatId: string, content: string) {
+  getDb()
+    .prepare(
+      `INSERT INTO offscreen_notes (character_id, chat_id, content, created_at) VALUES (?,?,?,?)
+       ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, created_at=excluded.created_at`
+    )
+    .run(characterId, chatId, content, now());
 }
 
 /* ---- character ↔ character (directed: each side has their own view) ---- */

@@ -14,7 +14,7 @@ import {
 import { substitutePlaceholders } from "./placeholders";
 import { allowedNextScenes, entranceSceneId } from "@/lib/stage";
 import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySnapshot } from "@/lib/types";
-import { DEFAULT_SETTINGS } from "@/lib/types";
+import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
 
 // prompts.ts reads through the store — point it at a throwaway DB. The store opens
@@ -23,7 +23,16 @@ process.env.ANIMACHAT_DB_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
   "test.db"
 );
-import { saveLocation, saveScene } from "@/lib/store";
+import {
+  putMindState,
+  putOffscreenNote,
+  putRelationship,
+  saveChat,
+  saveCharacter,
+  saveLocation,
+  savePersona,
+  saveScene,
+} from "@/lib/store";
 
 function makeCharacter(id: string, name: string): Character {
   return {
@@ -40,6 +49,7 @@ function makeCharacter(id: string, name: string): Character {
     typingSfxAsset: null,
     tags: [],
     trackRelationship: false,
+    aliveness: { ...DEFAULT_ALIVENESS },
     idleMotion: true,
     createdAt: 0,
     updatedAt: 0,
@@ -654,5 +664,86 @@ describe("impersonate POV (a draft on the user's behalf gets the user's seat, no
     // …while the suggested actions get the user's format and POV explicitly
     expect(req.system).toContain("Format each like the user's messages, not like your narration: actions in *asterisks*");
     expect(req.system).toContain('write in first person as Ash ("I ...")');
+  });
+});
+
+describe("aliveness prompt gates", () => {
+  const HOUR = 60 * 60 * 1000;
+  // mind states / offscreen notes / relationships live behind foreign keys — these
+  // tests need real rows, not the in-memory fixtures. Traits are opted in here:
+  // aliveness is all-off by default.
+  const dbChar = saveCharacter({
+    name: "Vale",
+    aliveness: { initiative: true, timeAware: true, mindState: true, offscreenLife: "off" },
+  });
+  const dbChat = saveChat({ title: "aliveness", characterIds: [dbChar.id] });
+  const at = (ts: number) => (m: Message, i: number, all: Message[]) => ({
+    ...m,
+    createdAt: ts + i - all.length,
+  });
+  const ctxFor = (
+    character: Character,
+    opts: { msgAt?: number; snapshot?: boolean } = {}
+  ): ChatContext => {
+    const messages = makeMessages(exchange(character.id, 2)).map(at(opts.msgAt ?? Date.now()));
+    const base = makeCtx(messages, [character]);
+    return {
+      ...base,
+      chat: { ...chat, id: dbChat.id },
+      snapshot: opts.snapshot
+        ? { name: "S", description: "", destination: "", secrets: [], characters: [character], scenes: [], locations: [], lorebooks: [] }
+        : null,
+    };
+  };
+
+  it("initiative block rides its toggle, and defaults to off", () => {
+    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).toContain("HAS A LIFE OF THEIR OWN");
+    const quiet = { ...dbChar, aliveness: { ...dbChar.aliveness, initiative: false } };
+    expect(buildCharacterRequest(ctxFor(quiet), quiet, modelRef).system).not.toContain("HAS A LIFE OF THEIR OWN");
+    // a character that never opted in stays purely reactive
+    const plain = { ...dbChar, aliveness: { ...DEFAULT_ALIVENESS } };
+    expect(buildCharacterRequest(ctxFor(plain), plain, modelRef).system).not.toContain("HAS A LIFE OF THEIR OWN");
+  });
+
+  it("story mode suppresses every aliveness block regardless of toggles", () => {
+    putMindState(dbChar.id, dbChat.id, "restless");
+    const req = buildCharacterRequest(ctxFor(dbChar, { snapshot: true, msgAt: Date.now() - 8 * HOUR }), dbChar, modelRef);
+    expect(req.system).not.toContain("HAS A LIFE OF THEIR OWN");
+    expect(req.system).not.toContain("ON VALE'S MIND");
+    expect(req.system).not.toContain("TIME: about");
+  });
+
+  it("a real gap surfaces as a TIME note only when time awareness is on", () => {
+    const old = { msgAt: Date.now() - 30 * HOUR };
+    expect(buildCharacterRequest(ctxFor(dbChar, old), dbChar, modelRef).system).toContain("TIME: about 30 hours");
+    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).not.toContain("TIME: about");
+    const timeless = { ...dbChar, aliveness: { ...dbChar.aliveness, timeAware: false } };
+    expect(buildCharacterRequest(ctxFor(timeless, old), timeless, modelRef).system).not.toContain("TIME: about");
+  });
+
+  it("mind state and off-screen notes inject from the store behind their gates", () => {
+    putMindState(dbChar.id, dbChat.id, "still turning the argument over");
+    putOffscreenNote(dbChar.id, dbChat.id, "has been repainting the shop");
+    const req = buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef);
+    expect(req.system).toContain("still turning the argument over");
+    // offscreenLife defaults to off — the stored note must NOT leak in
+    expect(req.system).not.toContain("repainting the shop");
+    const texter = { ...dbChar, aliveness: { ...dbChar.aliveness, offscreenLife: "texts" as const } };
+    expect(buildCharacterRequest(ctxFor(texter), texter, modelRef).system).toContain("repainting the shop");
+  });
+
+  it("a returning turn instructs the character to re-open the conversation", () => {
+    const req = buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef, { returning: true });
+    expect(req.system).toContain("re-opening the conversation");
+    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).not.toContain("re-opening the conversation");
+  });
+
+  it("relationship lines carry an affinity tone reading", () => {
+    const persona = savePersona({ name: "Rin" });
+    putRelationship(dbChar.id, persona.id, 70, "shared a rooftop dinner");
+    const ctx = { ...ctxFor(dbChar), persona };
+    const req = buildCharacterRequest(ctx, dbChar, modelRef);
+    expect(req.system).toContain("affinity 70/100 (close and at ease)");
+    expect(req.system).toContain("let the affinity color tone and openness");
   });
 });

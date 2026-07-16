@@ -4,13 +4,15 @@ import {
   addFact,
   getCharacter,
   getCharRelationship,
+  getMindState,
   getRelationship,
   listFacts,
   putCharRelationship,
+  putMindState,
   putRelationship,
   putSummary,
 } from "@/lib/store";
-import type { Message } from "@/lib/types";
+import { alivenessOf, type Message } from "@/lib/types";
 
 const inFlight = new Map<string, Promise<void>>();
 
@@ -29,6 +31,7 @@ interface MemoryOutput {
   summary?: string;
   facts?: { character?: string; fact?: string }[];
   relationships?: { character?: string; towards?: string; affinityDelta?: number; note?: string }[];
+  mindStates?: { character?: string; state?: string }[];
 }
 
 function chunkTranscript(ctx: ChatContext, chunk: Message[]): string {
@@ -89,13 +92,22 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
   // playing as narrator there is no user character — relationship targets are
   // characters only (persona-relationship writes are guarded off by ctx.persona below)
   const userName = ctx.persona?.name ?? (ctx.chat.playAsNarrator ? "the narrator" : "the user");
+  // state of mind: casual/immersive only (playthroughs pace themselves), per character opt-in
+  const mindChars = ctx.snapshot ? [] : ctx.characters.filter((c) => alivenessOf(c).mindState);
   const system =
     `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
     `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
     `{"summary": "updated rolling summary, chronological, <= 400 words, keep every plot-critical fact",\n` +
     ` "facts": [{"character": "name", "fact": "a durable fact this character learned/experienced, worth remembering across sessions"}],\n` +
-    ` "relationships": [{"character": "name", "towards": "who the feeling is about — '${userName}' or another character's name", "affinityDelta": -10..10, "note": "one-line current state of that relationship"}]}\n` +
+    ` "relationships": [{"character": "name", "towards": "who the feeling is about — '${userName}' or another character's name", "affinityDelta": -10..10, "note": "current state of that relationship in 1-3 short lines: standing, any unresolved tension, what recently shifted"}]` +
+    (mindChars.length
+      ? `,\n "mindStates": [{"character": "name", "state": "1-3 short present-tense lines: current mood, what they want right now, threads left unresolved on their mind"}]`
+      : "") +
+    `}\n` +
     `Characters: ${characters}. The user is ${userName}. Report a relationships entry only when it meaningfully shifted. ` +
+    (mindChars.length
+      ? `Report a mindStates entry for each of: ${mindChars.map((c) => c.name).join(", ")} — it REPLACES their previous state, so carry forward whatever still weighs on them. `
+      : "") +
     `Extract at most 5 facts; only genuinely durable ones, never one already recorded. Write the summary in ${ctx.language}.`;
   // show already-recorded facts so the model doesn't re-extract them — duplicates
   // crowd genuinely distinct older facts out of the character prompts
@@ -106,9 +118,17 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
     })
     .filter(Boolean)
     .join("\n");
+  const currentMinds = mindChars
+    .map((c) => {
+      const m = getMindState(c.id, chatId);
+      return m?.content ? `${c.name}: ${m.content}` : null;
+    })
+    .filter(Boolean)
+    .join("\n");
   const user =
     `EXISTING SUMMARY:\n${ctx.summaryText || "(none yet)"}\n\n` +
     (knownFacts ? `FACTS ALREADY RECORDED (never repeat these):\n${knownFacts}\n\n` : "") +
+    (currentMinds ? `CURRENT STATES OF MIND (update these):\n${currentMinds}\n\n` : "") +
     `NEW MESSAGES TO FOLD IN:\n` +
     chunkTranscript(ctx, chunk);
 
@@ -133,6 +153,12 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
   for (const f of out.facts ?? []) {
     const c = f.character && byName.get(f.character.toLowerCase());
     if (c && f.fact && inLibrary(c.id)) addFact(c.id, chatId, f.fact);
+  }
+  // states of mind are chat-scoped; only characters that opted in are written
+  for (const s of out.mindStates ?? []) {
+    const c = s.character && byName.get(s.character.toLowerCase());
+    if (c && s.state && mindChars.some((mc) => mc.id === c.id) && inLibrary(c.id))
+      putMindState(c.id, chatId, s.state);
   }
   for (const r of out.relationships ?? []) {
     const c = r.character && byName.get(r.character.toLowerCase());

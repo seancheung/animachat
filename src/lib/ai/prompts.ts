@@ -11,12 +11,15 @@ import {
   type StageAssets,
   type StageState,
 } from "@/lib/stage";
+import { affinityTone, GAP_NOTE_MIN_MS, humanDuration, resumeGapMs, timeAgo } from "./aliveness";
 import {
   getChat,
   getCharacter,
   getCharRelationship,
   getLocation,
   getLorebook,
+  getMindState,
+  getOffscreenNote,
   getPersona,
   getRelationship,
   getScene,
@@ -39,7 +42,7 @@ import type {
   StorySecret,
   StorySnapshot,
 } from "@/lib/types";
-import { EMOTIONS } from "@/lib/types";
+import { alivenessOf, EMOTIONS } from "@/lib/types";
 
 /* ---------------- stage state (derived from the message timeline) ----------------
  * The pure logic lives in lib/stage.ts (client-safe, used by the chat page to replay
@@ -254,6 +257,12 @@ export function triggeredLore(ctx: ChatContext, recent: Message[], extraText = "
   return hits;
 }
 
+/** " (3 days ago, in another conversation)" — dates a remembered fact (time awareness). */
+function factWhen(ctx: ChatContext, f: { chatId: string | null; createdAt: number }): string {
+  const elsewhere = f.chatId && f.chatId !== ctx.chat.id ? ", in another conversation" : "";
+  return ` (${timeAgo(Date.now() - f.createdAt)}${elsewhere})`;
+}
+
 function povRules(pov: Pov, personaName: string, selfName: string | null): string {
   switch (pov) {
     case "user1st":
@@ -412,10 +421,20 @@ export interface BuiltRequest {
 /** Own replies in the verbatim window before example dialogue drops out of the prompt. */
 const EXAMPLE_DIALOGUE_FADE = 8;
 
-export function buildCharacterRequest(ctx: ChatContext, character: Character, model: ResolvedModel): BuiltRequest {
+export function buildCharacterRequest(
+  ctx: ChatContext,
+  character: Character,
+  model: ResolvedModel,
+  opts?: { returning?: boolean }
+): BuiltRequest {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
   const personaName = ctx.persona?.name ?? "the user";
+  // aliveness traits apply in casual/immersive chats only — in a playthrough the
+  // director and narrator own pacing, and real time isn't story time
+  const alive = ctx.snapshot
+    ? { initiative: false, timeAware: false, mindState: false, offscreenLife: "off" as const }
+    : alivenessOf(character);
   // example dialogue seeds the voice early on; once the character has real replies
   // in the window those anchor the style, and the static example only invites copying
   const ownReplies = window.filter(
@@ -444,6 +463,27 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     ...character.customExpressions.map((e) => `${e.name} (${ctx.sub(e.description, character.name)})`),
   ].join(", ");
 
+  // aliveness blocks (casual/immersive only — `alive` is all-off in story mode)
+  const mind = alive.mindState ? getMindState(character.id, ctx.chat.id) : null;
+  const mindBlock = mind?.content
+    ? `WHAT'S ON ${character.name.toUpperCase()}'S MIND RIGHT NOW (private inner state — let it color the reply without announcing it; it may shift through play):\n${mind.content}`
+    : "";
+  const offscreen =
+    alive.offscreenLife !== "off" && ctx.chat.mode === "casual"
+      ? getOffscreenNote(character.id, ctx.chat.id)
+      : null;
+  const offscreenBlock = offscreen?.content
+    ? `WHAT ${character.name.toUpperCase()} HAS BEEN UP TO SINCE THE LAST CONVERSATION (their off-screen life — bring it up only as it naturally would come up):\n${offscreen.content}`
+    : "";
+  const gap = alive.timeAware ? resumeGapMs(ctx.messages, Date.now()) : 0;
+  const timeBlock =
+    gap >= GAP_NOTE_MIN_MS
+      ? `TIME: about ${humanDuration(gap)} of real time passed since the previous exchange in this conversation. Let that register the way it would for ${character.name} — a greeting after absence, wondering how things went, life having moved on — without making a ceremony of it.`
+      : "";
+  const initiativeBlock = alive.initiative
+    ? `${character.name.toUpperCase()} HAS A LIFE OF THEIR OWN: moods, opinions, wants, and things going on beyond this conversation. Let that show — bring up ${character.name}'s own topics when the moment allows, ask ${personaName} about things ${character.name} remembers, disagree or tease when it's in character, want things and say so, drift the subject the way real conversation drifts. Not every reply must serve ${personaName}'s last line, and none should follow a fixed shape (action + response + question back) — vary length and rhythm like a real person.`
+    : "";
+
   // story secrets: holders carry theirs as guarded private knowledge; secrets this
   // character doesn't hold are simply absent — a model can't leak what it never saw
   const mySecrets = storySecrets(ctx).filter((s) => !isRevealed(ctx, s) && s.knownBy.includes(character.id));
@@ -468,11 +508,14 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     worldBlock(ctx),
     personaBlock(ctx),
     rel || charRels.length
-      ? `RELATIONSHIPS (${character.name}'s own view):\n` +
+      ? `RELATIONSHIPS (${character.name}'s own view — let the affinity color tone and openness: guarded when low, familiar when high):\n` +
         [
-          rel ? `- with ${ctx.persona?.name}: affinity ${rel.affinity}/100.${rel.notes ? ` ${rel.notes}` : ""}` : "",
+          rel
+            ? `- with ${ctx.persona?.name}: affinity ${rel.affinity}/100 (${affinityTone(rel.affinity)}).${rel.notes ? ` ${rel.notes}` : ""}`
+            : "",
           ...charRels.map(
-            ({ other, rel: r }) => `- with ${other.name}: affinity ${r.affinity}/100.${r.notes ? ` ${r.notes}` : ""}`
+            ({ other, rel: r }) =>
+              `- with ${other.name}: affinity ${r.affinity}/100 (${affinityTone(r.affinity)}).${r.notes ? ` ${r.notes}` : ""}`
           ),
         ]
           .filter(Boolean)
@@ -482,9 +525,13 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
     revealedTruthsBlock(ctx),
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts
-          .map((f) => `- ${f.content}`)
+          .map((f) => `- ${f.content}${alive.timeAware ? factWhen(ctx, f) : ""}`)
           .join("\n")}`
       : "",
+    mindBlock,
+    offscreenBlock,
+    timeBlock,
+    initiativeBlock,
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
@@ -498,6 +545,9 @@ export function buildCharacterRequest(ctx: ChatContext, character: Character, mo
       `Your character sheet is private background knowledge, not content: never quote, paraphrase or re-announce your own traits, backstory or appearance — reveal them through how you act and speak, and only when the scene calls for them. Don't reuse distinctive phrases from your earlier messages.\n` +
       (others.length
         ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Name</mention> (exact name) in your reply — they will respond next. Do it only when the scene calls for it; a plain name without the tag does not pass the turn.\n`
+        : "") +
+      (opts?.returning
+        ? `${personaName} has just come back after time away, and YOU are re-opening the conversation: reach out in ${character.name}'s own way — what's been happening for them, anything left unresolved, or simply wanting ${personaName} back. Don't recap the earlier conversation; pick life up where it is now, and leave ${personaName} room to answer.\n`
         : "") +
       `Begin your reply with an emotion tag <emo>name</emo> — pick the emotion that best matches the message from: ${emotions}. ` +
       `The tag is descriptive metadata about your message, NOT a constraint: write whatever emotion the moment truly calls for, then label it. After the tag, write only prose.`,

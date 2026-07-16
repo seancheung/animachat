@@ -1,6 +1,6 @@
 "use client";
 
-import { Heart, Plus, Trash2, X } from "lucide-react";
+import { Heart, Info, Plus, Trash2, X } from "lucide-react";
 import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
@@ -8,11 +8,20 @@ import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
 import Progress from "@/components/ui/progress";
+import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
+import Tooltip from "@/components/ui/tooltip";
 import { useGet } from "@/lib/queries";
 import { api } from "@/lib/ui";
-import { EMOTIONS, type Character, type CustomExpression } from "@/lib/types";
+import {
+  alivenessOf,
+  EMOTIONS,
+  type Aliveness,
+  type Character,
+  type CustomExpression,
+  type OffscreenLifeMode,
+} from "@/lib/types";
 import { EditorShell, TagsField, useEditor } from "./SimpleEditors";
 
 const PLACEHOLDER_HINT =
@@ -58,6 +67,54 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+/** A control plus an info-icon tooltip carrying its long description. */
+function Trait({ tip, children }: { tip: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {children}
+      <Tooltip content={tip}>
+        <Info size={13} className="text-content-400 shrink-0" />
+      </Tooltip>
+    </div>
+  );
+}
+
+/** Aliveness traits — casual/immersive chats only (playthroughs pace themselves),
+ *  which is also why the story page's embedded character editors don't show them. */
+function AlivenessFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
+  const a = alivenessOf(form);
+  const patch = (p: Partial<Aliveness>) => setForm({ ...form, aliveness: { ...a, ...p } });
+  return (
+    <Collapsible bordered title="Aliveness">
+      <div className="text-xs text-content-400 mb-2">all off by default — casual & immersive chats only</div>
+      <div className="space-y-2">
+        <Trait tip="A life of their own: they bring up their own topics, opinions, moods and wants, call back to things they remember, disagree, change the subject. Off = purely reactive.">
+          <Switch value={a.initiative} onChange={(v) => patch({ initiative: v })} label="Initiative" />
+        </Trait>
+        <Trait tip="They notice how long you've been away and remember when things happened. Uses real elapsed time — leave off for characters living in period or fantasy settings.">
+          <Switch value={a.timeAware} onChange={(v) => patch({ timeAware: v })} label="Time awareness" />
+        </Trait>
+        <Trait tip="They carry an evolving mood, current wants and unresolved threads between sessions. Kept per chat, updated by the memory pass.">
+          <Switch value={a.mindState} onChange={(v) => patch({ mindState: v })} label="State of mind" />
+        </Trait>
+        <Field label="Off-screen life">
+          <Trait tip="Returning to a casual chat after 6+ hours, they've been up to something meanwhile. Background: it colors their replies. Texts first: they also send the first message when you come back.">
+            <Select<OffscreenLifeMode>
+              value={a.offscreenLife}
+              onChange={(v) => patch({ offscreenLife: v })}
+              options={[
+                { value: "off", label: "Off" },
+                { value: "context", label: "Background" },
+                { value: "texts", label: "Texts first" },
+              ]}
+            />
+          </Trait>
+        </Field>
+      </div>
+    </Collapsible>
+  );
+}
 
 /**
  * The character sheet fields, shell-free — used by the library editor dialog and,
@@ -130,6 +187,8 @@ export function CharacterFields({
           <RelationshipsCard characterId={form.id} />
         </Field>
       )}
+
+      {!embedded && <AlivenessFields form={form} setForm={setForm} />}
 
       <Collapsible
         bordered

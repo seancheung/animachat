@@ -129,7 +129,8 @@ describe("mergeStoryAssist", () => {
       characters: [{ name: "Mira", description: "sharper" }], // Kael not complete yet
       scenes: [],
     };
-    const stripIds = (d: ReturnType<typeof baseDoc>) => JSON.parse(JSON.stringify(d, (k, v) => (k === "id" || k === "locationId" || k === "cast" || k === "knownBy" || k === "successors" ? undefined : v)));
+    // minted per merge (fresh ids, Date.now() timestamps) — not convergence content
+    const stripIds = (d: ReturnType<typeof baseDoc>) => JSON.parse(JSON.stringify(d, (k, v) => (k === "id" || k === "locationId" || k === "cast" || k === "knownBy" || k === "successors" || k === "createdAt" || k === "updatedAt" ? undefined : v)));
     const direct = mergeStoryAssist(baseDoc(), full);
     const streamed = mergeStoryAssist(mergeStoryAssist(baseDoc(), partial), full);
     expect(stripIds(streamed)).toEqual(stripIds(direct));
