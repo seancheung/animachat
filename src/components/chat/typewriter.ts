@@ -14,7 +14,8 @@ export interface Reveal {
   text: string;
   /** everything the current page allows has been typed — the reveal is parked */
   pageDone: boolean;
-  /** more text exists past the current page (only ever true when paginating) */
+  /** more text exists past the current page, or the message is fully typed but held
+   *  for the reader's step before the next speaker (only ever true when paginating) */
   hasMore: boolean;
 }
 
@@ -27,6 +28,9 @@ interface TypeState {
   lastTs: number;
   /** resolver of a pending finish() */
   done: (() => void) | null;
+  /** finish() must also wait for the reader to step past the fully-typed message —
+   *  the between-speakers gate (see finish({ack})) */
+  ack: boolean;
 }
 
 /**
@@ -70,7 +74,7 @@ export function useTypewriter({
   paginate?: boolean;
   onReveal: (r: Reveal) => void;
 }) {
-  const st = useRef<TypeState>({ buf: "", shown: 0, carry: 0, raf: 0, lastTs: 0, done: null });
+  const st = useRef<TypeState>({ buf: "", shown: 0, carry: 0, raf: 0, lastTs: 0, done: null, ack: false });
   // latest inputs, read by the rAF loop (which outlives any single render)
   const speedRef = useRef(speed);
   const pageRef = useRef({ paginate, pageIndex: 0 });
@@ -94,7 +98,8 @@ export function useTypewriter({
       revealRef.current({
         text: s.buf.slice(0, s.shown),
         pageDone: s.shown >= cap,
-        hasMore: s.buf.length > cap,
+        // an ack park counts as "more": the chevron must invite the handoff step
+        hasMore: s.buf.length > cap || s.ack,
       });
     };
 
@@ -110,6 +115,7 @@ export function useTypewriter({
     const settle = () => {
       stop();
       if (st.current.shown < st.current.buf.length) return; // parked at a page break
+      if (st.current.ack) return; // fully typed, but the handoff waits for the reader's step
       const resolve = st.current.done;
       st.current.done = null;
       resolve?.();
@@ -148,6 +154,7 @@ export function useTypewriter({
         st.current.buf = "";
         st.current.shown = 0;
         st.current.done = null;
+        st.current.ack = false;
         pageRef.current = { ...pageRef.current, pageIndex: 0 };
       },
       /** Queue a freshly streamed chunk. */
@@ -171,6 +178,9 @@ export function useTypewriter({
       /** The gate moved (pagination switched on/off mid-stream): reveal on into it. */
       retarget() {
         const s = st.current;
+        // pagination off (picture mode, side panel) leaves no page to step past —
+        // a pending handoff ack resolves via the settle below
+        if (!pageRef.current.paginate) s.ack = false;
         const cap = limit();
         // the gate can also move BACK below what's shown (pagination switched on
         // mid-stream, e.g. panel → dialogue layout): re-park at the new page end so
@@ -181,12 +191,21 @@ export function useTypewriter({
         else settle();
       },
       /** Resolves once the whole message has been typed out — with pagination, that means
-       *  once the reader has turned to the last page and it has finished typing. */
-      finish(): Promise<void> {
+       *  once the reader has turned to the last page and it has finished typing.
+       *  `ack` — the between-speakers gate: the reader must also STEP PAST the fully-typed
+       *  message (the same click that turns a page; the chevron invites it) before this
+       *  resolves and the next speaker takes the box. Only engages where pages exist —
+       *  pagination on and something revealed; flush() (Stop) always releases it. */
+      finish(opts?: { ack?: boolean }): Promise<void> {
         const s = st.current;
-        if (s.shown >= s.buf.length) return Promise.resolve();
+        const ack = !!opts?.ack && pageRef.current.paginate && s.buf.length > 0;
+        if (!ack && s.shown >= s.buf.length) return Promise.resolve();
         return new Promise<void>((resolve) => {
           s.done = resolve;
+          if (ack) {
+            s.ack = true;
+            emit(); // hasMore flips on — the chevron shows on the parked last page
+          }
           run();
         });
       },
@@ -204,7 +223,17 @@ export function useTypewriter({
           return;
         }
         const { paginate: on, pageIndex } = pageRef.current;
-        if (!on || s.buf.length <= cap) return; // nothing past this page yet
+        if (!on || s.buf.length <= cap) {
+          // fully typed and held for the handoff: this step releases finish() —
+          // the next speaker takes the box
+          if (s.ack && s.shown >= s.buf.length) {
+            s.ack = false;
+            const resolve = s.done;
+            s.done = null;
+            resolve?.();
+          }
+          return; // otherwise: nothing past this page yet
+        }
         pageRef.current = { paginate: on, pageIndex: pageIndex + 1 };
         if (speedRef.current <= 0) {
           // no animation: the new page appears whole, like push() would show it
@@ -219,6 +248,7 @@ export function useTypewriter({
       /** Stop / failure: reveal everything received, ignoring page gates, and let finish() go. */
       flush() {
         const s = st.current;
+        s.ack = false; // nothing is coming to hand the box to — release a parked handoff
         if (s.shown < s.buf.length) {
           s.shown = s.buf.length;
           emit();

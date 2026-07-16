@@ -521,11 +521,13 @@ export default function ChatPage() {
           body,
           async (ev) => {
             if (ev.type === "start") {
-              // a turn can queue several speakers — let the previous reply finish typing
-              // (and be read to its last page) before the next one takes the box. Waiting
+              // a turn can queue several speakers — the previous reply must be typed out
+              // AND stepped past by the reader (the click that turns a page; ack) before
+              // the next takes the box, or a short reply gets yanked away mid-read. The
+              // next reply keeps streaming into the buffer behind the parked page. Waiting
               // here rather than on "done" keeps the read loop free to see the stream
               // close, so streamDone below flips while the last reveal is still parked.
-              await typewriter.finish();
+              await typewriter.finish({ ack: true });
               // pick up the just-appended user message — only then drop the pending bubble,
               // or it vanishes for the whole refetch
               void mutate().then(() => setPendingUser(null));
