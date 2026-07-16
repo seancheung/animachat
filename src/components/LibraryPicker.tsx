@@ -53,6 +53,7 @@ export function LibraryPicker({
   onChange,
   footer,
   hidePicker,
+  types,
 }: {
   open: boolean;
   onClose: () => void;
@@ -63,10 +64,13 @@ export function LibraryPicker({
   onChange: (selection: LibraryRef[]) => void;
   footer?: ReactNode;
   hidePicker?: boolean;
+  /** restrict the search to these entity types (default: all) */
+  types?: readonly string[];
 }) {
   const keyOf = (r: { type: string; id: string }) => `${r.type}:${r.id}`;
   const search = useComboboxSearch("/api/library/search", {
     enabled: open,
+    params: { types: types?.join(",") },
     toOption: (i: LibraryRef) => ({ value: keyOf(i), label: i.name }),
   });
 

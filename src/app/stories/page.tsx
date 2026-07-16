@@ -4,12 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Download, Play, Plus, ScrollText, Trash2 } from "lucide-react";
 import { PlayStoryDialog } from "@/components/PlayStoryDialog";
+import { BundleImportButton } from "@/components/ImportDialog";
+import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import { EmptyState } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import LoadMoreSentinel from "@/components/ui/load-more";
+import SegmentedControl from "@/components/ui/segmented-control";
 import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { useDebouncedValue, useGet, useInvalidate, usePagedList } from "@/lib/queries";
@@ -41,6 +44,10 @@ export default function StoriesPage() {
   const [sort, setSort] = useState<"updated" | "created" | "name">("updated");
   const [tagFilter, setTagFilter] = useState("");
   const [playStoryId, setPlayStoryId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"selected" | "all">("selected");
+  const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
+  const [exporting, setExporting] = useState(false);
 
   const needle = useDebouncedValue(q.trim());
   const stories = usePagedList<any>("/api/stories", {
@@ -54,11 +61,11 @@ export default function StoriesPage() {
   const filtered = !!(needle || tagFilter);
   const refresh = () => invalidate("/api/stories", "/api/library/tags", "/api/library/search");
 
-  async function exportStory(id: string) {
+  async function exportItems(body: { items?: { type: string; id: string }[]; all?: "stories" }) {
     const res = await fetch("/api/export", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items: [{ type: "story", id }] }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
@@ -66,6 +73,7 @@ export default function StoriesPage() {
     }
     await downloadBlob(res, "animachat-bundle.zip");
   }
+  const exportStory = (id: string) => exportItems({ items: [{ type: "story", id }] });
 
   async function deleteStory(item: any) {
     if (
@@ -88,7 +96,7 @@ export default function StoriesPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto p-6 space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Input
             className="flex-1"
             placeholder="Search stories & playthroughs…"
@@ -117,6 +125,17 @@ export default function StoriesPage() {
               />
             </div>
           )}
+          <BundleImportButton />
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setExportSel([]);
+              setExportMode("selected");
+              setExportOpen(true);
+            }}
+          >
+            <Download /> Export
+          </Button>
           <Button className="whitespace-nowrap" onClick={() => router.push("/stories/new")}>
             <Plus /> New story
           </Button>
@@ -278,6 +297,64 @@ export default function StoriesPage() {
         </div>
       </div>
       <PlayStoryDialog storyId={playStoryId} open={!!playStoryId} onClose={() => setPlayStoryId(null)} />
+
+      <LibraryPicker
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Export stories"
+        header={
+          <SegmentedControl
+            variant="secondary"
+            className="w-full"
+            items={[
+              { value: "selected", label: "Selected stories" },
+              { value: "all", label: "All stories" },
+            ]}
+            value={exportMode}
+            onChange={setExportMode}
+          />
+        }
+        hint={
+          exportMode === "all"
+            ? "Every story — each a self-contained bundle item with its embedded cast, scenes, places, lore and assets — in a single zip."
+            : "Check stories to export — each is self-contained (embedded cast, scenes, places, lore and assets travel inside it)."
+        }
+        selection={exportSel}
+        onChange={setExportSel}
+        hidePicker={exportMode === "all"}
+        types={["story"]}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setExportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={exporting || (exportMode === "selected" && !exportSel.length)}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  // all-stories mode enumerates server-side — the client only sees pages
+                  await exportItems(
+                    exportMode === "all"
+                      ? { all: "stories" }
+                      : { items: exportSel.map(({ type, id }) => ({ type, id })) }
+                  );
+                  setExportOpen(false);
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              <Download />{" "}
+              {exporting
+                ? "Exporting…"
+                : exportMode === "all"
+                  ? "Export all stories"
+                  : `Export ${exportSel.length || ""} stor${exportSel.length === 1 ? "y" : "ies"}`}
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

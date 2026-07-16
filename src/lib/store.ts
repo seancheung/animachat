@@ -1077,12 +1077,12 @@ export interface LibraryNameRef {
   name: string;
 }
 
-/** Name search across the whole library (or one type): one merged, name-ordered
- *  stream with a single 3-part cursor {v: name, t: type, id}. */
+/** Name search across the whole library (or one type, or a `types` subset): one merged,
+ *  name-ordered stream with a single 3-part cursor {v: name, t: type, id}. */
 export function searchLibraryNames(
-  opts: { q?: string; type?: LibraryType; limit?: number; cursor?: string | null } = {}
+  opts: { q?: string; type?: LibraryType; types?: LibraryType[]; limit?: number; cursor?: string | null } = {}
 ): Page<LibraryNameRef> {
-  const types = opts.type ? [opts.type] : LIBRARY_TYPE_KEYS;
+  const types = opts.types ?? (opts.type ? [opts.type] : LIBRARY_TYPE_KEYS);
   const q = opts.q?.trim();
   const limit = clampLimit(opts.limit);
   const parts: string[] = [];

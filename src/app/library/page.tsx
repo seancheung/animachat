@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Download, Plus, Sparkles, Upload } from "lucide-react";
+import { useState } from "react";
+import { Download, Plus, Sparkles } from "lucide-react";
 import { CharacterEditor } from "@/components/editors/CharacterEditor";
 import {
   LocationEditor,
@@ -13,7 +13,7 @@ import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import { AssistantDialog } from "@/components/AssistantDialog";
-import { ImportDialog } from "@/components/ImportDialog";
+import { BundleImportButton } from "@/components/ImportDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
@@ -23,7 +23,6 @@ import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { useDebouncedValue, useGet, useInvalidate, usePagedList } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
-import type { BundlePreviewItem } from "@/lib/bundle";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -54,10 +53,7 @@ export default function LibraryPage() {
   const [exportMode, setExportMode] = useState<"selected" | "all">("selected");
   const [exportSel, setExportSel] = useState<LibraryRef[]>([]);
   const [exporting, setExporting] = useState(false);
-  const [importPreview, setImportPreview] = useState<{ file: File; items: BundlePreviewItem[] } | null>(null);
-  const [importing, setImporting] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const importRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"updated" | "created" | "name">("updated");
@@ -76,12 +72,10 @@ export default function LibraryPage() {
   const allTags = tagsData?.tags ?? [];
   const invalidate = useInvalidate();
   const refresh = () => invalidate(type.endpoint, "/api/library/tags", "/api/library/search");
-  const refreshAll = () =>
-    invalidate(...TYPES.map((t) => t.endpoint), "/api/library/tags", "/api/library/search");
   const Editor = EDITORS[tab];
   const Card = LIBRARY_CARDS[tab];
 
-  async function exportItems(body: { items?: { type: string; id: string }[]; all?: true }) {
+  async function exportItems(body: { items?: { type: string; id: string }[]; all?: "library" }) {
     const res = await fetch("/api/export", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -119,9 +113,7 @@ export default function LibraryPage() {
               setTagFilter(""); // tags are per-type — a filter can't carry across tabs
             }}
           />
-          <Button variant="secondary" onClick={() => importRef.current?.click()}>
-            <Upload /> Import
-          </Button>
+          <BundleImportButton />
           <Button
             variant="secondary"
             onClick={() => {
@@ -226,12 +218,13 @@ export default function LibraryPage() {
         }
         hint={
           exportMode === "all"
-            ? "Every item in the library — all types — is bundled into a single zip with its assets."
-            : "Check items across any types — everything is bundled into a single zip with its assets."
+            ? "Every item in the library — all types — is bundled into a single zip with its assets. Stories are exported from the Stories page."
+            : "Check items across any types — everything is bundled into a single zip with its assets. Stories are exported from the Stories page."
         }
         selection={exportSel}
         onChange={setExportSel}
         hidePicker={exportMode === "all"}
+        types={TYPES.map((t) => t.key)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setExportOpen(false)}>
@@ -245,7 +238,7 @@ export default function LibraryPage() {
                   // whole-library mode enumerates server-side — the client only sees pages
                   await exportItems(
                     exportMode === "all"
-                      ? { all: true }
+                      ? { all: "library" }
                       : { items: exportSel.map(({ type, id }) => ({ type, id })) }
                   );
                   setExportOpen(false);
@@ -277,54 +270,6 @@ export default function LibraryPage() {
         )}
       </Modal>
 
-      <ImportDialog
-        open={!!importPreview}
-        items={importPreview?.items ?? []}
-        importing={importing}
-        onClose={() => setImportPreview(null)}
-        onConfirm={async (selected) => {
-          if (!importPreview) return;
-          setImporting(true);
-          try {
-            const fd = new FormData();
-            fd.append("file", importPreview.file);
-            fd.append("selected", JSON.stringify(selected));
-            const res = await fetch("/api/import", { method: "POST", body: fd });
-            const data = await res.json();
-            if (!res.ok) return toast.error(data?.error ?? "Import failed");
-            toast.success(
-              "Imported: " +
-                (Object.entries(data.imported ?? {})
-                  .map(([k, v]) => `${v} ${k}(s)`)
-                  .join(", ") || "nothing")
-            );
-            setImportPreview(null);
-            refreshAll(); // a bundle can create items of every type
-          } finally {
-            setImporting(false);
-          }
-        }}
-      />
-
-      <input
-        ref={importRef}
-        type="file"
-        hidden
-        accept=".zip"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (!f) return;
-          // list the bundle first — the dialog picks what to import
-          const fd = new FormData();
-          fd.append("file", f);
-          fd.append("preview", "1");
-          const res = await fetch("/api/import", { method: "POST", body: fd });
-          const data = await res.json();
-          if (!res.ok) return toast.error(data?.error ?? "Import failed");
-          setImportPreview({ file: f, items: data.items ?? [] });
-        }}
-      />
     </div>
   );
 }
