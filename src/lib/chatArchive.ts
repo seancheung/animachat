@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
 import { ASSETS_DIR } from "./db";
-import { assetIdsOf, writeVerifiedAsset } from "./bundle";
+import { writeVerifiedAsset } from "./bundle";
+import { storyDocAssetIds } from "./storyDoc";
 import {
   appendMessage,
   getAsset,
@@ -43,13 +44,7 @@ export async function exportChatArchive(chatId: string): Promise<Buffer> {
     if (c) nameSnapshots[cid] = c.name;
   }
 
-  const assetIds = new Set<string>();
-  const snap = chat.storySnapshot;
-  if (snap) {
-    for (const c of snap.characters) for (const a of assetIdsOf("character", c)) assetIds.add(a);
-    for (const e of snap.scenes) for (const a of assetIdsOf("scene", e.scene)) assetIds.add(a);
-    for (const l of snap.locations) for (const a of assetIdsOf("location", l)) assetIds.add(a);
-  }
+  const assetIds = new Set<string>(chat.storySnapshot ? storyDocAssetIds(chat.storySnapshot) : []);
 
   const zip = new JSZip();
   const assets: ChatArchive["assets"] = [];

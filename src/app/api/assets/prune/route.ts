@@ -3,22 +3,29 @@ import path from "node:path";
 import { handler, ok } from "@/lib/api";
 import { assetIdsOf } from "@/lib/bundle";
 import { ASSETS_DIR } from "@/lib/db";
-import { deleteAssets, listAssets, listCharacters, listChats, listLocations, listScenes } from "@/lib/store";
+import { storyDocAssetIds } from "@/lib/storyDoc";
+import {
+  deleteAssets,
+  listAssets,
+  listCharacters,
+  listChats,
+  listLocations,
+  listScenes,
+  listStories,
+} from "@/lib/store";
 
-/** Every asset id the library — or a playthrough snapshot — still points at. */
+/** Every asset id the library, a story document, or a playthrough snapshot still points at. */
 function referencedIds(): Set<string> {
   const refs = new Set<string>();
   for (const c of listCharacters()) for (const id of assetIdsOf("character", c)) refs.add(id);
   for (const l of listLocations()) for (const id of assetIdsOf("location", l)) refs.add(id);
   for (const s of listScenes()) for (const id of assetIdsOf("scene", s)) refs.add(id);
+  // stories embed their items — their documents hold asset refs of their own
+  for (const st of listStories()) for (const id of storyDocAssetIds(st)) refs.add(id);
   // playthroughs are self-contained: their snapshots keep assets alive after
   // the library items (or the story) are deleted
   for (const chat of listChats()) {
-    const snap = chat.storySnapshot;
-    if (!snap) continue;
-    for (const c of snap.characters) for (const id of assetIdsOf("character", c)) refs.add(id);
-    for (const l of snap.locations) for (const id of assetIdsOf("location", l)) refs.add(id);
-    for (const { scene } of snap.scenes) for (const id of assetIdsOf("scene", scene)) refs.add(id);
+    if (chat.storySnapshot) for (const id of storyDocAssetIds(chat.storySnapshot)) refs.add(id);
   }
   return refs;
 }

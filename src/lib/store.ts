@@ -16,9 +16,9 @@ import type {
   SceneEvent,
   Settings,
   Story,
-  StoryScene,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
+import { normalizeStoryDoc } from "./storyDoc";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
@@ -478,18 +478,9 @@ export function deleteScene(id: string) {
 
 /* ---------------- stories ---------------- */
 
-/** Normalize a scene entry — rows/imports predating scene contracts or branching lack the fields. */
-const storySceneEntry = (e: Partial<StoryScene>): StoryScene => ({
-  sceneId: e.sceneId ?? "",
-  cast: e.cast ?? [],
-  goal: e.goal ?? "",
-  obstacles: e.obstacles ?? "",
-  exit: e.exit ?? "",
-  pressures: e.pressures ?? "",
-  successors: (e.successors ?? [])
-    .map((s) => ({ sceneId: s?.sceneId ?? "", hint: s?.hint ?? "" }))
-    .filter((s) => s.sceneId),
-});
+/* A story row stores a self-contained document: the sheet plus embedded
+ * characters/scenes/locations/lorebooks (see storyDoc.ts). Every save
+ * normalizes and self-heals the document's internal references. */
 
 const storyFromRow = (r: Row): Story => ({
   id: r.id,
@@ -497,9 +488,10 @@ const storyFromRow = (r: Row): Story => ({
   description: r.description,
   destination: r.destination ?? "",
   secrets: J.parse(r.secrets, []),
-  characterIds: J.parse(r.character_ids, []),
-  scenes: (J.parse(r.scenes, []) as Partial<StoryScene>[]).map(storySceneEntry),
-  lorebookIds: J.parse(r.lorebook_ids, []),
+  characters: J.parse(r.characters, []),
+  scenes: J.parse(r.scenes, []),
+  locations: J.parse(r.locations, []),
+  lorebooks: J.parse(r.lorebooks, []),
   tags: J.parse(r.tags, []),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
@@ -516,34 +508,19 @@ export function getStory(id: string): Story | null {
 
 export function saveStory(x: Partial<Story> & { id?: string }): Story {
   const existing = x.id ? getStory(x.id) : null;
-  const m: Story = touch({
+  const merged = { ...existing, ...x };
+  const m: Story = {
     id: existing?.id ?? x.id ?? uid(),
-    name: "Untitled story",
-    description: "",
-    destination: "",
-    secrets: [],
-    characterIds: [],
-    scenes: [],
-    lorebookIds: [],
-    tags: [],
+    ...normalizeStoryDoc(merged),
+    tags: merged.tags ?? [],
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
-    ...existing,
-    ...x,
-  });
-  m.scenes = m.scenes.map(storySceneEntry);
-  // successors only point at scenes of this story, never at the scene itself —
-  // self-healing on every save (a scene removed from the story drops out of branches)
-  const sceneIds = new Set(m.scenes.map((s) => s.sceneId));
-  m.scenes = m.scenes.map((s) => ({
-    ...s,
-    successors: s.successors.filter((x) => sceneIds.has(x.sceneId) && x.sceneId !== s.sceneId),
-  }));
+  };
   getDb()
     .prepare(
-      `INSERT INTO stories (id,name,description,destination,secrets,character_ids,scenes,lorebook_ids,tags,created_at,updated_at)
-       VALUES (@id,@name,@description,@destination,@secrets,@chars,@scenes,@lore,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, destination=@destination, secrets=@secrets, character_ids=@chars, scenes=@scenes, lorebook_ids=@lore, tags=@tags, updated_at=@updated`
+      `INSERT INTO stories (id,name,description,destination,secrets,characters,scenes,locations,lorebooks,tags,created_at,updated_at)
+       VALUES (@id,@name,@description,@destination,@secrets,@chars,@scenes,@locs,@lore,@tags,@created,@updated)
+       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, destination=@destination, secrets=@secrets, characters=@chars, scenes=@scenes, locations=@locs, lorebooks=@lore, tags=@tags, updated_at=@updated`
     )
     .run({
       id: m.id,
@@ -551,9 +528,10 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
       description: m.description,
       destination: m.destination,
       secrets: J.str(m.secrets),
-      chars: J.str(m.characterIds),
+      chars: J.str(m.characters),
       scenes: J.str(m.scenes),
-      lore: J.str(m.lorebookIds),
+      locs: J.str(m.locations),
+      lore: J.str(m.lorebooks),
       tags: J.str(m.tags),
       created: m.createdAt,
       updated: m.updatedAt,
@@ -569,23 +547,14 @@ export function deleteStory(id: string) {
 
 /**
  * What still references this library item — a non-empty result blocks deletion.
- * Chain: location ← scene ← story; character/lorebook ← story. Chats never block:
- * playthroughs are self-contained snapshots, casual/immersive chats degrade fail-soft.
+ * The only chain is location ← scene (stories embed their own copies and never
+ * reference the library). Chats never block: playthroughs are self-contained
+ * snapshots, casual/immersive chats degrade fail-soft.
  */
-export function libraryReferences(
-  type: "character" | "scene" | "location" | "lorebook",
-  id: string
-): string[] {
+export function libraryReferences(type: "location", id: string): string[] {
   const refs: string[] = [];
   if (type === "location") {
     for (const s of listScenes()) if (s.locationId === id) refs.push(`scene "${s.name}"`);
-  }
-  for (const st of listStories()) {
-    const inStory =
-      (type === "character" && st.characterIds.includes(id)) ||
-      (type === "scene" && st.scenes.some((s) => s.sceneId === id)) ||
-      (type === "lorebook" && st.lorebookIds.includes(id));
-    if (inStory) refs.push(`story "${st.name}"`);
   }
   return refs;
 }
@@ -1030,12 +999,22 @@ export interface ChatListRow extends Chat {
 }
 
 /** Chat list page, newest-updated first, with the row decorations computed in SQL
- *  (the message subqueries ride idx_messages_chat) instead of hydrating timelines. */
+ *  (the message subqueries ride idx_messages_chat) instead of hydrating timelines.
+ *  `kind` splits the two surfaces: the Chats page lists casual/immersive only,
+ *  the Stories page lists playthroughs. */
 export function pageChats(
-  opts: { limit?: number; cursor?: string | null; q?: string; folder?: string } = {}
+  opts: {
+    limit?: number;
+    cursor?: string | null;
+    q?: string;
+    folder?: string;
+    kind?: "chats" | "playthroughs";
+  } = {}
 ): Page<ChatListRow> {
   const where: string[] = [];
   const args: unknown[] = [];
+  if (opts.kind === "playthroughs") where.push("c.mode = 'story'");
+  else if (opts.kind === "chats") where.push("c.mode <> 'story'");
   if (opts.folder) {
     where.push("c.folder = ?");
     args.push(opts.folder);

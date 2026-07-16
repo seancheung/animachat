@@ -8,7 +8,6 @@ import {
   LorebookEditor,
   PersonaEditor,
   SceneEditor,
-  StoryEditor,
 } from "@/components/editors/SimpleEditors";
 import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
@@ -28,12 +27,13 @@ import type { BundlePreviewItem } from "@/lib/bundle";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// stories live in their own top-level section (/stories) — a story owns embedded
+// copies of its items and is not a library entity
 const TYPES = [
   { key: "character", label: "Characters", endpoint: "/api/characters" },
   { key: "persona", label: "Personas", endpoint: "/api/personas" },
   { key: "location", label: "Locations", endpoint: "/api/locations" },
   { key: "scene", label: "Scenes", endpoint: "/api/scenes" },
-  { key: "story", label: "Stories", endpoint: "/api/stories" },
   { key: "lorebook", label: "Lorebooks", endpoint: "/api/lorebooks" },
 ] as const;
 
@@ -44,7 +44,6 @@ const EDITORS: Record<TypeKey, any> = {
   persona: PersonaEditor,
   location: LocationEditor,
   scene: SceneEditor,
-  story: StoryEditor,
   lorebook: LorebookEditor,
 };
 

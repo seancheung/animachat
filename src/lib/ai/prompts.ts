@@ -291,9 +291,9 @@ function userPovRules(pov: Pov, personaName: string): string {
  * the narrator sees everything, a secret's holders see their own, everyone else
  * sees nothing until a <reveal> event establishes it. */
 
-/** The story→scene entry (contract + opening cast) for the current scene. */
+/** The embedded scene entry (sheet + contract + opening cast) for the current scene. */
 function currentSceneEntry(ctx: ChatContext) {
-  return ctx.snapshot?.scenes.find((s) => s.scene.id === ctx.stage.sceneId) ?? null;
+  return ctx.snapshot?.scenes.find((s) => s.id === ctx.stage.sceneId) ?? null;
 }
 
 /** Snapshot secrets — pre-feature snapshots simply have none. */
@@ -316,7 +316,7 @@ function revealedTruthsBlock(ctx: ChatContext): string {
 function worldBlock(ctx: ChatContext): string {
   const parts: string[] = [];
   if (ctx.snapshot) {
-    const sceneNames = ctx.snapshot.scenes.map(({ scene }, i) => {
+    const sceneNames = ctx.snapshot.scenes.map((scene, i) => {
       const marker = scene.id === ctx.stage.sceneId ? " <- current scene" : "";
       return `  ${i + 1}. ${scene.name}${marker}`;
     });
@@ -524,11 +524,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   let finalScene = false;
   let branchPoint = false;
   if (ctx.snapshot && ctx.stage.sceneId && !ctx.ended) {
-    const entries = ctx.snapshot.scenes.map(({ scene, cast, successors }) => ({
-      id: scene.id,
-      cast,
-      successors,
-    }));
+    const entries = ctx.snapshot.scenes.map(({ id, cast, successors }) => ({ id, cast, successors }));
     const idx = entries.findIndex((e) => e.id === ctx.stage.sceneId);
     if (idx !== -1) {
       const allowed = allowedNextScenes(entries, ctx.stage.sceneId, ctx.chat.personaCharacterId);
@@ -541,7 +537,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
           `WHERE THE STORY CAN GO NEXT (a branch point — the roads open from this scene):\n` +
             allowed
               .map((id) => {
-                const next = ctx.snapshot!.scenes.find((s) => s.scene.id === id)!.scene;
+                const next = ctx.snapshot!.scenes.find((s) => s.id === id)!;
                 const hint = hintOf(id);
                 return `- "${next.name}" — ${next.setup}${hint ? `\n  (this road when: ${hint})` : ""}`;
               })
@@ -550,13 +546,13 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
         );
       } else if (allowed.length === 1) {
         const nextIdx = entries.findIndex((e) => e.id === allowed[0]);
-        const next = ctx.snapshot.scenes[nextIdx].scene;
+        const next = ctx.snapshot.scenes[nextIdx];
         const hint = hintOf(allowed[0]);
         // the passed-over note only makes sense on the in-order walk — an authored
         // successor is a jump, not a skip
         const skipped = cur.successors?.length
           ? []
-          : ctx.snapshot.scenes.slice(idx + 1, nextIdx).map((s) => s.scene.name);
+          : ctx.snapshot.scenes.slice(idx + 1, nextIdx).map((s) => s.name);
         nextSceneInfo = ctx.sub(
           `NEXT SCENE (if the story should advance): ${next.name} — ${next.setup}` +
             (hint ? `\n(this road when: ${hint})` : "") +
@@ -707,7 +703,7 @@ export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   candidates.push(`"narrator" = the narrator, the world's voice`);
 
   const entry = currentSceneEntry(ctx);
-  const idx = ctx.snapshot ? ctx.snapshot.scenes.findIndex((s) => s.scene.id === ctx.stage.sceneId) : -1;
+  const idx = ctx.snapshot ? ctx.snapshot.scenes.findIndex((s) => s.id === ctx.stage.sceneId) : -1;
   // pacing signal: how long the world has sat still
   let sinceNarrator = 0;
   for (let i = ctx.messages.length - 1; i >= 0; i--) {
@@ -719,7 +715,7 @@ export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   const state = ctx.sub(
     [
       entry
-        ? `Current scene: ${entry.scene.name}${idx !== -1 ? ` (${idx + 1} of ${ctx.snapshot!.scenes.length})` : ""}`
+        ? `Current scene: ${entry.name}${idx !== -1 ? ` (${idx + 1} of ${ctx.snapshot!.scenes.length})` : ""}`
         : "",
       entry?.goal ? `Scene goal: ${entry.goal}` : "",
       entry?.exit ? `The scene should advance when: ${entry.exit}` : "",

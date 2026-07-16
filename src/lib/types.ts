@@ -131,9 +131,14 @@ export interface SceneSuccessor {
   hint: string;
 }
 
-export interface StoryScene {
-  sceneId: string;
-  /** roster members (character ids) on stage when the scene opens — subset of the story's characterIds */
+/**
+ * A story's embedded scene: the full scene sheet (its locationId points at one of
+ * the story's embedded locations) plus the story-specific staging, contract and
+ * branching. Flat by design — an embedded scene exists exactly once, in exactly
+ * one story, so there is no separate reusable sheet to wrap.
+ */
+export interface StoryScene extends Scene {
+  /** roster members (embedded character ids) on stage when the scene opens */
   cast: string[];
   /** scene contract (story-specific, narrator/director-only; all optional — empty = no job, played freely) */
   /** what this scene is FOR dramatically */
@@ -167,17 +172,33 @@ export interface StorySecret {
   revealHint: string;
 }
 
-export interface Story {
-  id: string;
+/**
+ * The self-contained content of a story. A story OWNS its characters, scenes,
+ * locations and lorebooks as embedded copies (full sheets) — they are invisible
+ * to the library, to casual/immersive pickers, and to relationship/fact tracking.
+ * All internal references (scene→location, scene casts, secret holders, branch
+ * successors) resolve within the document; the only bridges to the library are
+ * explicit copies (add-from-library / copy-to-library), never live references.
+ * A playthrough snapshot is a frozen copy of exactly this shape.
+ */
+export interface StoryDocument {
   name: string;
   description: string;
   /** one authored line naming where the story is headed; empty = ending left to the table */
   destination: string;
   secrets: StorySecret[];
-  /** ordered roster — drives [charN_name] in playthroughs and the play-as picker */
-  characterIds: string[];
+  /** embedded cast, roster order — drives [charN_name] in playthroughs and the play-as picker */
+  characters: Character[];
+  /** embedded ordered scene sequence, each with its staging, contract and branching */
   scenes: StoryScene[];
-  lorebookIds: string[];
+  /** embedded locations the scenes reference */
+  locations: Location[];
+  /** embedded lorebooks, attached to every playthrough */
+  lorebooks: Lorebook[];
+}
+
+export interface Story extends StoryDocument {
+  id: string;
   tags: string[];
   createdAt: number;
   updatedAt: number;
@@ -230,34 +251,12 @@ export interface ChatOverrides {
 export type ChatMode = "casual" | "immersive" | "story";
 
 /**
- * Self-contained copy of a story taken when a playthrough is created. Playthroughs
- * never read the library afterwards: deleting or editing library items can't touch a
- * running or finished playthrough. Media stay content-addressed asset ids (never
- * copied); the storage prune counts snapshot references as used.
+ * Self-contained copy of a story document taken when a playthrough is created.
+ * Playthroughs never read the story afterwards: deleting or editing the story
+ * can't touch a running or finished playthrough. Media stay content-addressed
+ * asset ids (never copied); the storage prune counts snapshot references as used.
  */
-export interface StorySnapshot {
-  name: string;
-  description: string;
-  destination: string;
-  secrets: StorySecret[];
-  /** full sheets in roster order (includes the played character, if any) */
-  characters: Character[];
-  /** ordered scene sequence; cast = character ids on stage when the scene opens;
-      goal/obstacles/exit/pressures = the scene contract; successors = authored branching
-      (pressures/successors optional: snapshots predate the fields — read as ""/[]) */
-  scenes: {
-    scene: Scene;
-    cast: string[];
-    goal: string;
-    obstacles: string;
-    exit: string;
-    pressures?: string;
-    successors?: SceneSuccessor[];
-  }[];
-  /** locations referenced by the scenes */
-  locations: Location[];
-  lorebooks: Lorebook[];
-}
+export type StorySnapshot = StoryDocument;
 
 export interface Chat {
   id: string;

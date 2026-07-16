@@ -1,11 +1,12 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { BookMarked, MessagesSquare, Settings } from "lucide-react";
+import { BookMarked, BookOpen, MessagesSquare, Settings } from "lucide-react";
 import Tabs from "@/components/ui/tab";
 
 const ITEMS = [
   { value: "/", label: (<span className="flex h-full items-center gap-1.5"><MessagesSquare size={14} /> Chats</span>) },
+  { value: "/stories", label: (<span className="flex h-full items-center gap-1.5"><BookOpen size={14} /> Stories</span>) },
   { value: "/library", label: (<span className="flex h-full items-center gap-1.5"><BookMarked size={14} /> Library</span>) },
   { value: "/settings", label: (<span className="flex h-full items-center gap-1.5"><Settings size={14} /> Settings</span>) },
 ];

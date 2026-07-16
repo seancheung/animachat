@@ -173,7 +173,7 @@ function resolveNextScene(ctx: ChatContext, target: string | null): string | nul
   const snap = ctx.snapshot;
   if (!snap || !ctx.stage.sceneId) return null;
   const allowed = allowedNextScenes(
-    snap.scenes.map(({ scene, cast, successors }) => ({ id: scene.id, cast, successors })),
+    snap.scenes.map(({ id, cast, successors }) => ({ id, cast, successors })),
     ctx.stage.sceneId,
     ctx.chat.personaCharacterId
   );
@@ -181,7 +181,7 @@ function resolveNextScene(ctx: ChatContext, target: string | null): string | nul
   const t = target?.trim().toLowerCase();
   if (t) {
     const nameOf = (id: string) =>
-      snap.scenes.find((s) => s.scene.id === id)?.scene.name.trim().toLowerCase() ?? "";
+      snap.scenes.find((s) => s.id === id)?.name.trim().toLowerCase() ?? "";
     const hit = allowed.find((id) => nameOf(id) === t) ?? allowed.find((id) => nameOf(id).startsWith(t));
     if (hit) return hit;
   }

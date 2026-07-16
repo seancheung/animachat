@@ -95,15 +95,18 @@ CREATE TABLE IF NOT EXISTS scenes (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+-- a story owns its items: characters/scenes/locations/lorebooks are embedded
+-- copies (JSON documents), never references into the library tables
 CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   destination TEXT NOT NULL DEFAULT '',
   secrets TEXT NOT NULL DEFAULT '[]',
-  character_ids TEXT NOT NULL DEFAULT '[]',
+  characters TEXT NOT NULL DEFAULT '[]',
   scenes TEXT NOT NULL DEFAULT '[]',
-  lorebook_ids TEXT NOT NULL DEFAULT '[]',
+  locations TEXT NOT NULL DEFAULT '[]',
+  lorebooks TEXT NOT NULL DEFAULT '[]',
   tags TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

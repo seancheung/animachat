@@ -6,20 +6,21 @@ import {
   clampLimit,
   getCharacter,
   getLocation,
-  getLorebook,
   getPersona,
   getScene,
   getStory,
   pageChats,
   saveChat,
 } from "@/lib/store";
-import type { Character, ChatMode, Location, Lorebook, StorySnapshot } from "@/lib/types";
+import type { ChatMode, StorySnapshot } from "@/lib/types";
 
 export const GET = handler((req: Request) => {
   const sp = new URL(req.url).searchParams;
+  const kind = sp.get("kind");
   const page = pageChats({
     q: sp.get("q") ?? undefined,
     folder: sp.get("folder") ?? undefined,
+    kind: kind === "chats" || kind === "playthroughs" ? kind : undefined,
     limit: clampLimit(sp.get("limit")),
     cursor: sp.get("cursor"),
   });
@@ -71,64 +72,36 @@ export const POST = handler(async (req: Request) => {
     if (!characterIds.length && !narratorEnabled)
       return bad("An immersive chat needs at least one character, or the narrator enabled");
   } else {
-    // story mode = a playthrough: freeze the whole story bundle into a snapshot
+    // story mode = a playthrough: the story is already a self-contained document,
+    // so the snapshot is a frozen copy of it (saveStory keeps its internal
+    // references self-healed — nothing to resolve against the library)
     const story = b.storyId ? getStory(b.storyId) : null;
     if (!story) return bad("A playthrough requires a story");
     storyId = story.id;
     narratorEnabled = true; // the narrator directs playthroughs — always on
 
-    const characters = story.characterIds
-      .map(getCharacter)
-      .filter((c): c is Character => !!c);
-    const scenes = story.scenes.flatMap(
-      ({ sceneId: sid, cast, goal, obstacles, exit, pressures, successors }) => {
-        const scene = getScene(sid);
-        return scene
-          ? [
-              {
-                scene,
-                cast: cast.filter((id) => story.characterIds.includes(id)),
-                goal,
-                obstacles,
-                exit,
-                pressures,
-                successors,
-              },
-            ]
-          : [];
-      }
-    );
-    // a successor whose scene didn't make it into the snapshot is a dead road — drop it
-    const snapshotSceneIds = new Set(scenes.map(({ scene }) => scene.id));
-    for (const e of scenes) e.successors = e.successors.filter((s) => snapshotSceneIds.has(s.sceneId));
-    const locations = [
-      ...new Set(scenes.map(({ scene }) => scene.locationId).filter((id): id is string => !!id)),
-    ]
-      .map(getLocation)
-      .filter((l): l is Location => !!l);
-    const lorebooks = story.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l);
     storySnapshot = {
       name: story.name,
       description: story.description,
       destination: story.destination,
       secrets: story.secrets,
-      characters,
-      scenes,
-      locations,
-      lorebooks,
+      characters: story.characters,
+      scenes: story.scenes,
+      locations: story.locations,
+      lorebooks: story.lorebooks,
     };
 
     if (b.personaCharacterId) {
-      if (!characters.some((c) => c.id === b.personaCharacterId))
+      if (!story.characters.some((c) => c.id === b.personaCharacterId))
         return bad("The played character must be part of the story's cast");
       personaCharacterId = b.personaCharacterId;
       personaId = null;
     }
-    characterIds = characters.map((c) => c.id).filter((id) => id !== personaCharacterId);
-    lorebookIds = story.lorebookIds;
+    characterIds = story.characters.map((c) => c.id).filter((id) => id !== personaCharacterId);
+    lorebookIds = []; // the snapshot carries the story's lorebooks
     // optional starting scene (defaults to the first)
     if (b.sceneId) {
-      if (!scenes.some(({ scene }) => scene.id === b.sceneId))
+      if (!story.scenes.some((s) => s.id === b.sceneId))
         return bad("Starting scene must belong to the story");
       sceneId = b.sceneId;
     }
@@ -137,7 +110,7 @@ export const POST = handler(async (req: Request) => {
     // (immersion rule; no scene listing them = fail-soft, default start stands)
     if (personaCharacterId) {
       const entrance = entranceSceneId(
-        scenes.map(({ scene, cast }) => ({ id: scene.id, cast })),
+        story.scenes.map(({ id, cast }) => ({ id, cast })),
         personaCharacterId,
         sceneId
       );

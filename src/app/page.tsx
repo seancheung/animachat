@@ -54,13 +54,8 @@ const MODES: { key: ChatMode; label: string; icon: React.ReactNode; hint: string
     icon: <MapPin size={14} />,
     hint: "one fixed scene or location",
   },
-  {
-    key: "story",
-    label: "Playthrough",
-    icon: <BookOpen size={14} />,
-    hint: "play through a story — its cast and scenes, directed by the narrator",
-  },
 ];
+// playthroughs are started from the Stories page — the wizard offers casual/immersive only
 
 const MODE_ICONS: Record<string, React.ReactNode> = {
   casual: <Coffee size={14} />,
@@ -90,8 +85,6 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     mode: "casual",
     characterIds: [],
     personaId: null,
-    personaCharacterId: null,
-    storyId: null,
     sceneId: null,
     locationId: null,
     lorebookIds: [],
@@ -117,15 +110,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
   const charList = usePagedList<any>(
     "/api/characters",
     { q: debouncedCharQ || undefined },
-    { enabled: open && form.mode !== "story" }
+    { enabled: open }
   );
   const personaSearch = useComboboxSearch("/api/personas", {
     enabled: open,
     selected: form.personaId ? { value: form.personaId, label: labels[form.personaId] ?? "…" } : null,
-  });
-  const storySearch = useComboboxSearch("/api/stories", {
-    enabled: open && form.mode === "story",
-    selected: form.storyId ? { value: form.storyId, label: labels[form.storyId] ?? "…" } : null,
   });
   const sceneSearch = useComboboxSearch("/api/scenes", {
     enabled: open && form.mode === "immersive",
@@ -135,13 +124,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     enabled: open && form.mode === "immersive",
     toOption: (l: any) => ({ value: `location:${l.id}`, label: l.name }),
   });
-  const loreSearch = useComboboxSearch("/api/lorebooks", { enabled: open && form.mode !== "story" });
-  // the story's cast & scene names come from the decorated story GET, not the full lists
-  const { data: storyDetail } = useGet<any>(`/api/stories/${form.storyId}`, {
-    enabled: open && !!form.storyId,
-  });
-  const storyCast: { id: string; name: string }[] = storyDetail?.castRefs ?? [];
-  const storyScenes: { id: string; name: string }[] = storyDetail?.sceneRefs ?? [];
+  const loreSearch = useComboboxSearch("/api/lorebooks", { enabled: open });
 
   const toggleCharacter = (c: any) => {
     const cur: string[] = form.characterIds;
@@ -187,14 +170,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
       );
     };
   const settingOption = typedOption({ scene: <Clapperboard size={13} />, location: <MapPin size={13} /> });
-  const playAsOption = typedOption({ char: <UserRound size={13} />, persona: <VenetianMask size={13} /> });
 
-  const narrator = form.mode === "story" ? true : form.playAsNarrator ? false : form.narratorEnabled;
+  const narrator = form.playAsNarrator ? false : form.narratorEnabled;
   const modeValid =
-    form.mode === "story"
-      ? !!form.storyId
-      : (form.mode === "casual" || form.sceneId || form.locationId) &&
-        (form.characterIds.length > 0 || narrator);
+    (form.mode === "casual" || form.sceneId || form.locationId) &&
+    (form.characterIds.length > 0 || narrator);
   // greetings fit exactly one shape: a casual 1:1 with the narrator off
   const greetingsAvailable =
     form.mode === "casual" && form.characterIds.length === 1 && !narrator && !form.playAsNarrator;
@@ -208,15 +188,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             value={form.mode}
             onChange={(v) =>
               v &&
-              setForm({
-                ...form,
-                mode: v,
-                storyId: null,
-                sceneId: null,
-                locationId: null,
-                personaCharacterId: null,
-                characterIds: v === "story" ? [] : form.characterIds,
-              })
+              setForm({ ...form, mode: v, sceneId: null, locationId: null })
             }
           >
             {MODES.map((m) => (
@@ -233,8 +205,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
         </Field>
 
-        {form.mode !== "story" && (
-          <Field
+        <Field
             label={form.mode === "casual" ? "Characters" : "Characters (required)"}
             hint="pick in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
           >
@@ -292,84 +263,8 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               onLoadMore={() => void charList.fetchNextPage()}
             />
           </Field>
-        )}
 
         <div className="grid md:grid-cols-3 gap-3">
-          {form.mode === "story" && (
-            <>
-              <Field label="Story (required)" hint="cast, scenes & lorebooks come from it — snapshotted at creation">
-                <Combobox
-                  className="w-full"
-                  value={form.storyId}
-                  onChange={(v) => {
-                    if (v) {
-                      const opt = storySearch.options.find((o) => o.value === v);
-                      if (opt) remember(v, opt.label);
-                    }
-                    setForm({ ...form, storyId: v, sceneId: null, personaCharacterId: null });
-                  }}
-                  options={storySearch.options}
-                  loading={storySearch.loading}
-                  hasMore={storySearch.hasMore}
-                  isFetchingMore={storySearch.isFetchingMore}
-                  onLoadMore={storySearch.onLoadMore}
-                  onSearch={storySearch.onSearch}
-                  placeholder="choose…"
-                />
-              </Field>
-              <Field label="Play as" hint="a cast member, or one of your personas">
-                <Combobox
-                  className="w-full"
-                  value={
-                    form.personaCharacterId
-                      ? `char:${form.personaCharacterId}`
-                      : form.personaId
-                        ? `persona:${form.personaId}`
-                        : null
-                  }
-                  onChange={(v) => {
-                    const [kind, pid] = (v as string).split(":");
-                    if (kind === "persona") {
-                      const opt = personaSearch.options.find((o) => o.value === pid);
-                      if (opt) remember(pid, opt.label);
-                    }
-                    setForm({
-                      ...form,
-                      personaCharacterId: kind === "char" ? pid : null,
-                      personaId: kind === "persona" ? pid : null,
-                    });
-                  }}
-                  options={[
-                    // the authored cast is small and always fully listed; personas search server-side
-                    ...storyCast.map((c) => ({ value: `char:${c.id}`, label: c.name })),
-                    ...personaSearch.options.map((o) => ({ value: `persona:${o.value}`, label: o.label })),
-                  ]}
-                  loading={personaSearch.loading}
-                  hasMore={personaSearch.hasMore}
-                  isFetchingMore={personaSearch.isFetchingMore}
-                  onLoadMore={personaSearch.onLoadMore}
-                  onSearch={personaSearch.onSearch}
-                  renderOption={playAsOption}
-                  placeholder="(spectator)"
-                  clearable
-                  onClear={() => setForm({ ...form, personaCharacterId: null, personaId: null })}
-                />
-              </Field>
-              {storyScenes.length > 0 && (
-                <Field label="Starting scene">
-                  <Select
-                    className="w-full"
-                    value={form.sceneId}
-                    onChange={(v) => setForm({ ...form, sceneId: v })}
-                    options={storyScenes.map((s, i) => ({ value: s.id, label: `${i + 1}. ${s.name}` }))}
-                    placeholder={`1. ${storyScenes[0]?.name} (first)`}
-                    clearable
-                    onClear={() => setForm({ ...form, sceneId: null })}
-                  />
-                </Field>
-              )}
-            </>
-          )}
           {form.mode === "immersive" && (
             <Field label="Setting (required)" hint="fixed for the whole chat">
               <Combobox
@@ -398,8 +293,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               />
             </Field>
           )}
-          {form.mode !== "story" && (
-            <Field label="Play as narrator" hint="you write the narration; characters respond — replaces the AI narrator and your persona">
+          <Field label="Play as narrator" hint="you write the narration; characters respond — replaces the AI narrator and your persona">
               <Switch
                 className="h-8"
                 value={form.playAsNarrator}
@@ -413,8 +307,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 label={form.playAsNarrator ? "You are the narrator" : "Off"}
               />
             </Field>
-          )}
-          {form.mode !== "story" && !form.playAsNarrator && (
+          {!form.playAsNarrator && (
             <Field label="Your persona">
               <Combobox
                 className="w-full"
@@ -481,18 +374,12 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           <Field
             label="Narrator"
             hint={
-              form.mode === "story"
-                ? "always on — the narrator directs playthroughs"
-                : form.playAsNarrator
-                  ? "that's you — the AI narrator is off"
-                  : "narration, suggested actions — speaks first"
+              form.playAsNarrator
+                ? "that's you — the AI narrator is off"
+                : "narration, suggested actions — speaks first"
             }
           >
-            {form.mode === "story" ? (
-              <div className="h-8 flex items-center text-sm text-content-300">
-                <ScrollText size={14} className="mr-1.5" /> Enabled
-              </div>
-            ) : form.playAsNarrator ? (
+            {form.playAsNarrator ? (
               <div className="h-8 flex items-center text-sm text-content-300">
                 <ScrollText size={14} className="mr-1.5" /> You
               </div>
@@ -515,8 +402,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               />
             </Field>
           )}
-          {form.mode !== "story" && (
-            <Field label="Lorebooks">
+          <Field label="Lorebooks">
               <MultiCombobox
                 className="w-full"
                 placeholder="+ attach lorebooks…"
@@ -536,7 +422,6 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                 }}
               />
             </Field>
-          )}
         </div>
         <Button
           disabled={busy || !modeValid}
@@ -559,7 +444,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             }
           }}
         >
-          {busy ? "Creating…" : form.mode === "story" ? "Start playthrough" : "Start chat"}
+          {busy ? "Creating…" : "Start chat"}
         </Button>
       </div>
     </Modal>
@@ -574,11 +459,13 @@ export default function HomePage() {
   const importRef = useRef<HTMLInputElement>(null);
   const invalidate = useInvalidate();
 
-  // search & folder filter are server-side (title, tags, character/persona/story names)
+  // search & folder filter are server-side (title, tags, character/persona names);
+  // playthroughs live on the Stories page — this list is casual/immersive only
   const needle = useDebouncedValue(q.trim());
   const list = usePagedList<any>("/api/chats", {
     q: needle || undefined,
     folder: folder || undefined,
+    kind: "chats",
   });
   const visible = list.items;
   const filtered = !!(needle || folder);
@@ -662,11 +549,6 @@ export default function HomePage() {
                   {c.ended && (
                     <Badge size="sm" rounded className="shrink-0">
                       The End
-                    </Badge>
-                  )}
-                  {c.mode === "story" && c.storyName && (
-                    <Badge variant="secondary" size="sm" rounded className="ml-auto shrink-0">
-                      {c.storyName}
                     </Badge>
                   )}
                 </div>

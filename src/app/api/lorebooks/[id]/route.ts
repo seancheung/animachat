@@ -1,6 +1,6 @@
 import { itemRoutes } from "@/lib/entityRoutes";
-import { deleteLorebook, getLorebook, libraryReferences, saveLorebook } from "@/lib/store";
+import { deleteLorebook, getLorebook, saveLorebook } from "@/lib/store";
 
-export const { GET, PUT, DELETE } = itemRoutes(getLorebook, saveLorebook, deleteLorebook, (id) =>
-  libraryReferences("lorebook", id)
-);
+// nothing authored references library lorebooks anymore (stories embed copies) —
+// deletion never blocks
+export const { GET, PUT, DELETE } = itemRoutes(getLorebook, saveLorebook, deleteLorebook);

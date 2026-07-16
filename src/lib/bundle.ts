@@ -26,6 +26,7 @@ import {
   saveScene,
   saveStory,
 } from "./store";
+import { normalizeStoryDoc, remintStoryDoc, storyDocAssetIds } from "./storyDoc";
 import type { Character, Location, Lorebook, Persona, Scene, Story } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -65,6 +66,9 @@ export function assetIdsOf(type: BundleItemType, data: any): string[] {
     case "location":
     case "scene":
       return [data.artworkAsset, data.bgmAsset, data.ambientAsset].filter(Boolean);
+    case "story":
+      // a story document embeds its items — their assets travel with it
+      return storyDocAssetIds(data);
     default:
       return [];
   }
@@ -82,8 +86,8 @@ export function writeVerifiedAsset(id: string, data: Buffer): boolean {
   return true;
 }
 
-/** Build a zip bundle for the given items. Stories pull in their cast, scenes and
- *  lorebooks; scenes their locations. */
+/** Build a zip bundle for the given items. A story is self-contained (its items
+ *  are embedded in the document); library scenes pull in their locations. */
 export async function exportBundle(items: { type: BundleItemType; id: string }[]): Promise<Buffer> {
   const expanded = new Map<string, ManifestItem>();
   const add = (type: BundleItemType, id: string) => {
@@ -92,11 +96,6 @@ export async function exportBundle(items: { type: BundleItemType; id: string }[]
     const data = getters[type](id);
     if (!data) return;
     expanded.set(key, { type, data });
-    if (type === "story") {
-      for (const e of data.scenes ?? []) add("scene", e.sceneId);
-      for (const cid of data.characterIds ?? []) add("character", cid);
-      for (const lid of data.lorebookIds ?? []) add("lorebook", lid);
-    }
     if (type === "scene" && data.locationId) add("location", data.locationId);
   };
   for (const it of items) add(it.type, it.id);
@@ -130,15 +129,10 @@ function dedupeName(name: string, existing: Set<string>): string {
 
 const keyOf = (i: ManifestItem) => `${i.type}:${i.data.id}`;
 
-/** Bundle-internal dependencies of an item, as `type:id` keys (only ones present in the bundle). */
+/** Bundle-internal dependencies of an item, as `type:id` keys (only ones present in
+ *  the bundle). Stories are self-contained and depend on nothing. */
 function requiresOf(item: ManifestItem, present: Set<string>): string[] {
   const req: string[] = [];
-  if (item.type === "story") {
-    for (const e of item.data.scenes ?? []) req.push(`scene:${e.sceneId}`);
-    for (const cid of item.data.characterIds ?? []) req.push(`character:${cid}`);
-    for (const lid of item.data.lorebookIds ?? []) req.push(`lorebook:${lid}`);
-    // a story scene's location rides in via the scene's own requires
-  }
   if (item.type === "scene" && item.data.locationId) req.push(`location:${item.data.locationId}`);
   return [...new Set(req)].filter((k) => present.has(k) && k !== keyOf(item));
 }
@@ -251,37 +245,13 @@ export async function importBundle(
       idMap.set(it.data.id, saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>).id);
       count("lorebook");
     }
-    // stories last — they remap scenes, cast and lorebooks
+    // stories are self-contained documents — remint their embedded ids so an
+    // embedded copy can never collide with a library row (relationships/facts
+    // key on library ids), then save whole
     for (const it of byType("story")) {
       const fields = prep("story", it.data) as Partial<Story>;
-      fields.characterIds = (fields.characterIds ?? [])
-        .map((cid) => idMap.get(cid))
-        .filter(Boolean) as string[];
-      fields.scenes = (fields.scenes ?? []).flatMap((e) => {
-        const sceneId = idMap.get(e.sceneId);
-        if (!sceneId) return [];
-        return [
-          {
-            ...e,
-            sceneId,
-            cast: e.cast.map((cid) => idMap.get(cid)).filter(Boolean) as string[],
-            // branch targets are scene refs too; dangling ones are dropped by saveStory
-            successors: (e.successors ?? []).flatMap((s) => {
-              const sid = idMap.get(s.sceneId);
-              return sid ? [{ ...s, sceneId: sid }] : [];
-            }),
-          },
-        ];
-      });
-      // secrets travel with the story; their holders are cast members — remap like the cast
-      fields.secrets = (fields.secrets ?? []).map((s) => ({
-        ...s,
-        knownBy: (s.knownBy ?? []).map((cid) => idMap.get(cid)).filter(Boolean) as string[],
-      }));
-      fields.lorebookIds = (fields.lorebookIds ?? [])
-        .map((lid) => idMap.get(lid))
-        .filter(Boolean) as string[];
-      idMap.set(it.data.id, saveStory(fields).id);
+      const reminted = remintStoryDoc(normalizeStoryDoc(fields));
+      idMap.set(it.data.id, saveStory({ ...fields, ...reminted }).id);
       count("story");
     }
     for (const it of byType("persona")) {

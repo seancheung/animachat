@@ -1,6 +1,6 @@
 import { itemRoutes } from "@/lib/entityRoutes";
-import { deleteCharacter, getCharacter, libraryReferences, saveCharacter } from "@/lib/store";
+import { deleteCharacter, getCharacter, saveCharacter } from "@/lib/store";
 
-export const { GET, PUT, DELETE } = itemRoutes(getCharacter, saveCharacter, deleteCharacter, (id) =>
-  libraryReferences("character", id)
-);
+// nothing authored references library characters anymore (stories embed copies) —
+// deletion never blocks; chats degrade fail-soft via nameSnapshots
+export const { GET, PUT, DELETE } = itemRoutes(getCharacter, saveCharacter, deleteCharacter);

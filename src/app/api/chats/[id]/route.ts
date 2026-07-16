@@ -25,14 +25,13 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     persona: ctx.persona,
     playedCharacter: ctx.playedCharacter,
     storyName: ctx.snapshot?.name ?? null,
-    storyScenes: ctx.snapshot?.scenes.map(({ scene }) => scene) ?? [],
+    storyScenes: ctx.snapshot?.scenes ?? [],
     // every scene id referenced by a stage event, resolved to a name (snapshot first,
     // then the library) — so the client never needs the scene list
     sceneNames: Object.fromEntries(
       [...new Set(ctx.messages.flatMap((m) => (m.sceneEvent?.sceneId ? [m.sceneEvent.sceneId] : [])))].flatMap(
         (sid) => {
-          const name =
-            ctx.snapshot?.scenes.find(({ scene }) => scene.id === sid)?.scene.name ?? getScene(sid)?.name;
+          const name = ctx.snapshot?.scenes.find((s) => s.id === sid)?.name ?? getScene(sid)?.name;
           return name ? [[sid, name]] : [];
         }
       )

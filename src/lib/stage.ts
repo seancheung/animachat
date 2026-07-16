@@ -25,7 +25,7 @@ export interface LibraryResolvers {
 /** Playthroughs resolve scenes/locations from their frozen snapshot, never the library. */
 export function chatScene(chat: Chat, id: string | null | undefined, lib?: LibraryResolvers): Scene | null {
   if (!id) return null;
-  return chat.storySnapshot?.scenes.find((s) => s.scene.id === id)?.scene ?? lib?.scene?.(id) ?? null;
+  return chat.storySnapshot?.scenes.find((s) => s.id === id) ?? lib?.scene?.(id) ?? null;
 }
 
 export function chatLocation(chat: Chat, id: string | null | undefined, lib?: LibraryResolvers): Location | null {
@@ -45,10 +45,10 @@ export function computeStage(
   // a scene opens with its snapshot cast (minus the played character = the participants filter)
   const castOf = (sceneId: string | null): string[] | null => {
     if (!snap) return null;
-    const entry = snap.scenes.find((s) => s.scene.id === sceneId);
+    const entry = snap.scenes.find((s) => s.id === sceneId);
     return (entry?.cast ?? []).filter((id) => participants.has(id));
   };
-  const startSceneId = chat.sceneId ?? snap?.scenes[0]?.scene.id ?? null;
+  const startSceneId = chat.sceneId ?? snap?.scenes[0]?.id ?? null;
   const state: StageState = {
     sceneId: startSceneId,
     locationId: chat.locationId ?? chatScene(chat, startSceneId, lib)?.locationId ?? null,
@@ -63,7 +63,7 @@ export function computeStage(
     if (ev.sceneId) {
       // fail-soft like tag payloads: an id the snapshot doesn't know (e.g. a
       // hand-edited stage event) keeps the current scene instead of emptying the stage
-      const known = !snap || snap.scenes.some((s) => s.scene.id === ev.sceneId);
+      const known = !snap || snap.scenes.some((s) => s.id === ev.sceneId);
       if (known) {
         state.sceneId = ev.sceneId;
         state.locationId = chatScene(chat, ev.sceneId, lib)?.locationId ?? null;

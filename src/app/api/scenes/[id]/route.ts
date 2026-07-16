@@ -1,6 +1,6 @@
 import { itemRoutes } from "@/lib/entityRoutes";
-import { deleteScene, getScene, libraryReferences, saveScene } from "@/lib/store";
+import { deleteScene, getScene, saveScene } from "@/lib/store";
 
-export const { GET, PUT, DELETE } = itemRoutes(getScene, saveScene, deleteScene, (id) =>
-  libraryReferences("scene", id)
-);
+// nothing authored references library scenes anymore (stories embed copies) —
+// deletion never blocks
+export const { GET, PUT, DELETE } = itemRoutes(getScene, saveScene, deleteScene);

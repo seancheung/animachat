@@ -135,29 +135,42 @@ describe("per-variant sceneEvent", () => {
   });
 });
 
-describe("saveStory scene entries", () => {
-  it("normalizes missing contract/branching fields and prunes dangling/self successors", () => {
-    const a = saveScene({ name: "A" });
-    const b = saveScene({ name: "B" });
+describe("saveStory (embedded document)", () => {
+  it("normalizes embedded items and self-heals internal references", () => {
     const story = saveStory({
       name: "branches",
-      // pre-branching shape (no pressures/successors) plus a successor list that
-      // points at itself, at a scene outside the story, and at a real road
+      // partial embedded items (missing contract fields, refs into and out of the
+      // document) — the save fills defaults and prunes anything pointing outside
+      characters: [{ id: "c1", name: "Mira" }],
+      locations: [{ id: "l1", name: "Tavern" }],
       scenes: [
-        { sceneId: a.id, cast: [] },
+        { id: "a", name: "A", cast: ["c1", "ghost"], locationId: "l1" },
         {
-          sceneId: b.id,
-          cast: [],
+          id: "b",
+          name: "B",
+          locationId: "not-a-location",
           successors: [
-            { sceneId: b.id, hint: "self" },
+            { sceneId: "b", hint: "self" },
             { sceneId: "not-in-story", hint: "dangling" },
-            { sceneId: a.id, hint: "back to the start" },
+            { sceneId: "a", hint: "back to the start" },
           ],
         },
-      ] as never,
+      ],
+      secrets: [{ title: "s", content: "t", knownBy: ["c1", "ghost"], revealHint: "" }],
+    } as never);
+    expect(story.scenes[0]).toMatchObject({
+      goal: "",
+      obstacles: "",
+      exit: "",
+      pressures: "",
+      successors: [],
+      cast: ["c1"], // the ghost cast member is pruned
+      locationId: "l1",
     });
-    expect(story.scenes[0]).toMatchObject({ goal: "", obstacles: "", exit: "", pressures: "", successors: [] });
-    expect(story.scenes[1].successors).toEqual([{ sceneId: a.id, hint: "back to the start" }]);
+    expect(story.scenes[1].locationId).toBeNull(); // unknown location dropped
+    expect(story.scenes[1].successors).toEqual([{ sceneId: "a", hint: "back to the start" }]);
+    expect(story.secrets[0].knownBy).toEqual(["c1"]);
+    expect(story.characters[0]).toMatchObject({ name: "Mira", trackRelationship: true });
   });
 });
 

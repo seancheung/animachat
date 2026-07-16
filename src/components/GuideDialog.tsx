@@ -11,7 +11,7 @@ import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { searchIdByName, useInvalidate } from "@/lib/queries";
-import { api, uid } from "@/lib/ui";
+import { api } from "@/lib/ui";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -38,16 +38,12 @@ const TEXT_FIELDS: Record<string, { key: string; label: string; rows: number }[]
     { key: "setup", label: "Setup", rows: 4 },
     { key: "imagePrompt", label: "Image prompt", rows: 2 },
   ],
-  story: [
-    { key: "description", label: "Premise", rows: 3 },
-    { key: "destination", label: "Destination", rows: 1 },
-  ],
   lorebook: [{ key: "description", label: "Description", rows: 2 }],
 };
 
-// dependencies first: locations before the scenes that name them; scenes, characters
-// and lorebooks before the stories that reference all three
-const SAVE_ORDER = ["location", "scene", "character", "lorebook", "story", "persona"];
+// dependencies first: locations before the scenes that name them
+// (stories are authored on the story page, not in the Guide)
+const SAVE_ORDER = ["location", "scene", "character", "lorebook", "persona"];
 
 /**
  * Library guide: a co-writer session that creates a whole batch of library items
@@ -115,15 +111,6 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
       const refs: [string, unknown][] = [];
       for (const item of items) {
         if (item.type === "scene" && item.locationName) refs.push(["location", item.locationName]);
-        if (item.type === "story") {
-          for (const n of item.castNames ?? []) refs.push(["character", n]);
-          for (const e of item.scenes ?? []) {
-            if (e?.sceneName) refs.push(["scene", e.sceneName]);
-            for (const s of e?.successors ?? []) if (s?.sceneName) refs.push(["scene", s.sceneName]);
-          }
-          for (const s of item.secrets ?? []) for (const n of s?.knownByNames ?? []) refs.push(["character", n]);
-          for (const n of item.lorebookNames ?? []) refs.push(["lorebook", n]);
-        }
       }
       await Promise.all(refs.map(([t, n]) => resolve(t, n)));
       let saved = 0;
@@ -134,54 +121,6 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
           if (type === "scene") {
             payload.locationId = locIds.get(norm(payload.locationName)) || null;
             delete payload.locationName;
-          }
-          if (type === "story") {
-            payload.characterIds = (Array.isArray(payload.castNames) ? payload.castNames : [])
-              .map((n: unknown) => charIds.get(norm(n)))
-              .filter(Boolean);
-            payload.scenes = (Array.isArray(payload.scenes) ? payload.scenes : [])
-              .map((e: any) => {
-                const sceneId = sceneIds.get(norm(e?.sceneName));
-                if (!sceneId) return null;
-                const cast = (Array.isArray(e?.castNames) ? e.castNames : [])
-                  .map((n: unknown) => charIds.get(norm(n)))
-                  .filter((cid: any) => cid && payload.characterIds.includes(cid));
-                return {
-                  sceneId,
-                  cast,
-                  goal: typeof e?.goal === "string" ? e.goal : "",
-                  obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
-                  exit: typeof e?.exit === "string" ? e.exit : "",
-                  pressures: typeof e?.pressures === "string" ? e.pressures : "",
-                  // branch targets link by scene name too; dangling/self roads are
-                  // dropped by the server on save
-                  successors: (Array.isArray(e?.successors) ? e.successors : [])
-                    .map((s: any) => ({
-                      sceneId: sceneIds.get(norm(s?.sceneName)),
-                      hint: typeof s?.hint === "string" ? s.hint : "",
-                    }))
-                    .filter((s: any) => s.sceneId && s.sceneId !== sceneId),
-                };
-              })
-              .filter(Boolean);
-            // secret holders link by name, like the cast
-            payload.secrets = (Array.isArray(payload.secrets) ? payload.secrets : [])
-              .filter((s: any) => s && typeof s === "object")
-              .map((s: any) => ({
-                id: typeof s.id === "string" && s.id ? s.id : uid(),
-                title: String(s.title ?? ""),
-                content: String(s.content ?? ""),
-                knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])
-                  .map((n: unknown) => charIds.get(norm(n)))
-                  .filter((cid: any) => cid && payload.characterIds.includes(cid)),
-                revealHint: String(s.revealHint ?? ""),
-              }));
-            payload.lorebookIds = (Array.isArray(payload.lorebookNames) ? payload.lorebookNames : [])
-              .map((n: unknown) => loreIds.get(norm(n)))
-              .filter(Boolean);
-            delete payload.castNames;
-            delete payload.lorebookNames;
-            delete payload.sceneNames; // legacy field name, just in case
           }
           const res = await api.post(ENDPOINT[type], payload);
           if (type === "location") locIds.set(norm(res.name), res.id);
@@ -224,16 +163,14 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
                   </li>
                   <li>
                     Attach .txt/.md files with the file button and extract from them: &quot;create
-                    the main characters, locations and a story with scenes from this novel&quot;.
+                    the main characters and locations from this novel&quot;. (Stories are authored
+                    on the Stories page, whose co-writer builds the whole story in one go.)
                   </li>
                   <li>
                     Refine through chat or edit any field directly; remove items you don&apos;t
                     want.
                   </li>
-                  <li>
-                    Scenes link to locations — and stories to their cast, scenes and lorebooks —
-                    by name on save.
-                  </li>
+                  <li>Scenes link to locations by name on save.</li>
                 </ul>
               </div>
             ) : (
@@ -268,7 +205,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
           onFields={applyFields}
           onRestore={(f) => setItems(Array.isArray(f.items) ? (f.items as GuideItem[]) : [])}
           allowFiles
-          emptyHint="Tell me what to build — a single item or a whole cast. Attach a .txt/.md file (file button) to extract characters, places, scenes, stories or lore from it."
+          emptyHint="Tell me what to build — a single item or a whole cast. Attach a .txt/.md file (file button) to extract characters, places, scenes or lore from it."
         />
       </div>
     </Modal>
@@ -329,61 +266,6 @@ function ItemCard({
               onChange={(v) => onChange({ locationName: v })}
             />
           </Field>
-        )}
-        {item.type === "story" && (
-          <>
-            <Field label="Cast (names in order, comma-separated)" hint="linked by name on save">
-              <Input
-                className="w-full"
-                value={Array.isArray(item.castNames) ? item.castNames.join(", ") : ""}
-                onChange={(v) =>
-                  onChange({ castNames: v.split(",").map((s) => s.trim()).filter(Boolean) })
-                }
-              />
-            </Field>
-            <Field
-              label="Scenes (names in order, comma-separated)"
-              hint="linked by name on save; each scene keeps its on-stage cast — new names default to the full cast"
-            >
-              <Input
-                className="w-full"
-                value={
-                  Array.isArray(item.scenes)
-                    ? item.scenes.map((e: any) => e?.sceneName).filter(Boolean).join(", ")
-                    : ""
-                }
-                onChange={(v) => {
-                  const names = v.split(",").map((s) => s.trim()).filter(Boolean);
-                  const prev: any[] = Array.isArray(item.scenes) ? item.scenes : [];
-                  onChange({
-                    scenes: names.map(
-                      (n) =>
-                        prev.find((p) => String(p?.sceneName ?? "").toLowerCase() === n.toLowerCase()) ?? {
-                          sceneName: n,
-                          castNames: Array.isArray(item.castNames) ? item.castNames : [],
-                        }
-                    ),
-                  });
-                }}
-              />
-            </Field>
-            {Array.isArray(item.scenes) && item.scenes.some((e: any) => e?.castNames?.length) && (
-              <div className="text-xs text-content-400">
-                {item.scenes
-                  .map((e: any) => `${e?.sceneName}: ${(e?.castNames ?? []).join(", ") || "(empty stage)"}`)
-                  .join(" · ")}
-              </div>
-            )}
-            <Field label="Lorebooks (names, comma-separated)" hint="linked by name on save">
-              <Input
-                className="w-full"
-                value={Array.isArray(item.lorebookNames) ? item.lorebookNames.join(", ") : ""}
-                onChange={(v) =>
-                  onChange({ lorebookNames: v.split(",").map((s) => s.trim()).filter(Boolean) })
-                }
-              />
-            </Field>
-          </>
         )}
         {item.type === "lorebook" && Array.isArray(item.entries) && item.entries.length > 0 && (
           <div className="text-xs text-content-400">

@@ -57,12 +57,22 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
   );
 }
 
-export function CharacterEditor({ initial, onSaved }: { initial: Partial<Character>; onSaved: () => void }) {
-  const { form, setForm, save, saving } = useEditor(
-    { trackRelationship: true, idleMotion: true, ...initial },
-    "/api/characters",
-    onSaved
-  );
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * The character sheet fields, shell-free — used by the library editor dialog and,
+ * with `embedded`, by the story page for a story's owned cast members (embedded
+ * characters have no relationship tracking and no library tags).
+ */
+export function CharacterFields({
+  form,
+  setForm,
+  embedded = false,
+}: {
+  form: any;
+  setForm: (f: any) => void;
+  embedded?: boolean;
+}) {
   const sprites: Record<string, string> = form.sprites ?? {};
   const spriteSfx: Record<string, string> = form.spriteSfx ?? {};
   const customs: CustomExpression[] = form.customExpressions ?? [];
@@ -87,7 +97,7 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
   };
 
   return (
-    <EditorShell entityType="character" form={form} setForm={setForm} onSave={save} saving={saving}>
+    <>
       <div className="grid grid-cols-[120px_1fr] gap-3">
         <AssetInput label="Avatar (1:1)" kind="image" ratio={1} value={form.avatarAsset ?? null} onChange={(v) => setForm({ ...form, avatarAsset: v })} />
         <div className="space-y-3">
@@ -110,10 +120,12 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
       </Field>
 
       <div className="flex gap-6">
-        <Switch value={form.trackRelationship ?? true} onChange={(v) => setForm({ ...form, trackRelationship: v })} label="Track relationship/affinity with personas" />
+        {!embedded && (
+          <Switch value={form.trackRelationship ?? true} onChange={(v) => setForm({ ...form, trackRelationship: v })} label="Track relationship/affinity with personas" />
+        )}
         <Switch value={form.idleMotion ?? true} onChange={(v) => setForm({ ...form, idleMotion: v })} label="Idle motion on stage" />
       </div>
-      {form.id && (form.trackRelationship ?? true) && (
+      {!embedded && form.id && (form.trackRelationship ?? true) && (
         <Field label="Relationships">
           <RelationshipsCard characterId={form.id} />
         </Field>
@@ -209,7 +221,19 @@ export function CharacterEditor({ initial, onSaved }: { initial: Partial<Charact
       <div className="w-56">
         <AssetInput label="Typing sound override" kind="audio" value={form.typingSfxAsset ?? null} onChange={(v) => setForm({ ...form, typingSfxAsset: v })} />
       </div>
+    </>
+  );
+}
 
+export function CharacterEditor({ initial, onSaved }: { initial: Partial<Character>; onSaved: () => void }) {
+  const { form, setForm, save, saving } = useEditor(
+    { trackRelationship: true, idleMotion: true, ...initial },
+    "/api/characters",
+    onSaved
+  );
+  return (
+    <EditorShell entityType="character" form={form} setForm={setForm} onSave={save} saving={saving}>
+      <CharacterFields form={form} setForm={setForm} />
       <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );

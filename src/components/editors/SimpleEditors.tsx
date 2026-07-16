@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { AssistPanel } from "@/components/AssistPanel";
 import { AssetInput } from "@/components/AssetInput";
 import { Field } from "@/components/app";
@@ -11,15 +11,13 @@ import Collapsible from "@/components/ui/collapsible";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
-import MultiCombobox from "@/components/ui/multi-combobox";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import Tooltip from "@/components/ui/tooltip";
-import { allowedNextScenes } from "@/lib/stage";
-import { searchIdByName, useComboboxSearch, useEntityName, useGet } from "@/lib/queries";
+import { useComboboxSearch, useEntityName } from "@/lib/queries";
 import { api, uid } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import type { Location, Lorebook, LorebookEntry, Persona, Scene, Story, StoryScene, StorySecret } from "@/lib/types";
+import type { Location, Lorebook, LorebookEntry, Persona, Scene } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -107,7 +105,7 @@ export function TagsField({ value, onChange }: { value: string[] | undefined; on
     setText((cur) => (parseTags(cur).join(", ") === joined ? cur : joined));
   }, [joined]);
   return (
-    <Field label="Tags" hint="comma-separated — for grouping & filtering in the library">
+    <Field label="Tags" hint="comma-separated — for grouping & filtering">
       <Input
         className="w-full"
         placeholder="e.g. fantasy, main-cast"
@@ -216,10 +214,11 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
   );
 }
 
-export function LocationEditor({ initial, onSaved }: { initial: Partial<Location>; onSaved: () => void }) {
-  const { form, setForm, save, saving } = useEditor(initial, "/api/locations", onSaved);
+/** The location sheet fields, shell-free — shared by the library editor dialog and
+ *  the story page (a story's embedded locations). */
+export function LocationFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
   return (
-    <EditorShell entityType="location" form={form} setForm={setForm} onSave={save} saving={saving}>
+    <>
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
@@ -227,8 +226,43 @@ export function LocationEditor({ initial, onSaved }: { initial: Partial<Location
         <Textarea className="w-full h-32" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
+    </>
+  );
+}
+
+export function LocationEditor({ initial, onSaved }: { initial: Partial<Location>; onSaved: () => void }) {
+  const { form, setForm, save, saving } = useEditor(initial, "/api/locations", onSaved);
+  return (
+    <EditorShell entityType="location" form={form} setForm={setForm} onSave={save} saving={saving}>
+      <LocationFields form={form} setForm={setForm} />
       <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
+  );
+}
+
+/** The scene sheet fields, shell-free. The location link differs by context —
+ *  library scenes pick from the library, a story's embedded scenes from the
+ *  story's own locations — so the caller supplies the picker via `locationField`. */
+export function SceneFields({
+  form,
+  setForm,
+  locationField,
+}: {
+  form: any;
+  setForm: (f: any) => void;
+  locationField?: React.ReactNode;
+}) {
+  return (
+    <>
+      <Field label="Name">
+        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
+      </Field>
+      <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here">
+        <Textarea className="w-full h-32" value={form.setup ?? ""} onChange={(v) => setForm({ ...form, setup: v })} />
+      </Field>
+      {locationField}
+      <AudioVisualFields form={form} setForm={setForm} />
+    </>
   );
 }
 
@@ -240,441 +274,36 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
   });
   return (
     <EditorShell entityType="scene" form={form} setForm={setForm} onSave={save} saving={saving}>
-      <Field label="Name">
-        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
-      </Field>
-      <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here">
-        <Textarea className="w-full h-32" value={form.setup ?? ""} onChange={(v) => setForm({ ...form, setup: v })} />
-      </Field>
-      <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
-        <Combobox
-          className="w-full"
-          value={form.locationId ?? null}
-          onChange={(v) => setForm({ ...form, locationId: v })}
-          options={locations.options}
-          loading={locations.loading}
-          hasMore={locations.hasMore}
-          isFetchingMore={locations.isFetchingMore}
-          onLoadMore={locations.onLoadMore}
-          onSearch={locations.onSearch}
-          placeholder="(none)"
-          clearable
-          onClear={() => setForm({ ...form, locationId: null })}
-        />
-      </Field>
-      <AudioVisualFields form={form} setForm={setForm} />
-      <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
-    </EditorShell>
-  );
-}
-
-export function StoryEditor({ initial, onSaved }: { initial: Partial<Story>; onSaved: () => void }) {
-  const { form, setForm, save, saving } = useEditor(initial, "/api/stories", onSaved);
-  // referenced ids resolve to names through a local map: seeded by the decorated
-  // story GET (edit mode), grown by picker choices and assist name resolutions
-  const { data: initialRefs } = useGet<{
-    castRefs: { id: string; name: string }[];
-    sceneRefs: { id: string; name: string }[];
-    lorebookRefs: { id: string; name: string }[];
-  }>(`/api/stories/${initial.id}`, { enabled: !!initial.id });
-  const [pickedNames, setPickedNames] = useState<Record<string, string>>({});
-  const names = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const r of [
-      ...(initialRefs?.castRefs ?? []),
-      ...(initialRefs?.sceneRefs ?? []),
-      ...(initialRefs?.lorebookRefs ?? []),
-    ])
-      m[r.id] = r.name;
-    return { ...m, ...pickedNames };
-  }, [initialRefs, pickedNames]);
-  const nameOf = (id: string) => names[id] ?? "?";
-  const remember = (id: string, name: string) =>
-    setPickedNames((p) => (p[id] === name ? p : { ...p, [id]: name }));
-  const rememberPick = (options: { value: string; label: string }[], id: string) => {
-    const opt = options.find((o) => o.value === id);
-    if (opt) remember(id, opt.label);
-  };
-  const castSearch = useComboboxSearch("/api/characters");
-  const sceneSearch = useComboboxSearch("/api/scenes");
-  const loreSearch = useComboboxSearch("/api/lorebooks");
-  const cast: string[] = form.characterIds ?? [];
-  const storyScenes: StoryScene[] = form.scenes ?? [];
-  const secrets: StorySecret[] = form.secrets ?? [];
-  const lorebookIds: string[] = form.lorebookIds ?? [];
-  const charName = nameOf;
-  // MultiCombobox renders tag labels from options — keep selected lorebooks present
-  const loreOptions = useMemo(() => {
-    const out = [...loreSearch.options];
-    for (const id of (form.lorebookIds as string[] | undefined) ?? [])
-      if (!out.some((o) => o.value === id)) out.unshift({ value: id, label: names[id] ?? "?" });
-    return out;
-  }, [loreSearch.options, form.lorebookIds, names]);
-
-  const moveCast = (i: number, d: number) => {
-    const next = [...cast];
-    const j = i + d;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
-    setForm({ ...form, characterIds: next });
-  };
-  const removeCast = (cid: string) =>
-    setForm({
-      ...form,
-      characterIds: cast.filter((x) => x !== cid),
-      // a removed roster member also leaves every scene cast
-      scenes: storyScenes.map((s) => ({ ...s, cast: s.cast.filter((x) => x !== cid) })),
-    });
-  const moveScene = (i: number, d: number) => {
-    const next = [...storyScenes];
-    const j = i + d;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
-    setForm({ ...form, scenes: next });
-  };
-  const setSceneCast = (i: number, cid: string, present: boolean) => {
-    const next = [...storyScenes];
-    next[i] = {
-      ...next[i],
-      cast: present ? [...next[i].cast, cid] : next[i].cast.filter((x) => x !== cid),
-    };
-    setForm({ ...form, scenes: next });
-  };
-  const setSceneField = (i: number, key: "goal" | "obstacles" | "exit" | "pressures", v: string) => {
-    const next = [...storyScenes];
-    next[i] = { ...next[i], [key]: v };
-    setForm({ ...form, scenes: next });
-  };
-  const setSuccessors = (i: number, successors: StoryScene["successors"]) => {
-    const next = [...storyScenes];
-    next[i] = { ...next[i], successors };
-    setForm({ ...form, scenes: next });
-  };
-  const removeScene = (i: number) => {
-    const removedId = storyScenes[i].sceneId;
-    setForm({
-      ...form,
-      // a removed scene also stops being anyone's branch target
-      scenes: storyScenes
-        .filter((_, k) => k !== i)
-        .map((s) => ({ ...s, successors: (s.successors ?? []).filter((x) => x.sceneId !== removedId) })),
-    });
-  };
-  const setSecret = (i: number, patch: Partial<StorySecret>) => {
-    const next = [...secrets];
-    next[i] = { ...next[i], ...patch };
-    setForm({ ...form, secrets: next });
-  };
-  // where each scene can lead, under the same rule the narrator plays by — a scene
-  // with no road out is an ending (several endings = several ways the story closes)
-  const sceneRefs = storyScenes.map((e) => ({ id: e.sceneId, cast: e.cast, successors: e.successors }));
-  const isEnding = (sceneId: string) => allowedNextScenes(sceneRefs, sceneId).length === 0;
-
-  // the co-writer links cast/scenes/lorebooks/secret-holders by NAME — resolve against
-  // the library via the search endpoint (fail-soft: unresolved names are dropped)
-  const mapAssistFields = async (partial: any) => {
-    const norm = (n: unknown) => String(n ?? "").trim().toLowerCase();
-    const wanted: [string, unknown][] = [];
-    if (Array.isArray(partial.castNames)) for (const n of partial.castNames) wanted.push(["character", n]);
-    if (Array.isArray(partial.scenes))
-      for (const e of partial.scenes) {
-        if (e?.sceneName) wanted.push(["scene", e.sceneName]);
-        for (const s of Array.isArray(e?.successors) ? e.successors : [])
-          if (s?.sceneName) wanted.push(["scene", s.sceneName]);
-        if (Array.isArray(e?.castNames)) for (const n of e.castNames) wanted.push(["character", n]);
-      }
-    if (Array.isArray(partial.secrets))
-      for (const s of partial.secrets)
-        if (Array.isArray(s?.knownByNames)) for (const n of s.knownByNames) wanted.push(["character", n]);
-    if (Array.isArray(partial.lorebookNames)) for (const n of partial.lorebookNames) wanted.push(["lorebook", n]);
-    const resolved = new Map<string, string>(); // `${type}:${norm(name)}` → id
-    await Promise.all(
-      [...new Map(wanted.map(([t, n]) => [`${t}:${norm(n)}`, [t, n] as const])).values()].map(
-        async ([t, n]) => {
-          const id = await searchIdByName(t, n);
-          if (id) {
-            resolved.set(`${t}:${norm(n)}`, id);
-            remember(id, String(n).trim());
-          }
+      <SceneFields
+        form={form}
+        setForm={setForm}
+        locationField={
+          <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
+            <Combobox
+              className="w-full"
+              value={form.locationId ?? null}
+              onChange={(v) => setForm({ ...form, locationId: v })}
+              options={locations.options}
+              loading={locations.loading}
+              hasMore={locations.hasMore}
+              isFetchingMore={locations.isFetchingMore}
+              onLoadMore={locations.onLoadMore}
+              onSearch={locations.onSearch}
+              placeholder="(none)"
+              clearable
+              onClear={() => setForm({ ...form, locationId: null })}
+            />
+          </Field>
         }
-      )
-    );
-    const byName = (type: string, n: unknown) => resolved.get(`${type}:${norm(n)}`);
-    const out: any = { ...partial };
-    if (Array.isArray(partial.castNames)) {
-      out.characterIds = partial.castNames.map((n: unknown) => byName("character", n)).filter(Boolean);
-      delete out.castNames;
-    }
-    const roster: string[] = out.characterIds ?? cast;
-    if (Array.isArray(partial.scenes)) {
-      // successors link scenes by name too; keep already-id-shaped ones as-is
-      const successorsOf = (e: any) =>
-        (Array.isArray(e?.successors) ? e.successors : [])
-          .map((s: any) => ({
-            sceneId: typeof s?.sceneId === "string" && s.sceneId ? s.sceneId : byName("scene", s?.sceneName),
-            hint: typeof s?.hint === "string" ? s.hint : "",
-          }))
-          .filter((s: any): s is { sceneId: string; hint: string } => !!s.sceneId);
-      out.scenes = partial.scenes
-        .map((e: any) => {
-          const contract = {
-            goal: typeof e?.goal === "string" ? e.goal : "",
-            obstacles: typeof e?.obstacles === "string" ? e.obstacles : "",
-            exit: typeof e?.exit === "string" ? e.exit : "",
-            pressures: typeof e?.pressures === "string" ? e.pressures : "",
-            successors: successorsOf(e),
-          };
-          if (e?.sceneId) return { sceneId: e.sceneId, cast: e.cast ?? [], ...contract }; // already id-shaped
-          const sceneId = byName("scene", e?.sceneName);
-          if (!sceneId) return null;
-          const who = (Array.isArray(e?.castNames) ? e.castNames : [])
-            .map((n: unknown) => byName("character", n))
-            .filter((cid: string | undefined): cid is string => !!cid && roster.includes(cid));
-          return { sceneId, cast: who, ...contract };
-        })
-        .filter(Boolean);
-      // a road must lead to a scene of this story, never back into itself
-      const inStory = new Set(out.scenes.map((e: any) => e.sceneId));
-      out.scenes = out.scenes.map((e: any) => ({
-        ...e,
-        successors: e.successors.filter((s: any) => inStory.has(s.sceneId) && s.sceneId !== e.sceneId),
-      }));
-    }
-    if (Array.isArray(partial.secrets)) {
-      out.secrets = partial.secrets
-        .filter((s: any) => s && typeof s === "object")
-        .map((s: any) => ({
-          id: typeof s.id === "string" && s.id ? s.id : uid(),
-          title: String(s.title ?? ""),
-          content: String(s.content ?? ""),
-          knownBy: (Array.isArray(s.knownByNames) ? s.knownByNames : [])
-            .map((n: unknown) => byName("character", n))
-            .filter((cid: string | undefined): cid is string => !!cid && roster.includes(cid))
-            .concat(Array.isArray(s.knownBy) ? s.knownBy.filter((cid: string) => roster.includes(cid)) : []),
-          revealHint: String(s.revealHint ?? ""),
-        }));
-    }
-    if (Array.isArray(partial.lorebookNames)) {
-      out.lorebookIds = partial.lorebookNames.map((n: unknown) => byName("lorebook", n)).filter(Boolean);
-      delete out.lorebookNames;
-    }
-    return out;
-  };
-
-  return (
-    <EditorShell
-      entityType="story"
-      form={form}
-      setForm={setForm}
-      onSave={save}
-      saving={saving}
-      mapAssistFields={mapAssistFields}
-    >
-      <Field label="Name">
-        <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
-      </Field>
-      <Field label="Premise" hint="the situation as play opens — spoiler-free (everyone sees it); author truths and pressures, not an event script; placeholders like [char_name], [user_name] work here">
-        <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
-      </Field>
-      <Field label="Destination" hint="one line naming where the story is headed and what 'the end' means — narrator & director only; empty = ending left to the table">
-        <Input className="w-full" value={form.destination ?? ""} onChange={(v) => setForm({ ...form, destination: v })} />
-      </Field>
-      <Collapsible bordered title={`Cast (in order)${cast.length ? ` — ${cast.length}` : ""}`}>
-        <div className="text-xs text-content-400 mb-2">
-          the story&apos;s characters — order drives [charN_name]; a playthrough can play as any of them
-        </div>
-        <div className="space-y-1">
-          {cast.map((cid, i) => (
-            <div key={cid} className="flex items-center gap-2 bg-base-200 rounded-md px-3 py-1.5 text-sm">
-              <span className="text-content-300">{i + 1}.</span>
-              <span className="flex-1">{charName(cid)}</span>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => moveCast(i, -1)}><ArrowUp /></Button>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => moveCast(i, 1)}><ArrowDown /></Button>
-              <Button variant="ghost" size="sm" shape="square" onClick={() => removeCast(cid)}><X /></Button>
-            </div>
-          ))}
-          <Combobox
-            className="w-full"
-            value={null}
-            onChange={(v) => {
-              if (!v || cast.includes(v)) return;
-              rememberPick(castSearch.options, v);
-              setForm({ ...form, characterIds: [...cast, v] });
-            }}
-            options={castSearch.options.filter((o) => !cast.includes(o.value))}
-            loading={castSearch.loading}
-            hasMore={castSearch.hasMore}
-            isFetchingMore={castSearch.isFetchingMore}
-            onLoadMore={castSearch.onLoadMore}
-            onSearch={castSearch.onSearch}
-            placeholder="+ add cast member…"
-          />
-        </div>
-      </Collapsible>
-      <Collapsible bordered title={`Scenes (in order)${storyScenes.length ? ` — ${storyScenes.length}` : ""}`}>
-        <div className="text-xs text-content-400 mb-2">
-          each scene lists who is on stage when it opens; the narrator can bring others in mid-scene.
-          without branches a story plays in order; a scene named as a branch target is reached only
-          by that road, and a scene with no road out is an ending
-        </div>
-        <div className="space-y-1">
-          {storyScenes.map((entry, i) => (
-            <div key={`${entry.sceneId}-${i}`} className="bg-base-200 rounded-md px-3 py-1.5 text-sm space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-content-300">{i + 1}.</span>
-                <span className="flex-1">
-                  {nameOf(entry.sceneId)}
-                  {isEnding(entry.sceneId) && (
-                    <span className="ml-2 text-xs text-content-400">— an ending</span>
-                  )}
-                </span>
-                <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, -1)}><ArrowUp /></Button>
-                <Button variant="ghost" size="sm" shape="square" onClick={() => moveScene(i, 1)}><ArrowDown /></Button>
-                <Button variant="ghost" size="sm" shape="square" onClick={() => removeScene(i)}><X /></Button>
-              </div>
-              {cast.length > 0 && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1 pl-5">
-                  {cast.map((cid) => (
-                    <Checkbox
-                      key={cid}
-                      value={entry.cast.includes(cid)}
-                      onChange={(v) => setSceneCast(i, cid, v)}
-                      label={charName(cid)}
-                    />
-                  ))}
-                </div>
-              )}
-              {/* the scene contract — narrator/director-only dramaturgy; all optional */}
-              <div className="pl-5 space-y-1">
-                <Input className="w-full" placeholder="goal — what this scene is for…" value={entry.goal ?? ""} onChange={(v) => setSceneField(i, "goal", v)} />
-                <Input className="w-full" placeholder="obstacles — what stands in the way…" value={entry.obstacles ?? ""} onChange={(v) => setSceneField(i, "obstacles", v)} />
-                <Input className="w-full" placeholder="advance when — the narrator's cue to move on…" value={entry.exit ?? ""} onChange={(v) => setSceneField(i, "exit", v)} />
-                <Input className="w-full" placeholder="meanwhile, elsewhere — offstage pressure that keeps moving…" value={entry.pressures ?? ""} onChange={(v) => setSceneField(i, "pressures", v)} />
-              </div>
-              {/* authored branching — allowed successors; none = the next scene in order */}
-              <div className="pl-5 space-y-1">
-                {(entry.successors ?? []).map((suc, k) => (
-                  <div key={`${suc.sceneId}-${k}`} className="flex items-center gap-2">
-                    <span className="text-content-300 shrink-0">→ {nameOf(suc.sceneId)}</span>
-                    <Input
-                      className="flex-1 min-w-0"
-                      placeholder="this road when… (condition hint, optional)"
-                      value={suc.hint}
-                      onChange={(v) =>
-                        setSuccessors(i, (entry.successors ?? []).map((x, m) => (m === k ? { ...x, hint: v } : x)))
-                      }
-                    />
-                    <Button variant="ghost" size="sm" shape="square" onClick={() => setSuccessors(i, (entry.successors ?? []).filter((_, m) => m !== k))}><X /></Button>
-                  </div>
-                ))}
-                <Combobox
-                  className="w-full"
-                  value={null}
-                  onChange={(v) => v && setSuccessors(i, [...(entry.successors ?? []), { sceneId: v, hint: "" }])}
-                  options={storyScenes
-                    .filter((e) => e.sceneId !== entry.sceneId && !(entry.successors ?? []).some((x) => x.sceneId === e.sceneId))
-                    .map((e) => ({ value: e.sceneId, label: nameOf(e.sceneId) }))}
-                  placeholder={
-                    entry.successors?.length
-                      ? "+ add another road…"
-                      : "+ branch to… (none = the next scene in order)"
-                  }
-                />
-              </div>
-            </div>
-          ))}
-          <Combobox
-            className="w-full"
-            value={null}
-            onChange={(v) => {
-              if (!v || storyScenes.some((s) => s.sceneId === v)) return;
-              rememberPick(sceneSearch.options, v);
-              setForm({
-                ...form,
-                scenes: [...storyScenes, { sceneId: v, cast: [...cast], goal: "", obstacles: "", exit: "", pressures: "", successors: [] }],
-              });
-            }}
-            options={sceneSearch.options.filter((o) => !storyScenes.some((e) => e.sceneId === o.value))}
-            loading={sceneSearch.loading}
-            hasMore={sceneSearch.hasMore}
-            isFetchingMore={sceneSearch.isFetchingMore}
-            onLoadMore={sceneSearch.onLoadMore}
-            onSearch={sceneSearch.onSearch}
-            placeholder="+ add scene…"
-          />
-        </div>
-      </Collapsible>
-      <Collapsible bordered title={`Secrets${secrets.length ? ` — ${secrets.length}` : ""}`}>
-        <div className="text-xs text-content-400 mb-2">
-          the story&apos;s hidden truths, written in present tense (already true as play opens) — holders guard them,
-          everyone else can&apos;t see them, the narrator reveals them when the fiction earns it. &quot;known by&quot; =
-          already knows at the story&apos;s open, never &quot;it concerns them&quot; — someone meant to learn it mid-story
-          starts unchecked
-        </div>
-        <div className="space-y-2">
-          {secrets.map((s, i) => (
-            <div key={s.id} className="bg-base-200 rounded-md px-3 py-2 text-sm space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Input className="flex-1" placeholder="title — the secret's short handle…" value={s.title} onChange={(v) => setSecret(i, { title: v })} />
-                <Button variant="ghost" size="sm" shape="square" onClick={() => setForm({ ...form, secrets: secrets.filter((_, k) => k !== i) })}><X /></Button>
-              </div>
-              <Textarea className="w-full h-16" placeholder="the truth itself — present tense, already true as play opens…" value={s.content} onChange={(v) => setSecret(i, { content: v })} />
-              {cast.length > 0 && (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="text-xs text-content-400">knows from the start:</span>
-                  {cast.map((cid) => (
-                    <Checkbox
-                      key={cid}
-                      value={s.knownBy.includes(cid)}
-                      onChange={(v) =>
-                        setSecret(i, { knownBy: v ? [...s.knownBy, cid] : s.knownBy.filter((x) => x !== cid) })
-                      }
-                      label={charName(cid)}
-                    />
-                  ))}
-                </div>
-              )}
-              <Input className="w-full" placeholder="wants to surface when… (reveal hint, optional)" value={s.revealHint} onChange={(v) => setSecret(i, { revealHint: v })} />
-            </div>
-          ))}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() =>
-              setForm({
-                ...form,
-                secrets: [...secrets, { id: uid(), title: "", content: "", knownBy: [], revealHint: "" }],
-              })
-            }
-          >
-            + add secret
-          </Button>
-        </div>
-      </Collapsible>
-      <Field label="Lorebooks" hint="attached to every playthrough of this story">
-        <MultiCombobox
-          className="w-full"
-          placeholder="+ attach lorebooks…"
-          value={lorebookIds}
-          options={loreOptions}
-          loading={loreSearch.loading}
-          hasMore={loreSearch.hasMore}
-          isFetchingMore={loreSearch.isFetchingMore}
-          onLoadMore={loreSearch.onLoadMore}
-          onSearch={loreSearch.onSearch}
-          onChange={(vals) => {
-            for (const v of vals) rememberPick(loreOptions, v);
-            setForm({ ...form, lorebookIds: vals });
-          }}
-        />
-      </Field>
+      />
       <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );
 }
 
-export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook>; onSaved: () => void }) {
-  const { form, setForm, save, saving } = useEditor(initial, "/api/lorebooks", onSaved);
+/** The lorebook fields, shell-free — shared by the library editor dialog and the
+ *  story page (a story's embedded lorebooks). */
+export function LorebookFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
   const entries: LorebookEntry[] = form.entries ?? [];
   const setEntry = (i: number, patch: Partial<LorebookEntry>) => {
     const next = [...entries];
@@ -682,7 +311,7 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
     setForm({ ...form, entries: next });
   };
   return (
-    <EditorShell entityType="lorebook" form={form} setForm={setForm} onSave={save} saving={saving}>
+    <>
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
@@ -727,6 +356,15 @@ export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook
           </Button>
         </div>
       </Field>
+    </>
+  );
+}
+
+export function LorebookEditor({ initial, onSaved }: { initial: Partial<Lorebook>; onSaved: () => void }) {
+  const { form, setForm, save, saving } = useEditor(initial, "/api/lorebooks", onSaved);
+  return (
+    <EditorShell entityType="lorebook" form={form} setForm={setForm} onSave={save} saving={saving}>
+      <LorebookFields form={form} setForm={setForm} />
       <TagsField value={form.tags} onChange={(tags) => setForm({ ...form, tags })} />
     </EditorShell>
   );

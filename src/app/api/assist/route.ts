@@ -39,27 +39,35 @@ const FIELD_DOCS: Record<string, string> = {
     `"name": string; "setup": string (the situation: what is happening, stakes, how it starts); ` +
     `"imagePrompt": string (text-to-image prompt for the background artwork of this scene — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
-  story:
-    `"name": string; "description": string (the PREMISE — the situation as play opens, spoiler-free: everyone sees it; put hidden truths in secrets, not here); ` +
-    `"destination": string (one line naming where the story is headed and what "the end" means — seen only by the narrator; steers the ending without scripting the route); ` +
-    `"secrets": [{"title": "short handle", "content": "the hidden truth — PRESENT TENSE, already true as play opens", "knownByNames": ["cast", "names", "who", "ALREADY", "know", "at", "open"], "revealHint": "when/how it wants to surface"}] (the story's hidden truths — knownByNames may be empty for a truth nobody on stage knows; it lists who already knows as play OPENS, never who the secret concerns — a character meant to learn it mid-story is left out); ` +
-    `"castNames": ["ordered", "character", "names"] (the story's cast — characters in the library or this batch, linked by name on save; order matters); ` +
-    `"scenes": [{"sceneName": string, "castNames": ["who", "opens", "the scene"], "goal": "what the scene is FOR dramatically", "obstacles": "what resists", "exit": "what done looks like — the cue to advance", "pressures": "what moves ELSEWHERE while this scene plays — offstage momentum surfacing only as consequences", "successors": [{"sceneName": "an allowed next scene", "hint": "condition guidance — when this road is the one (never a mechanical gate)"}]}] (ordered scene sequence with each scene's contract; goal/obstacles/exit/pressures are optional but give the scene a job; successors are optional AUTHORED BRANCHING — omit to fall through to the next scene in order; list 2+ roads to make a branch point. A scene named as some scene's successor is reached ONLY by its road, never by fallthrough — so a branch target with no successors of its own is an ending: several such final scenes = several endings); ` +
-    `"lorebookNames": ["lorebook", "names"] (optional — attached to every playthrough of the story)`,
   lorebook:
     `"name": string; "description": string; ` +
     `"entries": [{"id": "keep existing id or omit for new", "title": string, "keywords": ["trigger", "words"], "content": string, "scanDepth": 8}]`,
 };
 
-// multi-item "library guide" mode: one batch of items across all entity types
+// whole-document story authoring: a story OWNS its characters/locations/scenes/
+// lorebooks as embedded items — the co-writer edits the entire document in one
+// conversation, linking everything by name WITHIN the story (never the library)
+FIELD_DOCS.story =
+  `"name": string; "description": string (the PREMISE — the situation as play opens, spoiler-free: everyone sees it; put hidden truths in secrets, not here); ` +
+  `"destination": string (one line naming where the story is headed and what "the end" means — seen only by the narrator; steers the ending without scripting the route).\n` +
+  `This story OWNS its characters, locations, scenes and lorebooks as EMBEDDED items — they exist only inside this story. Each embedded item is identified BY NAME within the story: a new name creates it, an existing name updates it (only the fields you include change); add "renameFrom": "its current name" alongside a new "name" to rename (and re-emit fields of other items that referred to the old name). Give new items complete fields; never re-emit unchanged items.\n` +
+  `"characters": [{${FIELD_DOCS.character}}] (the embedded cast — new ones append to the roster in the order given)\n` +
+  `"castOrder": ["every", "cast", "name", "in", "roster", "order"] (optional — reorders the whole cast; order drives [charN_name] and the play-as picker)\n` +
+  `"locations": [{${FIELD_DOCS.location}}] (embedded places — scenes link to them by name)\n` +
+  `"scenes": [{${FIELD_DOCS.scene}; "locationName": string (one of THIS STORY's locations, linked by name; its artwork/BGM then take precedence), "castNames": ["who", "opens", "the scene"], "goal": "what the scene is FOR dramatically", "obstacles": "what resists", "exit": "what done looks like — the cue to advance", "pressures": "what moves ELSEWHERE while this scene plays — offstage momentum surfacing only as consequences", "successors": [{"sceneName": "an allowed next scene of this story", "hint": "condition guidance — when this road is the one (never a mechanical gate)"}]}] (the embedded ordered scene sequence, each with its contract; goal/obstacles/exit/pressures are optional but give the scene a job; successors are optional AUTHORED BRANCHING — omit to fall through to the next scene in order; list 2+ roads to make a branch point. A scene named as some scene's successor is reached ONLY by its road, never by fallthrough — so a branch target with no successors of its own is an ending: several such final scenes = several endings)\n` +
+  `"sceneOrder": ["every", "scene", "name", "in", "play", "order"] (optional — reorders the whole sequence)\n` +
+  `"secrets": [{"title": "short handle", "content": "the hidden truth — PRESENT TENSE, already true as play opens", "knownByNames": ["cast", "names", "who", "ALREADY", "know", "at", "open"], "revealHint": "when/how it wants to surface"}] (identified by title, "renameFrom" renames; knownByNames name embedded cast members and may be empty for a truth nobody on stage knows — it lists who already knows as play OPENS, never who the secret concerns: a character meant to learn it mid-story is left out)\n` +
+  `"lorebooks": [{${FIELD_DOCS.lorebook}}] (embedded — attached to every playthrough of the story)`;
+
+// multi-item "library guide" mode: one batch of items across the library types
+// (stories are authored on the story page, not here)
 FIELD_DOCS.library =
-  `"items": [{"type": "character" | "persona" | "location" | "scene" | "story" | "lorebook", ...fields for that type}]\n` +
+  `"items": [{"type": "character" | "persona" | "location" | "scene" | "lorebook", ...fields for that type}]\n` +
   `Per-type fields:\n` +
   `- character: ${FIELD_DOCS.character}\n` +
   `- persona: ${FIELD_DOCS.persona}\n` +
   `- location: ${FIELD_DOCS.location}\n` +
   `- scene: ${FIELD_DOCS.scene}; "locationName": string (optional — the name of a location among these items or in the library, linked on save)\n` +
-  `- story: ${FIELD_DOCS.story}\n` +
   `- lorebook: ${FIELD_DOCS.lorebook}`;
 
 interface AssistBody {
@@ -100,15 +108,13 @@ function referenceText(ref: { type: string; id: string }): string | null {
     case "story": {
       const st = getStory(ref.id);
       if (!st) return null;
-      const cast = st.characterIds.map((cid) => getCharacter(cid)?.name).filter(Boolean);
-      const scenes = st.scenes
-        .map((e) => {
-          const s = getScene(e.sceneId);
-          if (!s) return null;
-          const who = e.cast.map((cid) => getCharacter(cid)?.name).filter(Boolean);
-          return `${s.name}${who.length ? ` (on stage: ${who.join(", ")})` : ""}`;
-        })
-        .filter(Boolean);
+      // embedded document: every name resolves within the story itself
+      const nameOf = (cid: string) => st.characters.find((c) => c.id === cid)?.name;
+      const cast = st.characters.map((c) => c.name);
+      const scenes = st.scenes.map((e) => {
+        const who = e.cast.map(nameOf).filter(Boolean);
+        return `${e.name}${who.length ? ` (on stage: ${who.join(", ")})` : ""}`;
+      });
       return (
         `STORY "${st.name}"\n${st.description}` +
         (st.destination ? `\nDestination: ${st.destination}` : "") +
@@ -117,7 +123,7 @@ function referenceText(ref: { type: string; id: string }): string | null {
         (st.secrets.length
           ? `\nSecrets:\n${st.secrets
               .map((s) => {
-                const who = s.knownBy.map((cid) => getCharacter(cid)?.name).filter(Boolean);
+                const who = s.knownBy.map(nameOf).filter(Boolean);
                 return `- "${s.title}": ${s.content} (held by: ${who.join(", ") || "nobody"})`;
               })
               .join("\n")}`
@@ -151,6 +157,8 @@ export const POST = handler(async (req: Request) => {
   }
   const settings = getSettings();
   const isLibrary = body.entityType === "library";
+  // whole-batch modes (the Guide, whole-document stories) need room for many items
+  const bigBatch = isLibrary || body.entityType === "story";
   const refTexts = (body.references ?? []).map(referenceText).filter(Boolean) as string[];
   const attachTexts = (body.attachments ?? [])
     .filter((a) => a?.text)
@@ -162,8 +170,10 @@ export const POST = handler(async (req: Request) => {
   const system =
     `You are a creative co-writing assistant inside the editor of a visual-novel roleplay app. ` +
     (isLibrary
-      ? `You are helping the user populate their library: create one or more items — characters, personas, locations, scenes, stories, lorebooks — in one session, often extracted from attached source material or built as a themed set. `
-      : `You are helping the user create/refine a ${body.entityType}. `) +
+      ? `You are helping the user populate their library: create one or more items — characters, personas, locations, scenes, lorebooks — in one session, often extracted from attached source material or built as a themed set. `
+      : body.entityType === "story"
+        ? `You are helping the user author a story — a self-contained work that owns its characters, locations, scenes and lorebooks as embedded items, all edited through this one conversation (often extracted from attached source material). `
+        : `You are helping the user create/refine a ${body.entityType}. `) +
     `Discuss ideas conversationally in ${settings.language}, ask at most one question at a time, and be concrete.\n\n` +
     `CURRENT FORM STATE:\n${JSON.stringify(body.fields, null, 2)}\n\n` +
     (refTexts.length
@@ -177,7 +187,7 @@ export const POST = handler(async (req: Request) => {
     `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
     `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
     `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n` +
-    (isLibrary || body.entityType === "story"
+    (body.entityType === "story"
       ? `STORY DESIGN PRINCIPLE — author situations, not plots. A story records what is TRUE and under what PRESSURE, never a sequence of events: the player's freedom breaks sequences, it cannot break truths.\n` +
         `- The premise is the situation as play opens — a web of wants, debts and tensions, spoiler-free. Hidden truths belong in secrets, never in the premise.\n` +
         `- Secrets carry the drama: give each a holder (or none), a truth that stays true whatever the player does, and a reveal hint naming the KIND of moment that surfaces it — not a scheduled scene.\n` +
@@ -189,7 +199,7 @@ export const POST = handler(async (req: Request) => {
         `- The destination names where the story is headed, not the route or the twists.\n` +
         `- If the user asks to script a beat ("then in scene 3 she betrays him"), don't put it in a scene or the premise — convert it into the truths and pressures that make that moment likely (a secret with a reveal hint, a motive in a character sheet, an obstacle), and say that's what you did.\n\n`
       : "") +
-    (isLibrary || ["character", "location", "scene"].includes(body.entityType)
+    (isLibrary || ["character", "location", "scene", "story"].includes(body.entityType)
       ? `IMAGE PROMPT RULES — every "imagePrompt" field is fed directly to a text-to-image generator:\n` +
         `- STRICTLY VISUAL: describe only what a camera would capture. Never include names, placeholder tags, personality, feelings, backstory, or lore — translate such traits into visible details instead (e.g. "a battle-worn veteran" → "scratched armor, a faded scar across the brow").\n` +
         `- Always write it in English, whatever the conversation language, unless the user explicitly asks for the prompt in another language.\n` +
@@ -257,7 +267,7 @@ export const POST = handler(async (req: Request) => {
           modelRef,
           system,
           messages: body.messages,
-          maxTokens: isLibrary ? 32000 : 2000, // item batches (e.g. novel extraction) need room
+          maxTokens: bigBatch ? 32000 : 2000, // item batches (e.g. novel extraction) need room
           feature: "assist",
           signal: abort.signal,
         })) {
@@ -310,7 +320,7 @@ export const POST = handler(async (req: Request) => {
                         `Re-emit the ENTIRE block corrected: reply with only ${OPEN}...${CLOSE} — same content, valid JSON, no prose.`,
                     },
                   ],
-                  maxTokens: isLibrary ? 32000 : 2000,
+                  maxTokens: bigBatch ? 32000 : 2000,
                   feature: "assist",
                   signal: abort.signal,
                 })) {
@@ -339,6 +349,13 @@ export const POST = handler(async (req: Request) => {
                 const item = it as { type?: string; name?: string };
                 return item?.type === "character"
                   ? normalizeSelfTags(item, typeof item.name === "string" ? item.name : null)
+                  : it;
+              });
+            } else if (body.entityType === "story" && Array.isArray(fields.characters)) {
+              fields.characters = fields.characters.map((it: unknown) => {
+                const c = it as { name?: string };
+                return c && typeof c === "object"
+                  ? normalizeSelfTags(c, typeof c.name === "string" ? c.name : null)
                   : it;
               });
             }

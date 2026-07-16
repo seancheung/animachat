@@ -2,7 +2,6 @@
 
 import { useState, type ComponentType, type ReactNode } from "react";
 import {
-  BookOpen,
   Download,
   Eye,
   LibraryBig,
@@ -243,17 +242,6 @@ export function SceneCard(props: LibraryCardProps) {
   );
 }
 
-export function StoryCard(props: LibraryCardProps) {
-  const { item } = props;
-  return (
-    <CardShell
-      {...props}
-      sub={`${item.characterIds?.length ?? 0} cast, ${item.scenes?.length ?? 0} scenes — ${(item.description ?? "").slice(0, 70)}`}
-      cover={<BookOpen size={32} />}
-    />
-  );
-}
-
 export function LorebookCard(props: LibraryCardProps) {
   const { item } = props;
   return (
@@ -270,6 +258,5 @@ export const LIBRARY_CARDS = {
   persona: PersonaCard,
   location: LocationCard,
   scene: SceneCard,
-  story: StoryCard,
   lorebook: LorebookCard,
 } satisfies Record<string, ComponentType<LibraryCardProps>>;
