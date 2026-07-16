@@ -1,6 +1,7 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { debugResponseLogEnabled, writeDebugLog } from "@/lib/debugLog";
+import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import { normalizeSelfTags } from "@/lib/ai/placeholders";
 import {
   getCharacter,
@@ -223,6 +224,33 @@ export const POST = handler(async (req: Request) => {
       : `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n`) +
     `The JSON must be valid. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
 
+  // shared by the final block and the streaming partials
+  const normalizeFields = (fields: Record<string, unknown>): Record<string, unknown> => {
+    if (body.entityType === "character") {
+      // models sometimes fill the name into the tag brackets ("[Tom]") — undo that
+      const selfName =
+        (typeof fields.name === "string" && fields.name) ||
+        (typeof body.fields?.name === "string" && (body.fields.name as string)) ||
+        null;
+      return normalizeSelfTags(fields, selfName);
+    }
+    if (isLibrary && Array.isArray(fields.items)) {
+      return {
+        ...fields,
+        items: fields.items.map((it: unknown) => {
+          const item = it as { type?: string; name?: string };
+          return item?.type === "character"
+            ? normalizeSelfTags(item, typeof item.name === "string" ? item.name : null)
+            : it;
+        }),
+      };
+    }
+    // story mode gets no normalizeSelfTags: story content is all-literal, and
+    // the client's mergeStoryAssist literalizes any tag slips against the
+    // document's own names (the tag direction would be wrong here)
+    return fields;
+  };
+
   const encoder = new TextEncoder();
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
@@ -240,6 +268,7 @@ export const POST = handler(async (req: Request) => {
       let visible = ""; // text already sent
       let buf = ""; // full accumulated text
       let inFields = false;
+      let fieldsStart = -1; // offset of the JSON payload inside buf, once OPEN is seen
 
       const flush = () => {
         if (inFields) return;
@@ -249,8 +278,9 @@ export const POST = handler(async (req: Request) => {
           if (emit) send({ type: "text", text: emit });
           visible = buf.slice(0, idx);
           inFields = true;
-          // the fields block is held back until it parses — tell the client the
-          // assistant is now writing into the form, not stalled
+          fieldsStart = idx + OPEN.length;
+          // the fields block streams into the form as it is written (see below) —
+          // tell the client the assistant is now writing into the form, not stalled
           send({ type: "drafting" });
           return;
         }
@@ -268,6 +298,40 @@ export const POST = handler(async (req: Request) => {
         }
       };
 
+      // Live partials: while the fields block streams, parse the growing JSON
+      // prefix (throttled) and push best-effort snapshots so the form fills as
+      // the model writes. Scalar fields stream as they grow; a collection
+      // element still under construction is dropped (the merges key items by
+      // name — a truncated name would mint a duplicate). The full block parsed
+      // at the end stays authoritative and re-applies over these.
+      let lastPartialAt = 0;
+      let lastPartialJson = "";
+      let lastPartialLabel: string | null = null;
+      let partialBroken = false; // a malformed prefix stays malformed — stop parsing
+      const maybeSendPartial = () => {
+        if (fieldsStart === -1 || partialBroken) return;
+        const now = Date.now();
+        if (now - lastPartialAt < 150) return;
+        lastPartialAt = now;
+        const parsed = parsePartialJson(buf.slice(fieldsStart));
+        if (!parsed) {
+          partialBroken = true; // the strict parse + fixups at the end take it from here
+          return;
+        }
+        const value = dropOpenArrayElement(parsed);
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        const label = describePartialProgress(parsed);
+        const fields = normalizeFields(value as Record<string, unknown>);
+        const json = JSON.stringify(fields);
+        if (json !== lastPartialJson) {
+          lastPartialJson = json;
+          send({ type: "fields-partial", fields, label });
+        } else if (label !== lastPartialLabel) {
+          send({ type: "drafting", label });
+        }
+        lastPartialLabel = label;
+      };
+
       let truncated = false;
       try {
         for await (const ev of streamLlm({
@@ -281,6 +345,7 @@ export const POST = handler(async (req: Request) => {
           if (ev.type === "text") {
             buf += ev.text;
             flush();
+            if (inFields) maybeSendPartial();
           } else if (ev.type === "stop") {
             truncated = ev.truncated;
           }
@@ -344,25 +409,7 @@ export const POST = handler(async (req: Request) => {
             }
           }
           if (parsed) {
-            if (body.entityType === "character") {
-              // models sometimes fill the name into the tag brackets ("[Tom]") — undo that
-              const selfName =
-                (typeof fields.name === "string" && fields.name) ||
-                (typeof body.fields?.name === "string" && (body.fields.name as string)) ||
-                null;
-              fields = normalizeSelfTags(fields, selfName);
-            } else if (isLibrary && Array.isArray(fields.items)) {
-              fields.items = fields.items.map((it: unknown) => {
-                const item = it as { type?: string; name?: string };
-                return item?.type === "character"
-                  ? normalizeSelfTags(item, typeof item.name === "string" ? item.name : null)
-                  : it;
-              });
-            }
-            // story mode gets no normalizeSelfTags: story content is all-literal, and
-            // the client's mergeStoryAssist literalizes any tag slips against the
-            // document's own names (the tag direction would be wrong here)
-            send({ type: "fields", fields });
+            send({ type: "fields", fields: normalizeFields(fields) });
           } else {
             const e = parseErr;
             console.error("assist: fields block failed to parse:", e);
@@ -370,7 +417,9 @@ export const POST = handler(async (req: Request) => {
               type: "text",
               text: truncated
                 ? "\n(My reply hit the response length limit before the fields were complete — ask me to continue, or to produce fewer items at a time.)"
-                : "\n(I produced malformed field data — ask me to try again.)",
+                : lastPartialJson
+                  ? "\n(I produced malformed field data — the form holds what parsed cleanly along the way; ask me to try again for the rest.)"
+                  : "\n(I produced malformed field data — ask me to try again.)",
             });
             if (debugResponseLogEnabled()) {
               try {

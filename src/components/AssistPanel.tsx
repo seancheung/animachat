@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, FileText, FileUp, Paperclip, SendHorizontal, Square, Undo2, X } from "lucide-react";
+import { CheckIcon, Download, FileText, FileUp, Paperclip, SendHorizontal, Square, Undo2, X } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
@@ -38,7 +38,7 @@ export function AssistPanel({
 }: {
   entityType: string;
   fields: Record<string, unknown>;
-  onFields: (partial: Record<string, unknown>) => void;
+  onFields: (partial: Record<string, unknown>) => void | Promise<void>;
   /** replace the whole draft state (rewind) — enables the rewind buttons when given */
   onRestore?: (fields: Record<string, unknown>) => void;
   /** offer attaching .txt/.md files, sent as source material with every message */
@@ -48,8 +48,9 @@ export function AssistPanel({
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  // the assistant is writing the held-back fields block (tool-calling into the form)
-  const [drafting, setDrafting] = useState(false);
+  // the assistant is writing the fields block (tool-calling into the form);
+  // the label names what it's on right now ("Mira — description")
+  const [drafting, setDrafting] = useState<{ label?: string | null } | null>(null);
   const [refs, setRefs] = useState<LibraryRef[]>([]);
   const [files, setFiles] = useState<TextFile[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -88,9 +89,33 @@ export function AssistPanel({
     setMessages([...history, { role: "assistant", content: "" }]);
     let acc = "";
     let applied = false;
+    let partialLanded = false;
     let debugLog: string | undefined;
     const show = () =>
       setMessages([...history, { role: "assistant", content: acc.trim(), applied, debugLog }]);
+    // Coalescing apply queue: partial payloads are cumulative, so only the
+    // newest matters; the chain keeps async onFields applications in order —
+    // the final block must land after any in-flight partial.
+    let nextFields: Record<string, unknown> | null = null;
+    let drain = Promise.resolve();
+    let draining = false;
+    const applyQueued = (f: Record<string, unknown>) => {
+      nextFields = f;
+      if (draining) return;
+      draining = true;
+      drain = (async () => {
+        while (nextFields) {
+          const cur = nextFields;
+          nextFields = null;
+          try {
+            await onFields(cur);
+          } catch {
+            /* superseded by the next (or the final) apply */
+          }
+        }
+        draining = false;
+      })();
+    };
     const abort = new AbortController();
     abortRef.current = abort;
     try {
@@ -108,10 +133,14 @@ export function AssistPanel({
             acc += ev.text;
             show();
           } else if (ev.type === "drafting") {
-            setDrafting(true);
+            setDrafting({ label: typeof ev.label === "string" ? ev.label : null });
+          } else if (ev.type === "fields-partial" && ev.fields && typeof ev.fields === "object") {
+            partialLanded = true;
+            setDrafting({ label: typeof ev.label === "string" ? ev.label : null });
+            applyQueued(ev.fields);
           } else if (ev.type === "fields" && ev.fields) {
-            setDrafting(false);
-            onFields(ev.fields);
+            setDrafting(null);
+            applyQueued(ev.fields);
             applied = true;
             show();
           } else if (ev.type === "log" && ev.url) {
@@ -124,20 +153,34 @@ export function AssistPanel({
         },
         abort.signal
       );
+      // no final block but partials landed (malformed field data): what parsed
+      // cleanly along the way is in the form — say so on the message
+      if (partialLanded && !applied) {
+        applied = true;
+        show();
+      }
     } catch (e) {
       if (abort.signal.aborted) {
-        // stopped: keep whatever arrived; a reply that never got a word in is dropped
+        // stopped: keep whatever arrived — prose and any fields already applied;
+        // a reply that never got a word in is dropped
+        if (partialLanded) applied = true;
         if (!acc.trim() && !applied) setMessages(history);
+        else show();
       } else {
         setMessages([
           ...history,
-          { role: "assistant", content: `⚠ ${e instanceof Error ? e.message : String(e)}` },
+          {
+            role: "assistant",
+            content: `⚠ ${e instanceof Error ? e.message : String(e)}`,
+            applied: partialLanded,
+          },
         ]);
       }
     } finally {
+      await drain; // partials already received still land before the panel unlocks
       abortRef.current = null;
       setBusy(false);
-      setDrafting(false);
+      setDrafting(null);
     }
   }
 
@@ -164,8 +207,8 @@ export function AssistPanel({
           >
             <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
             {m.applied && (
-              <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-primary-500/30 bg-primary-500/10 px-2 py-1 text-xs text-primary-400">
-                ✦ Applied to the form
+              <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-primary-400/90">
+                <CheckIcon /> Applied to the form
               </div>
             )}
             {m.debugLog && (
@@ -191,8 +234,9 @@ export function AssistPanel({
           </div>
         ))}
         {drafting && (
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-base-400 bg-base-300/40 px-2 py-1 text-xs text-content-400 animate-pulse">
-            ✦ writing into the form…
+          <div className="flex items-baseline gap-1 px-1 text-xs text-content-400 animate-pulse">
+            <span>✦ writing into the form…</span>
+            {drafting.label && <span className="truncate text-content-400/70">{drafting.label}</span>}
           </div>
         )}
       </div>

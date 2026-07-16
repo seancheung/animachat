@@ -109,6 +109,35 @@ describe("mergeStoryAssist", () => {
     expect(out.secrets[0]).toMatchObject({ title: "The cellar", content: "Moonmilk below.", knownBy: [kaelId] });
     expect(out.secrets[1]).toMatchObject({ title: "Kael's debt", content: "He owes too.", knownBy: [kaelId] });
   });
+
+  it("converges when a streamed partial prefix is applied before the full payload", () => {
+    // the assist route streams growing snapshots of the same fields block —
+    // applying a prefix and then the whole must equal applying the whole once
+    const full = {
+      description: "A longer premise.",
+      characters: [
+        { name: "Mira", description: "sharper" },
+        { name: "Kael", description: "a knight with a ledger" },
+      ],
+      scenes: [
+        { name: "The Cellar", castNames: ["Kael"], locationName: "Tavern", successors: [{ sceneName: "Dawn", hint: "if the debt stands" }] },
+      ],
+      secrets: [{ title: "Kael's debt", content: "He owes too.", knownByNames: ["Kael"] }],
+    };
+    const partial = {
+      description: "A longer prem", // scalar cut mid-way — streams as it grows
+      characters: [{ name: "Mira", description: "sharper" }], // Kael not complete yet
+      scenes: [],
+    };
+    const stripIds = (d: ReturnType<typeof baseDoc>) => JSON.parse(JSON.stringify(d, (k, v) => (k === "id" || k === "locationId" || k === "cast" || k === "knownBy" || k === "successors" ? undefined : v)));
+    const direct = mergeStoryAssist(baseDoc(), full);
+    const streamed = mergeStoryAssist(mergeStoryAssist(baseDoc(), partial), full);
+    expect(stripIds(streamed)).toEqual(stripIds(direct));
+    // and the id-bearing links resolve identically by name
+    const kael = (d: typeof direct) => d.characters.find((c) => c.name === "Kael")!.id;
+    expect(streamed.scenes.find((s) => s.name === "The Cellar")!.cast).toEqual([kael(streamed)]);
+    expect(direct.scenes.find((s) => s.name === "The Cellar")!.cast).toEqual([kael(direct)]);
+  });
 });
 
 describe("literalizeStoryTags", () => {
