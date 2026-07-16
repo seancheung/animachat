@@ -32,7 +32,7 @@ export type CollapsibleProps = Omit<
     value?: boolean;
     defaultValue?: boolean;
     onChange?: (open: boolean) => void;
-    icon?: React.ReactNode;
+    chevron?: boolean | ((open: boolean) => React.ReactNode);
   };
 
 export default function Collapsible({
@@ -40,7 +40,7 @@ export default function Collapsible({
   value: controlledValue,
   defaultValue = false,
   onChange,
-  icon,
+  chevron = true,
   bordered,
   disabled,
   className,
@@ -60,26 +60,32 @@ export default function Collapsible({
 
   return (
     <div className={cn(variants({ className, bordered, disabled }))} {...props}>
-      <button
-        type="button"
-        id={triggerId}
-        aria-expanded={open}
-        aria-controls={contentId}
-        disabled={disabled ?? false}
-        onClick={handleToggle}
-        className="flex h-9 w-full not-disabled:cursor-pointer items-center gap-2 rounded-md px-3 text-left font-medium outline-none transition-all focus-visible:ring-3 focus-visible:ring-ring/10 disabled:cursor-not-allowed"
-      >
-        {icon && (
-          <span className="has-icon shrink-0 text-content-400">{icon}</span>
-        )}
-        <span className="flex-1 truncate">{title}</span>
-        <ChevronDownIcon
-          className={cn(
-            "size-3.5 shrink-0 text-content-400 transition-transform duration-200",
-            open && "rotate-180",
+      <div className="flex items-center">
+        <button
+          type="button"
+          id={triggerId}
+          aria-expanded={open}
+          aria-controls={contentId}
+          disabled={disabled ?? false}
+          onClick={handleToggle}
+          className="flex h-9 min-w-0 flex-1 not-disabled:cursor-pointer items-center gap-2 rounded-md px-3 text-left font-medium outline-none transition-all focus-visible:ring-3 focus-visible:ring-ring/10 disabled:cursor-not-allowed"
+        >
+          {typeof title === "string" ? (
+            <span className="flex-1 truncate">{title}</span>
+          ) : (
+            title
           )}
-        />
-      </button>
+          {chevron === true && (
+            <ChevronDownIcon
+              className={cn(
+                "size-3.5 shrink-0 transition-transform duration-200",
+                open && "rotate-180",
+              )}
+            />
+          )}
+        </button>
+        {typeof chevron === "function" && chevron(open)}
+      </div>
       <AnimatePresence initial={false}>
         {open && (
           <motion.div

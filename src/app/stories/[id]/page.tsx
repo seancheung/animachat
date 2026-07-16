@@ -20,6 +20,7 @@ import { confirmDialog } from "@/components/confirm";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
+import Collapsible from "@/components/ui/collapsible";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
 import SegmentedControl from "@/components/ui/segmented-control";
@@ -47,20 +48,22 @@ function ItemRow({
   children: React.ReactNode;
 }) {
   return (
-    <details className="panel overflow-hidden">
-      <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none">
-        <span className="text-sm font-medium truncate flex-1">{title || "(unnamed)"}</span>
-        {badge && (
-          <Badge variant="secondary" size="sm" rounded className="shrink-0">
-            {badge}
-          </Badge>
-        )}
-        <span className="flex gap-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          {actions}
-        </span>
-      </summary>
-      <div className="px-3 pb-3 pt-2 space-y-3 border-t border-base-300">{children}</div>
-    </details>
+    <Collapsible
+      bordered
+      title={
+        <>
+          <span className="flex-1 truncate">{title || "(unnamed)"}</span>
+          {badge && (
+            <Badge variant="secondary" size="sm" rounded className="shrink-0">
+              {badge}
+            </Badge>
+          )}
+        </>
+      }
+      chevron={() => <span className="flex shrink-0 items-center gap-1 pr-3">{actions}</span>}
+    >
+      <div className="space-y-3">{children}</div>
+    </Collapsible>
   );
 }
 

@@ -7,6 +7,7 @@ import { Field, Modal } from "@/components/app";
 import { LIBRARY_TYPES, libraryTypeIcon } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
+import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -223,28 +224,32 @@ function ItemCard({
 }) {
   const Icon = libraryTypeIcon(item.type);
   return (
-    <details className="panel overflow-hidden">
-      <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none">
-        <Icon size={14} className="shrink-0 text-content-300" />
-        <span className="text-sm font-medium truncate flex-1">{item.name || "(unnamed)"}</span>
-        <Badge variant="secondary" rounded>
-          {item.type}
-        </Badge>
-        <Button
-          variant="ghost"
-          size="sm"
-          shape="square"
-          title="Remove from this batch"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onRemove();
-          }}
-        >
-          <Trash2 />
-        </Button>
-      </summary>
-      <div className="px-3 pb-3 pt-2 space-y-2 border-t border-base-300">
+    <Collapsible
+      bordered
+      title={
+        <>
+          <Icon size={14} className="shrink-0 text-content-300" />
+          <span className="flex-1 truncate">{item.name || "(unnamed)"}</span>
+          <Badge variant="secondary" rounded className="shrink-0">
+            {item.type}
+          </Badge>
+        </>
+      }
+      chevron={() => (
+        <span className="shrink-0 pr-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            title="Remove from this batch"
+            onClick={onRemove}
+          >
+            <Trash2 />
+          </Button>
+        </span>
+      )}
+    >
+      <div className="space-y-2">
         <Field label="Name">
           <Input className="w-full" value={item.name ?? ""} onChange={(v) => onChange({ name: v })} />
         </Field>
@@ -282,6 +287,6 @@ function ItemCard({
             </div>
           )}
       </div>
-    </details>
+    </Collapsible>
   );
 }
