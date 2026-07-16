@@ -97,8 +97,10 @@ export function seedPresets() {
   saveStory(
     normalizeStoryDoc({
       name: "The Alchemist's Debt",
+      // story content is player-agnostic: no [user_name] — the seat (a cast member,
+      // a persona, or nobody) is chosen at playthrough time
       description:
-        "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice pulls [user_name] into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
+        "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice turns into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
       destination:
         "Ends at dawn, when the Guild's collectors knock — with Mira's debt settled, dodged, or paid in something worse than coin.",
       characters: [
@@ -155,7 +157,7 @@ export function seedPresets() {
             "Evening rain. A hand-written notice on the door of [loc_name] reads: 'HELP WANTED — discretion required, courage appreciated, payment negotiable. Ask for Mira.' Inside, [loc_name] is nearly empty; Mira is arguing with a copper still, and Kael nurses an untouched drink in the corner. The Ashen Guild's collectors are due at dawn.",
           locationId: eTavern,
           cast: [eMira],
-          goal: "Get [user_name] entangled in Mira's problem — the job accepted, or refused in a way that won't stick.",
+          goal: "Get whoever answers the notice entangled in Mira's problem — the job accepted, or refused in a way that won't stick.",
           obstacles: "Mira is too proud to say what the debt really is; Kael watches from his corner, measuring everyone.",
           exit: "Someone commits to helping before dawn — and the only way forward is whatever Mira keeps locked below.",
           pressures: "The Ashen Guild's collectors work their way up the river road all night — every hour spent hesitating is an hour closer to the knock.",

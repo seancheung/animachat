@@ -112,7 +112,7 @@ export function CharacterFields({
       <Field label="Description" hint={`personality, background, mannerisms, anything else — ${PLACEHOLDER_HINT}`}>
         <Textarea className="w-full h-36" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
-      <Field label="Example dialogue" hint="a few example exchanges showing their voice">
+      <Field label="Example dialogue" hint="a few short lines in their own voice only — one utterance per line, never other speakers' turns">
         <Textarea className="w-full h-24" value={form.exampleDialogue ?? ""} onChange={(v) => setForm({ ...form, exampleDialogue: v })} />
       </Field>
       <Field label="Image prompt" hint="text-to-image prompt for the neutral sprite (2:3) — generate elsewhere, upload below">

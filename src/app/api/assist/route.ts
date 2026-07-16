@@ -27,7 +27,7 @@ const FIELD_DOCS: Record<string, string> = {
   character:
     `"name": string; "description": string (detailed personality, background, mannerisms — the character sheet); ` +
     `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes); ` +
-    `"exampleDialogue": string (a few short sample lines showing their voice — one utterance per line, *actions* in asterisks, "dialogue" in quotes; to demonstrate a reply to the user, label the turns with the literal tags: "[user_name]: ..." then "[char_name]: ..."); ` +
+    `"exampleDialogue": string (a few short sample lines showing their voice — ONLY the character's own utterances, one per line, *actions* in asterisks, "dialogue" in quotes; NEVER a labeled multi-speaker transcript — no "Name: ..." turn labels, no other speakers' lines); ` +
     `"imagePrompt": string (text-to-image prompt for their neutral sprite — see IMAGE PROMPT RULES; cover, in order: physical appearance (body, face, hair), outfit, a neutral standing pose, the framing/view distance (e.g. "full-body shot"), and end with a solid flat single-color background); ` +
     `"customExpressions": [{"name": "kebab-case", "description": "when to use it"}]`,
   persona: `"name": string; "description": string (who the user is in the roleplay)`,
@@ -183,10 +183,15 @@ export const POST = handler(async (req: Request) => {
       ? `SOURCE MATERIAL — text files the user attached (novels, notes, transcripts). Draw items from them when asked — stay faithful to the source:\n\n${attachTexts.join("\n\n")}\n\n`
       : "") +
     `FIELDS YOU MAY SET:\n${FIELD_DOCS[body.entityType]}\n\n` +
-    `Text fields support placeholder tags replaced with live chat values: [user_name] (the user's persona), ` +
-    `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
-    `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
-    `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n` +
+    (body.entityType === "story"
+      ? `PLACEHOLDER TAGS IN STORY CONTENT: a story is played by its OWN fixed cast — there is no predetermined user (at playthrough time the player takes the seat of any cast member, or of a persona, or just watches). ` +
+        `NEVER write [user_name]/[persona_name] into story content, and never positional tags like [char2_name] (positions shift with whoever is played). ` +
+        `Refer to cast members by their LITERAL NAMES — their relationships are authored between those names and hold regardless of who plays. ` +
+        `[loc_name], [scene_name] and [story_name] still resolve during play and may be used where they fit.\n\n`
+      : `Text fields support placeholder tags replaced with live chat values: [user_name] (the user's persona), ` +
+        `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
+        `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
+        `Tags are literal strings the app substitutes at chat time — write them verbatim, brackets and all (exactly "[char_name]", NEVER the actual name inside brackets like "[Tom]").\n\n`) +
     (body.entityType === "story"
       ? `STORY DESIGN PRINCIPLE — author situations, not plots. A story records what is TRUE and under what PRESSURE, never a sequence of events: the player's freedom breaks sequences, it cannot break truths.\n` +
         `- The premise is the situation as play opens — a web of wants, debts and tensions, spoiler-free. Hidden truths belong in secrets, never in the premise.\n` +
