@@ -23,7 +23,7 @@ import {
   saveScene,
   saveStory,
 } from "./store";
-import { normalizeStoryDoc, remintStoryDoc, storyDocAssetIds } from "./storyDoc";
+import { assetIdsOf, normalizeStoryDoc, remintStoryDoc } from "./storyDoc";
 import type { Character, Location, Lorebook, Persona, Scene, Story } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -50,26 +50,6 @@ const getters: Record<BundleItemType, (id: string) => Promise<any>> = {
   story: getStory,
   lorebook: getLorebook,
 };
-
-export function assetIdsOf(type: BundleItemType, data: any): string[] {
-  switch (type) {
-    case "character":
-      return [
-        data.avatarAsset,
-        data.typingSfxAsset,
-        ...Object.values(data.sprites ?? {}),
-        ...Object.values(data.spriteSfx ?? {}),
-      ].filter(Boolean);
-    case "location":
-    case "scene":
-      return [data.artworkAsset, data.bgmAsset, data.ambientAsset].filter(Boolean);
-    case "story":
-      // a story document embeds its items — their assets travel with it
-      return storyDocAssetIds(data);
-    default:
-      return [];
-  }
-}
 
 /** Build a zip bundle for the given items. A story is self-contained (its items
  *  are embedded in the document); library scenes pull in their locations. */

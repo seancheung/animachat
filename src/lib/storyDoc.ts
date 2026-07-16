@@ -198,6 +198,29 @@ export function remintStoryDoc(d: StoryDocument): StoryDocument {
 }
 
 /** Every asset id a story document (or playthrough snapshot) references. */
+/** Every asset id an item of the given kind references — the single authority
+ *  the asset_refs sync (store) and bundle export share. Kinds without asset
+ *  fields (persona, lorebook) return []. */
+export function assetIdsOf(kind: string, data: any): string[] {
+  switch (kind) {
+    case "character":
+      return [
+        data.avatarAsset,
+        data.typingSfxAsset,
+        ...Object.values(data.sprites ?? {}),
+        ...Object.values(data.spriteSfx ?? {}),
+      ].filter(Boolean) as string[];
+    case "location":
+    case "scene":
+      return [data.artworkAsset, data.bgmAsset, data.ambientAsset].filter(Boolean);
+    case "story":
+      // a story document embeds its items — their assets travel with it
+      return storyDocAssetIds(data);
+    default:
+      return [];
+  }
+}
+
 export function storyDocAssetIds(d: {
   characters?: Character[];
   scenes?: Scene[];

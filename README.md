@@ -1,6 +1,6 @@
 # ✦ AnimaChat
 
-An AI-driven virtual character chat webapp with a visual-novel soul. Single-user, runs locally, provider-agnostic.
+An AI-driven virtual character chat webapp with a visual-novel soul. Provider-agnostic; single-user today, gradually migrating to a multi-user online platform.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ docker compose exec -T postgres psql -U animachat -d animachat -f - < migrations
 Open http://localhost:3000 (or the port Next picks), then:
 
 1. **Settings** → add a provider (Anthropic or any OpenAI-compatible endpoint), add a model under it (with its context window size), and set it as the **global default model**.
-2. **Library** → starter characters and places come pre-seeded on a fresh install (Mira, Kael, the Moonlit Tavern — `migrations/002_seed.sql`; delete it before the first `docker compose up` to start empty). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
+2. **Library** → starter characters and places come pre-seeded on a fresh install (Mira, Kael, the Moonlit Tavern — `migrations/100_seed.sql`; delete it before the first `docker compose up` to start empty). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
 3. **Stories** → a story is a self-contained work: its cast, scenes, places and lore live *inside* it (embedded copies — the library stays a parts bin you copy from). A starter story is seeded; the story page's co-writer can author a whole story in one conversation, or extract one from an attached novel. Hit **Play** to start a playthrough (play as a cast member or a persona); finished and running playthroughs are listed right there.
 4. **Chats** → **+ New chat** for **Casual** (characters + persona, or narrator-only text adventure) or **Immersive** (a fixed scene or location) chats.
 

@@ -8,16 +8,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const TEST_SCHEMA = `test_store_${process.pid.toString(36)}_${Date.now().toString(36)}`;
 process.env.ANIMACHAT_PG_SCHEMA = TEST_SCHEMA;
 import { dropTestSchema, initTestSchema } from "./testDb";
+import { all } from "./db";
+import { normalizeStoryDoc } from "./storyDoc";
 import {
   PageError,
   addVariant,
   appendMessage,
   decodeCursor,
   deleteCharacter,
+  deleteStory,
   encodeCursor,
   getMessage,
   listChatFolders,
   listDistinctTags,
+  listReferencedAssetIds,
   pageCharacters,
   pageChats,
   pageMessages,
@@ -376,5 +380,61 @@ describe("distinct tags & folders", () => {
     const folders = await listChatFolders();
     expect(folders).toContain("pgfolder-a");
     expect(folders).not.toContain("");
+  });
+});
+
+describe("asset refs", () => {
+  const aid = (ch: string) => ch.repeat(32);
+  const refsOf = async (kind: string, id: string) =>
+    (
+      await all<{ asset_id: string }>(
+        "SELECT asset_id FROM asset_refs WHERE owner_kind=? AND owner_id=? ORDER BY asset_id",
+        [kind, id]
+      )
+    ).map((r) => r.asset_id);
+
+  it("tracks character assets through save, update and delete", async () => {
+    const c = await saveCharacter({
+      name: "Reffy",
+      avatarAsset: aid("a"),
+      typingSfxAsset: aid("b"),
+      sprites: { happy: aid("c") },
+      spriteSfx: { happy: aid("d") },
+    });
+    expect(await refsOf("character", c.id)).toEqual([aid("a"), aid("b"), aid("c"), aid("d")]);
+
+    // save is a full replace: dropped fields lose their rows, kept ones stay
+    await saveCharacter({ id: c.id, avatarAsset: null, sprites: {} });
+    expect(await refsOf("character", c.id)).toEqual([aid("b"), aid("d")]);
+
+    await deleteCharacter(c.id);
+    expect(await refsOf("character", c.id)).toEqual([]);
+  });
+
+  it("tracks scene assets", async () => {
+    const s = await saveScene({ name: "Refscene", artworkAsset: aid("e"), bgmAsset: aid("f") });
+    expect(await refsOf("scene", s.id)).toEqual([aid("e"), aid("f")]);
+  });
+
+  it("story documents and playthrough snapshots hold refs independently", async () => {
+    const doc = normalizeStoryDoc({
+      name: "Reftale",
+      characters: [{ name: "Emb", avatarAsset: aid("1"), sprites: { smug: aid("2") } }],
+      locations: [{ name: "Embloc", artworkAsset: aid("3") }],
+    });
+    const story = await saveStory(doc);
+    expect(await refsOf("story", story.id)).toEqual([aid("1"), aid("2"), aid("3")]);
+
+    const chat = await saveChat({ title: "Refplay", mode: "story", storySnapshot: doc });
+    expect(await refsOf("chat", chat.id)).toEqual([aid("1"), aid("2"), aid("3")]);
+
+    // a playthrough is self-contained: its refs outlive the story
+    await deleteStory(story.id);
+    expect(await refsOf("story", story.id)).toEqual([]);
+    expect(await refsOf("chat", chat.id)).toEqual([aid("1"), aid("2"), aid("3")]);
+
+    const kept = await listReferencedAssetIds();
+    for (const x of ["1", "2", "3"]) expect(kept.has(aid(x))).toBe(true);
+    expect(kept.has(aid("a"))).toBe(false); // the deleted character's assets are gone
   });
 });

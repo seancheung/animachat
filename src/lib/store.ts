@@ -20,9 +20,37 @@ import type {
   Story,
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
-import { normalizeStoryDoc } from "./storyDoc";
+import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
 
 export { inTransaction };
+
+/* ---------------- asset refs ----------------
+ * asset_refs materializes which owners point at which uploaded assets, so the
+ * prune endpoint (and, later, per-user quotas) never re-parse the JSON
+ * documents. Every save below rewrites its owner's rows in the same
+ * transaction as the entity write; every delete drops them. New asset-bearing
+ * fields only need to reach assetIdsOf/storyDocAssetIds (storyDoc.ts) — the
+ * sync here picks them up automatically. */
+
+async function syncAssetRefs(kind: string, ownerId: string, assetIds: string[]): Promise<void> {
+  await run("DELETE FROM asset_refs WHERE owner_kind=? AND owner_id=?", [kind, ownerId]);
+  const ids = [...new Set(assetIds)];
+  if (!ids.length) return;
+  await run(
+    `INSERT INTO asset_refs (owner_kind, owner_id, asset_id) VALUES ${ids.map(() => "(?,?,?)").join(",")}`,
+    ids.flatMap((a) => [kind, ownerId, a])
+  );
+}
+
+async function dropAssetRefs(kind: string, ownerId: string): Promise<void> {
+  await run("DELETE FROM asset_refs WHERE owner_kind=? AND owner_id=?", [kind, ownerId]);
+}
+
+/** Every asset id some owner still references (the prune's keep-set). */
+export async function listReferencedAssetIds(): Promise<Set<string>> {
+  const rows = await all("SELECT DISTINCT asset_id FROM asset_refs");
+  return new Set(rows.map((r) => r.asset_id as string));
+}
 
 const J = {
   parse<T>(s: unknown, fallback: T): T {
@@ -253,8 +281,9 @@ export async function saveCharacter(c: Partial<Character> & { id?: string }): Pr
     ...existing,
     ...c,
   });
-  await run(
-    `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
+  await inTransaction(async () => {
+    await run(
+      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, avatar_asset=excluded.avatar_asset, description=excluded.description, greeting=excluded.greeting,
        example_dialogue=excluded.example_dialogue, image_prompt=excluded.image_prompt, sprites=excluded.sprites, sprite_sfx=excluded.sprite_sfx,
@@ -265,13 +294,18 @@ export async function saveCharacter(c: Partial<Character> & { id?: string }): Pr
       J.str(m.sprites), J.str(m.spriteSfx), J.str(m.customExpressions), m.typingSfxAsset,
       m.trackRelationship ? 1 : 0, J.str({ ...DEFAULT_ALIVENESS, ...m.aliveness }), m.idleMotion ? 1 : 0,
       J.str(m.tags), m.createdAt, m.updatedAt,
-    ]
-  );
+      ]
+    );
+    await syncAssetRefs("character", m.id, assetIdsOf("character", m));
+  });
   return (await getCharacter(m.id))!;
 }
 
 export async function deleteCharacter(id: string): Promise<void> {
-  await run("DELETE FROM characters WHERE id=?", [id]);
+  await inTransaction(async () => {
+    await run("DELETE FROM characters WHERE id=?", [id]);
+    await dropAssetRefs("character", id);
+  });
 }
 
 /* ---------------- personas ---------------- */
@@ -360,20 +394,26 @@ export async function saveLocation(x: Partial<Location> & { id?: string }): Prom
     ...existing,
     ...x,
   });
-  await run(
-    `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+  await inTransaction(async () => {
+    await run(
+      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, image_prompt=excluded.image_prompt, artwork_asset=excluded.artwork_asset, bgm_asset=excluded.bgm_asset, ambient_asset=excluded.ambient_asset, stage_style=excluded.stage_style, tags=excluded.tags, updated_at=excluded.updated_at`,
-    [
-      m.id, m.name, m.description, m.imagePrompt, m.artworkAsset, m.bgmAsset, m.ambientAsset,
-      m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
-    ]
-  );
+      [
+        m.id, m.name, m.description, m.imagePrompt, m.artworkAsset, m.bgmAsset, m.ambientAsset,
+        m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
+      ]
+    );
+    await syncAssetRefs("location", m.id, assetIdsOf("location", m));
+  });
   return (await getLocation(m.id))!;
 }
 
 export async function deleteLocation(id: string): Promise<void> {
-  await run("DELETE FROM locations WHERE id=?", [id]);
+  await inTransaction(async () => {
+    await run("DELETE FROM locations WHERE id=?", [id]);
+    await dropAssetRefs("location", id);
+  });
 }
 
 /* ---------------- scenes ---------------- */
@@ -420,20 +460,26 @@ export async function saveScene(x: Partial<Scene> & { id?: string }): Promise<Sc
     ...existing,
     ...x,
   });
-  await run(
-    `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+  await inTransaction(async () => {
+    await run(
+      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, setup=excluded.setup, image_prompt=excluded.image_prompt, location_id=excluded.location_id, artwork_asset=excluded.artwork_asset, bgm_asset=excluded.bgm_asset, ambient_asset=excluded.ambient_asset, stage_style=excluded.stage_style, tags=excluded.tags, updated_at=excluded.updated_at`,
-    [
-      m.id, m.name, m.setup, m.imagePrompt, m.locationId, m.artworkAsset, m.bgmAsset, m.ambientAsset,
-      m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
-    ]
-  );
+      [
+        m.id, m.name, m.setup, m.imagePrompt, m.locationId, m.artworkAsset, m.bgmAsset, m.ambientAsset,
+        m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
+      ]
+    );
+    await syncAssetRefs("scene", m.id, assetIdsOf("scene", m));
+  });
   return (await getScene(m.id))!;
 }
 
 export async function deleteScene(id: string): Promise<void> {
-  await run("DELETE FROM scenes WHERE id=?", [id]);
+  await inTransaction(async () => {
+    await run("DELETE FROM scenes WHERE id=?", [id]);
+    await dropAssetRefs("scene", id);
+  });
 }
 
 /* ---------------- stories ---------------- */
@@ -476,21 +522,27 @@ export async function saveStory(x: Partial<Story> & { id?: string }): Promise<St
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
   };
-  await run(
-    `INSERT INTO stories (id,name,description,destination,secrets,characters,scenes,locations,lorebooks,tags,created_at,updated_at)
+  await inTransaction(async () => {
+    await run(
+      `INSERT INTO stories (id,name,description,destination,secrets,characters,scenes,locations,lorebooks,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, destination=excluded.destination, secrets=excluded.secrets, characters=excluded.characters, scenes=excluded.scenes, locations=excluded.locations, lorebooks=excluded.lorebooks, tags=excluded.tags, updated_at=excluded.updated_at`,
-    [
-      m.id, m.name, m.description, m.destination,
-      J.str(m.secrets), J.str(m.characters), J.str(m.scenes), J.str(m.locations), J.str(m.lorebooks),
-      J.str(m.tags), m.createdAt, m.updatedAt,
-    ]
-  );
+      [
+        m.id, m.name, m.description, m.destination,
+        J.str(m.secrets), J.str(m.characters), J.str(m.scenes), J.str(m.locations), J.str(m.lorebooks),
+        J.str(m.tags), m.createdAt, m.updatedAt,
+      ]
+    );
+    await syncAssetRefs("story", m.id, storyDocAssetIds(m));
+  });
   return (await getStory(m.id))!;
 }
 
 export async function deleteStory(id: string): Promise<void> {
-  await run("DELETE FROM stories WHERE id=?", [id]);
+  await inTransaction(async () => {
+    await run("DELETE FROM stories WHERE id=?", [id]);
+    await dropAssetRefs("story", id);
+  });
 }
 
 /* ---------------- library integrity ---------------- */
@@ -622,8 +674,9 @@ export async function saveChat(x: Partial<Chat> & { id?: string }): Promise<Chat
     ...existing,
     ...x,
   });
-  await run(
-    `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,play_as_narrator,overrides,created_at,updated_at)
+  await inTransaction(async () => {
+    await run(
+      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,play_as_narrator,overrides,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, mode=excluded.mode, folder=excluded.folder, tags=excluded.tags, story_id=excluded.story_id, scene_id=excluded.scene_id, location_id=excluded.location_id,
        lorebook_ids=excluded.lorebook_ids, character_ids=excluded.character_ids, persona_id=excluded.persona_id, persona_character_id=excluded.persona_character_id, story_snapshot=excluded.story_snapshot,
@@ -635,13 +688,19 @@ export async function saveChat(x: Partial<Chat> & { id?: string }): Promise<Chat
       m.storySnapshot ? J.str(m.storySnapshot) : null, J.str(m.nameSnapshots), m.modelId, J.str(m.charModels),
       m.language, m.pov, m.narratorEnabled ? 1 : 0, m.playAsNarrator ? 1 : 0, J.str(m.overrides),
       m.createdAt, m.updatedAt,
-    ]
-  );
+      ]
+    );
+    // a playthrough's snapshot is the only asset holder on a chat
+    await syncAssetRefs("chat", m.id, m.storySnapshot ? storyDocAssetIds(m.storySnapshot) : []);
+  });
   return (await getChat(m.id))!;
 }
 
 export async function deleteChat(id: string): Promise<void> {
-  await run("DELETE FROM chats WHERE id=?", [id]);
+  await inTransaction(async () => {
+    await run("DELETE FROM chats WHERE id=?", [id]);
+    await dropAssetRefs("chat", id);
+  });
 }
 
 export async function touchChat(id: string): Promise<void> {

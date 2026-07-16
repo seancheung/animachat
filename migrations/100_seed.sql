@@ -1,4 +1,5 @@
--- AnimaChat starter content — 002, the seed.
+-- AnimaChat starter content — 100, the seed (numbered last so that on a fresh
+-- volume it always runs after every schema migration).
 --
 -- A small starter cast (Mira, Kael, the Moonlit Tavern, a persona, a story)
 -- so a fresh install isn't an empty shell. Applied automatically on a FRESH
