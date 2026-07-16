@@ -95,7 +95,7 @@ export default function StoriesPage() {
             value={q}
             onChange={setQ}
           />
-          <div className="w-44">
+          <div className="w-50">
             <Select
               className="w-full"
               value={sort}
@@ -108,7 +108,7 @@ export default function StoriesPage() {
             />
           </div>
           {allTags.length > 0 && (
-            <div className="w-44">
+            <div className="w-50">
               <Select
                 className="w-full"
                 value={tagFilter}

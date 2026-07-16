@@ -149,7 +149,7 @@ export default function LibraryPage() {
               onChange={setQuery}
             />
           </div>
-          <div className="w-44">
+          <div className="w-50">
             <Select
               className="w-full"
               value={sort}
@@ -162,7 +162,7 @@ export default function LibraryPage() {
             />
           </div>
           {allTags.length > 0 && (
-            <div className="w-44">
+            <div className="w-50">
               <Select
                 className="w-full"
                 value={tagFilter}
