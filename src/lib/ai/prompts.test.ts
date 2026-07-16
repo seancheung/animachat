@@ -609,3 +609,35 @@ describe("playing as narrator (the user is the narrator)", () => {
     expect(req.messages.some((m) => m.role === "assistant" && m.content.includes("message 0"))).toBe(true);
   });
 });
+
+describe("impersonate POV (a draft on the user's behalf gets the user's seat, not a speaker's)", () => {
+  const mira = makeCharacter("c1", "Mira");
+  const povCtx = (pov: ChatContext["pov"]): ChatContext => ({
+    ...makeCtx(makeMessages(exchange("c1", 2)), [mira]),
+    pov,
+    persona: { id: "p1", name: "Ash", description: "A wandering scribe.", tags: [], createdAt: 0, updatedAt: 0 },
+  });
+
+  it("vn2nd: drafts in the user's first person, never the narrator's second person", () => {
+    const req = buildImpersonateRequest(povCtx("vn2nd"), modelRef);
+    expect(req.system).not.toContain('Address the user directly as "you"');
+    expect(req.system).toContain('replies in FIRST person ("I ...")');
+    expect(req.system).toContain("Never write in second person");
+  });
+
+  it("user1st: the draft speaks as I, not about Ash from outside", () => {
+    const req = buildImpersonateRequest(povCtx("user1st"), modelRef);
+    expect(req.system).toContain('Ash writes in first person ("I ...") — so does this draft');
+    expect(req.system).not.toContain("Refer to the user as Ash");
+  });
+
+  it("third: the draft stays in third person by name", () => {
+    const req = buildImpersonateRequest(povCtx("third"), modelRef);
+    expect(req.system).toContain(`write Ash's actions and dialogue by name`);
+  });
+
+  it("character prompts keep the speaker-seat rules", () => {
+    const req = buildCharacterRequest(povCtx("vn2nd"), mira, modelRef);
+    expect(req.system).toContain('Address the user directly as "you"');
+  });
+});

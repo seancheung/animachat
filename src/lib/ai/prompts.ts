@@ -271,6 +271,20 @@ function povRules(pov: Pov, personaName: string, selfName: string | null): strin
   }
 }
 
+/** povRules seen from the USER'S seat — for text drafted on their behalf (impersonate).
+ *  Same conventions, imperatives pointing the other way: handed the speaker-seat rules,
+ *  a vn2nd draft obeys `address the user as "you"` and comes out in second person. */
+function userPovRules(pov: Pov, personaName: string): string {
+  switch (pov) {
+    case "user1st":
+      return `${personaName} writes in first person ("I ...") — so does this draft. Refer to the other characters in third person, by name.`;
+    case "third":
+      return `Everyone writes in third person, like co-authoring a novel: write ${personaName}'s actions and dialogue by name — never "I" or "you".`;
+    case "vn2nd":
+      return `The narrator addresses the user as "you", but the user replies in FIRST person ("I ...") — so does this draft. Never write in second person: "you" is how others speak to ${personaName}, not how ${personaName} speaks.`;
+  }
+}
+
 /* ---------------- story design layer (playthroughs) ----------------
  * Knowledge boundaries are enforced by prompt construction, not by discretion:
  * the narrator sees everything, a secret's holders see their own, everyone else
@@ -337,6 +351,18 @@ function formatRules(ctx: ChatContext, selfName: string | null): string {
     `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
     `The user types more loosely: only *asterisks* reliably mark their actions — their unmarked text is usually speech (they don't need quotes), but read it sensibly.`,
     povRules(ctx.pov, ctx.persona?.name ?? "the user", selfName),
+  ].join("\n");
+}
+
+/** formatRules seen from the user's seat. The play-as-narrator rules read the same from
+ *  either side; the "user types loosely" note is about READING user text and is dropped —
+ *  a draft should use the convention properly. */
+function userFormatRules(ctx: ChatContext): string {
+  if (ctx.chat.playAsNarrator) return formatRules(ctx, null);
+  return [
+    `Write in ${ctx.language}.`,
+    `Format: physical actions and descriptions go in *asterisks*, spoken dialogue in "double quotes".`,
+    userPovRules(ctx.pov, ctx.persona?.name ?? "the user"),
   ].join("\n");
 }
 
@@ -728,7 +754,7 @@ export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel):
     personaBlock(ctx),
     worldBlock(ctx),
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
-    `RULES:\n${formatRules(ctx, null)}\n` +
+    `RULES:\n${userFormatRules(ctx)}\n` +
       (ctx.chat.playAsNarrator
         ? `Write 1-3 sentences of NARRATION on the user's behalf — the world's voice: scene movement, outside events, sensory detail. Never write the characters' dialogue. Plain prose only: no emotion tags, no options, no name prefix.`
         : `Write 1-3 sentences as ${ctx.persona?.name ?? "the user"} — their voice, their perspective. Plain prose only: no emotion tags, no options, no name prefix.`),
