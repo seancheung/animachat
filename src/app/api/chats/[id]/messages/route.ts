@@ -1,7 +1,17 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
 import { buildContext } from "@/lib/ai/prompts";
 import { tagMentions } from "@/lib/mentions";
-import { appendMessage, getChat } from "@/lib/store";
+import { appendMessage, clampLimit, getChat, pageMessages } from "@/lib/store";
+
+/** One keyset page of the timeline, NEWEST first — the client renders the tail and
+ *  scrolls up for older pages. Stage/emotion metadata is NOT paged: the chat GET
+ *  ships those projections whole (the fold needs every event, never the prose). */
+export const GET = handler(async (req: Request, { params }: IdParams) => {
+  const { id } = await params;
+  if (!getChat(id)) return bad("Chat not found", 404);
+  const sp = new URL(req.url).searchParams;
+  return ok(pageMessages(id, { limit: clampLimit(sp.get("limit")), cursor: sp.get("cursor") }));
+});
 
 /** Append a user message. (Scene progression, presence and endings are narrator-driven —
  *  there is no manual switching; stage state derives from narrator message events.) */

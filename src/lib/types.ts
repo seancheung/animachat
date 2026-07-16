@@ -381,6 +381,25 @@ export interface Message {
   createdAt: number;
 }
 
+/* Sparse timeline projections — shipped whole to the client while message bodies
+ * paginate: the stage fold and expression replay need every event/emotion ever
+ * produced, but never the prose around them. Derived from the timeline on each
+ * chat GET; the timeline stays the only authority. */
+
+/** A stage-event-bearing message, bodyless (only narrator messages that staged something). */
+export interface StageEventEntry {
+  id: string;
+  position: number;
+  sceneEvent: SceneEvent;
+}
+
+/** One character message's active-variant emotion (null = untagged, displays neutral). */
+export interface EmotionEntry {
+  position: number;
+  characterId: string;
+  emotion: string | null;
+}
+
 export interface Relationship {
   id: string;
   characterId: string;

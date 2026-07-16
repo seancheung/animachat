@@ -33,10 +33,12 @@ export function chatLocation(chat: Chat, id: string | null | undefined, lib?: Li
   return chat.storySnapshot?.locations.find((l) => l.id === id) ?? lib?.location?.(id) ?? null;
 }
 
-/** Walk the timeline accumulating stage events; never a free-floating field. */
+/** Walk the timeline accumulating stage events; never a free-floating field.
+ *  Only positions and events are read, so the sparse StageEventEntry projection
+ *  (event-bearing messages, bodyless) folds identically to the full timeline. */
 export function computeStage(
   chat: Chat,
-  messages: Message[],
+  messages: ReadonlyArray<Pick<Message, "position" | "sceneEvent">>,
   uptoPosition?: number,
   lib?: LibraryResolvers
 ): StageState {

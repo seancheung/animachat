@@ -1,5 +1,5 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
-import { buildContext, computeStage, resolveStageAssets } from "@/lib/ai/prompts";
+import { buildContext, resolveStageAssets } from "@/lib/ai/prompts";
 import {
   deleteChat,
   getChat,
@@ -19,7 +19,20 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const stage = ctx.stage;
   return ok({
     chat,
-    messages: ctx.messages,
+    // bodies are paged separately (GET ./messages); this payload carries the sparse
+    // whole-timeline projections the client folds — events and emotions, no prose
+    messageCounts: {
+      total: ctx.messages.length,
+      timeline: ctx.messages.filter((m) => m.role !== "marker").length,
+    },
+    stageEvents: ctx.messages.flatMap((m) =>
+      m.sceneEvent ? [{ id: m.id, position: m.position, sceneEvent: m.sceneEvent }] : []
+    ),
+    emotions: ctx.messages.flatMap((m) =>
+      m.role === "character" && m.characterId
+        ? [{ position: m.position, characterId: m.characterId, emotion: m.variants[m.activeVariant]?.emotion ?? null }]
+        : []
+    ),
     stage: { ...stage, ...resolveStageAssets(chat, stage) },
     characters: ctx.characters,
     persona: ctx.persona,

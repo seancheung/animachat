@@ -20,6 +20,7 @@ import {
   listDistinctTags,
   pageCharacters,
   pageChats,
+  pageMessages,
   saveChat,
   saveCharacter,
   savePersona,
@@ -132,6 +133,38 @@ describe("per-variant sceneEvent", () => {
     updateMessage(tail.id, { activeVariant: 0 });
     const back = updateMessage(tail.id, { activeVariant: 1 })!; // swipe away and back
     expect(back.sceneEvent).toEqual({ theEnd: true });
+  });
+});
+
+describe("pageMessages", () => {
+  it("walks the whole timeline newest-first in keyset pages, without gaps or repeats", () => {
+    const chat = saveChat({ title: "paging" });
+    for (let i = 0; i < 7; i++) appendMessage({ chatId: chat.id, role: "user", content: `m${i}` });
+
+    const p1 = pageMessages(chat.id, { limit: 3 });
+    expect(p1.items.map((m) => m.variants[0].content)).toEqual(["m6", "m5", "m4"]);
+    const p2 = pageMessages(chat.id, { limit: 3, cursor: p1.nextCursor });
+    expect(p2.items.map((m) => m.variants[0].content)).toEqual(["m3", "m2", "m1"]);
+    const p3 = pageMessages(chat.id, { limit: 3, cursor: p2.nextCursor });
+    expect(p3.items.map((m) => m.variants[0].content)).toEqual(["m0"]);
+    expect(p3.nextCursor).toBeNull();
+  });
+
+  it("has no next page when the last page is exactly full", () => {
+    const chat = saveChat({ title: "paging exact" });
+    appendMessage({ chatId: chat.id, role: "user", content: "a" });
+    appendMessage({ chatId: chat.id, role: "user", content: "b" });
+    const p = pageMessages(chat.id, { limit: 2 });
+    expect(p.items).toHaveLength(2);
+    expect(p.nextCursor).toBeNull();
+  });
+
+  it("rejects a malformed cursor", () => {
+    const chat = saveChat({ title: "paging cursor" });
+    expect(() => pageMessages(chat.id, { cursor: "garbage" })).toThrow(PageError);
+    expect(() => pageMessages(chat.id, { cursor: encodeCursor({ v: "not-a-position" }) })).toThrow(
+      PageError
+    );
   });
 });
 

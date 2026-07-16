@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,7 +46,7 @@ import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import { computeStage, resolveStageAssets } from "@/lib/stage";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
-import { useGet } from "@/lib/queries";
+import { useGet, usePagedList } from "@/lib/queries";
 import { api, assetUrl, downloadBlob, streamSse } from "@/lib/ui";
 import { cn } from "@/utils/cn";
 import {
@@ -56,9 +56,11 @@ import {
   POV_LABELS,
   type Character,
   type ChatLayout,
+  type EmotionEntry,
   type Message,
   type Pov,
   type Settings,
+  type StageEventEntry,
 } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -152,7 +154,23 @@ interface Streaming {
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { data, refetch: mutate } = useGet<any>(`/api/chats/${id}`);
+  const { data, refetch: mutateChat } = useGet<any>(`/api/chats/${id}`);
+  // message BODIES are paged (newest first, scroll up for older); the chat GET above
+  // carries the whole-timeline sparse metadata (stage events, emotions, counts) instead
+  const {
+    items: newestFirst,
+    refetch: refetchMessages,
+    isLoading: messagesLoading,
+    fetchNextPage: fetchOlder,
+    hasNextPage: hasOlder,
+    isFetchingNextPage: fetchingOlder,
+  } = usePagedList<Message>(`/api/chats/${id}/messages`, { limit: 50 });
+  // stage metadata and bodies refresh together — every site that refetched the old
+  // all-in-one chat GET goes through here
+  const mutate = useCallback(
+    () => Promise.all([mutateChat(), refetchMessages()]),
+    [mutateChat, refetchMessages]
+  );
   const { data: settings, refetch: mutateSettings } = useGet<Settings>("/api/settings");
   const queryClient = useQueryClient();
 
@@ -188,6 +206,11 @@ export default function ChatPage() {
   // chat-switch reset below also writes it
   const pinnedRef = useRef(true);
   const [pinned, setPinned] = useState(true);
+  // the dialogue box's backlog position as a message POSITION (null = the live end) —
+  // never an array index: older pages prepend to the loaded window and shift indices.
+  // Declared up here because the chat-switch reset below writes it; the stage follows
+  // it (walking back through history replays the performance as it was).
+  const [viewPos, setViewPos] = useState<number | null>(null);
   // a fork navigates chat→chat without unmounting — reset synchronously during
   // render (the adjust-state-on-prop-change pattern) so the new chat never renders
   // the old one's error banner, draft text, or read-back scroll state
@@ -197,6 +220,7 @@ export default function ChatPage() {
     setError(null);
     setInput("");
     setPinned(true);
+    setViewPos(null); // a position from the previous chat means nothing here
   }
   // leaving the page (or switching chats) cancels in-flight generation like a Stop press:
   // the server aborts with the dropped request instead of finishing a reply nobody awaits
@@ -221,7 +245,11 @@ export default function ChatPage() {
   // presentation layout — persisted per chat in overrides; the corner button and the settings drawer both write it
   const layout: ChatLayout = chat?.overrides?.layout === "dialogue" ? "dialogue" : "panel";
   const characters: Character[] = useMemo(() => data?.characters ?? [], [data]);
-  const messages: Message[] = useMemo(() => data?.messages ?? [], [data]);
+  // pages arrive newest-first (newest-first inside each page too) — reversed, the loaded
+  // window is a contiguous chronological SUFFIX of the timeline, which the absolute
+  // backlog numbering and the "tail is always loaded" checks below rely on
+  const messages: Message[] = useMemo(() => [...newestFirst].reverse(), [newestFirst]);
+  const counts: { total: number; timeline: number } | undefined = data?.messageCounts;
   // playing as narrator: the user's lines are narration — they speak as "Narrator"
   const playAsNarrator = !!chat?.playAsNarrator;
   const personaName = playAsNarrator ? "Narrator" : data?.persona?.name ?? "You";
@@ -230,32 +258,36 @@ export default function ChatPage() {
   /** …or the AI is writing into the input: either way the user can't act */
   const locked = busy || drafting;
 
-  // the dialogue box's backlog position (null = the live end). It lives up here because the
-  // stage has to follow it: walking back through history replays the performance as it was.
   const timeline: Message[] = useMemo(() => messages.filter((m) => m.role !== "marker"), [messages]);
-  const [viewIdx, setViewIdx] = useState<number | null>(null);
-  const browseIdx = layout === "dialogue" && viewIdx !== null && viewIdx < timeline.length - 1 ? viewIdx : null;
+  const tailPos = timeline.length ? timeline[timeline.length - 1].position : null;
+  const browsePos =
+    layout === "dialogue" && viewPos !== null && tailPos !== null && viewPos < tailPos ? viewPos : null;
   // the user's line owns the dialogue box until the reply appears — while it does, the stage
   // stays quiet too: nobody is speaking yet (the panel shows the reply as it streams, so it
   // keeps switching the sprite the moment the emotion tag lands)
   const echoing = layout === "dialogue" && userEcho !== null;
   // leaving the dialogue layout drops the backlog position — coming back always starts at
-  // the live end, unless a show-on-stage jump (which sets viewIdx first) brought us here.
+  // the live end, unless a show-on-stage jump (which sets viewPos first) brought us here.
   // Render-time state adjustment (not an effect): react.dev "adjusting state when props change".
   const [prevLayout, setPrevLayout] = useState(layout);
   if (prevLayout !== layout) {
     setPrevLayout(layout);
-    if (layout !== "dialogue") setViewIdx(null);
+    if (layout !== "dialogue") setViewPos(null);
   }
+
+  // the whole-timeline sparse projections (chat GET): folding needs every stage event and
+  // emotion ever produced — including ones whose message bodies aren't loaded yet
+  const stageEvents: StageEventEntry[] = useMemo(() => data?.stageEvents ?? [], [data]);
+  const emotionEntries: EmotionEntry[] = useMemo(() => data?.emotions ?? [], [data]);
 
   // the WHOLE stage follows the backlog: browsing recomputes scene, presence, assets and
   // styling as of the message on screen (story mode — elsewhere the stage never changes);
   // at the live end it's the server-resolved stage. Presentation only: the fiction is untouched.
   const viewStage = useMemo(() => {
-    if (browseIdx === null || !chat?.storySnapshot) return data?.stage ?? null;
-    const st = computeStage(chat, timeline.slice(0, browseIdx + 1));
+    if (browsePos === null || !chat?.storySnapshot) return data?.stage ?? null;
+    const st = computeStage(chat, stageEvents, browsePos);
     return { ...st, ...resolveStageAssets(chat, st) };
-  }, [browseIdx, chat, timeline, data?.stage]);
+  }, [browsePos, chat, stageEvents, data?.stage]);
 
   // story mode: only the on-stage cast is drawn; casual/immersive show everyone
   const present: string[] | null = viewStage?.present ?? null;
@@ -373,26 +405,55 @@ export default function ChatPage() {
     if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
   }, [messages.length, streaming?.text, isStreaming, pendingUser, layout, pictureMode]);
 
+  /* ---- older pages load as the reader scrolls up (panel layout) ---- */
+  // a sentinel above the oldest loaded message; the observer fires on mount too, so a
+  // log too short to scroll keeps pulling pages until it can (or history runs out)
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  // distance-from-bottom at the moment the fetch starts — restored before paint after
+  // the prepend, so the page growing at the top never shoves the reader's place around
+  const anchorRef = useRef<number | null>(null);
+  useEffect(() => {
+    const el = topSentinelRef.current;
+    const root = scrollRef.current;
+    if (!el || !root) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting || !hasOlder || fetchingOlder) return;
+        anchorRef.current = root.scrollHeight - root.scrollTop;
+        void fetchOlder();
+      },
+      { root, rootMargin: "300px 0px 0px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // messages.length: re-check visibility after each page lands (short logs keep loading)
+  }, [layout, pictureMode, hasOlder, fetchingOlder, fetchOlder, messages.length]);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (anchorRef.current === null || !el) return;
+    el.scrollTop = el.scrollHeight - anchorRef.current;
+    anchorRef.current = null;
+  }, [messages.length]);
+
   /* ---- stage emotions: each character's emotion as of the message on screen ---- */
   // the streamed primitives, not the streaming object (new identity per token) —
   // the emotions map must stay stable per chunk or useEmotionSfx re-diffs per token
   const streamingCharacterId = streaming?.characterId ?? null;
   const streamingEmotion = streaming?.emotion ?? null;
   const emotions: StageEmotions = useMemo(() => {
-    const upto = browseIdx ?? timeline.length - 1;
+    // folded from the whole-timeline projection, not the loaded window: a character's
+    // last line may be older than any loaded body (entries are position-ascending)
     const map: StageEmotions = {};
-    for (let i = 0; i <= upto && i < timeline.length; i++) {
-      const m = timeline[i];
-      if (m.role === "character" && m.characterId) {
-        map[m.characterId] = m.variants[m.activeVariant]?.emotion ?? "neutral";
-      }
+    for (const e of emotionEntries) {
+      if (browsePos !== null && e.position > browsePos) break;
+      map[e.characterId] = e.emotion ?? "neutral";
     }
     // the live reply's emotion only applies at the live end, once it is on screen
-    if (browseIdx === null && !echoing && streamingCharacterId && streamingEmotion) {
+    if (browsePos === null && !echoing && streamingCharacterId && streamingEmotion) {
       map[streamingCharacterId] = streamingEmotion;
     }
     return map;
-  }, [timeline, streamingCharacterId, streamingEmotion, browseIdx, echoing]);
+  }, [emotionEntries, streamingCharacterId, streamingEmotion, browsePos, echoing]);
 
   // one-shot expression SFX on the sfx channel — follows the DISPLAYED emotion, so it
   // fires when the streamed <emo> tag lands, on swipes, and while browsing the backlog
@@ -414,9 +475,10 @@ export default function ChatPage() {
   }, [pictureMode]);
 
   const speakingId: string | null = useMemo(() => {
-    // browsing: whoever is speaking on the page being read (nobody, for user/narrator)
-    if (browseIdx !== null) {
-      const m = timeline[browseIdx];
+    // browsing: whoever is speaking on the page being read (nobody, for user/narrator);
+    // a browsed position is always a loaded message — the backlog only steps onto bodies
+    if (browsePos !== null) {
+      const m = timeline.find((t) => t.position === browsePos);
       return m?.role === "character" ? m.characterId : null;
     }
     if (echoing) return null; // the user has the floor
@@ -428,7 +490,7 @@ export default function ChatPage() {
       if (m.role === "user" || m.role === "narrator") return null;
     }
     return null;
-  }, [timeline, streaming, characters.length, browseIdx, echoing]);
+  }, [timeline, streaming, characters.length, browsePos, echoing]);
 
   /* ---- generation ---- */
   const generate = useCallback(
@@ -589,11 +651,12 @@ export default function ChatPage() {
   };
 
   // the narrator always speaks first — fire its opening turn once the empty chat loads
+  // (emptiness comes from the server's count, not the loaded window)
   useEffect(() => {
-    if (!data?.chat?.narratorEnabled || messages.length > 0 || busy || openedRef.current) return;
+    if (!data?.chat?.narratorEnabled || !counts || counts.total > 0 || busy || openedRef.current) return;
     openedRef.current = true;
     void generate({ mode: "narrator" });
-  }, [data, messages.length, busy, generate]);
+  }, [data, counts, busy, generate]);
 
   // returning to a casual chat after a real gap: have the server refresh the
   // opted-in characters' off-screen lives, and let one of them text first.
@@ -614,7 +677,7 @@ export default function ChatPage() {
       .catch(() => {}); // a return that fails is just a normal chat-open
   }, [chat, messages, busy, characters, id, generate]);
 
-  if (!data || !chat) return <div className="p-8 text-content-300">Loading…</div>;
+  if (!data || !chat || messagesLoading) return <div className="p-8 text-content-300">Loading…</div>;
 
   const switchLayout = async (v: ChatLayout) => {
     await api.patch(`/api/chats/${id}`, { overrides: { ...chat.overrides, layout: v } });
@@ -622,10 +685,9 @@ export default function ChatPage() {
   };
 
   // jump from the log to the same message performed on the stage: the dialogue-box
-  // layout opens with its backlog already positioned there (last message = the live end)
+  // layout opens with its backlog already positioned there (the tail = the live end)
   const showOnStage = (m: Message) => {
-    const i = timeline.findIndex((t) => t.id === m.id);
-    setViewIdx(i >= 0 && i < timeline.length - 1 ? i : null);
+    setViewPos(tailPos !== null && m.position < tailPos ? m.position : null);
     void switchLayout("dialogue");
   };
 
@@ -818,6 +880,11 @@ export default function ChatPage() {
         onScroll={onPanelScroll}
         className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-14 sm:pt-6 space-y-4"
       >
+        {/* scroll-up loading: the sentinel entering view pulls the previous page */}
+        {hasOlder && <div ref={topSentinelRef} aria-hidden className="h-px -mb-4" />}
+        {fetchingOlder && (
+          <div className="text-center text-xs text-content-300 py-1">Loading older messages…</div>
+        )}
         {messages.map((m) => (
           <MessageRow
             key={m.id}
@@ -893,13 +960,18 @@ export default function ChatPage() {
       {layout === "dialogue" && (
         <DialogueLayout
           data={data}
+          messages={timeline}
+          counts={counts}
+          hasOlder={hasOlder}
+          fetchingOlder={fetchingOlder}
+          fetchOlder={fetchOlder}
           styleVars={styleVars}
           panelBlur={panelBlur}
           characters={characters}
           streaming={streaming}
           advanceReveal={typewriter.advance}
-          viewIdx={viewIdx}
-          setViewIdx={setViewIdx}
+          viewPos={viewPos}
+          setViewPos={setViewPos}
           userEcho={userEcho}
           personaName={personaName}
           busy={locked}
@@ -988,13 +1060,18 @@ export default function ChatPage() {
 
 function DialogueLayout({
   data,
+  messages,
+  counts,
+  hasOlder,
+  fetchingOlder,
+  fetchOlder,
   styleVars,
   panelBlur,
   characters,
   streaming,
   advanceReveal,
-  viewIdx,
-  setViewIdx,
+  viewPos,
+  setViewPos,
   userEcho,
   personaName,
   busy,
@@ -1013,15 +1090,18 @@ function DialogueLayout({
   impersonate,
   mentionNames,
 }: any) {
-  const messages: Message[] = data.messages.filter((m: Message) => m.role !== "marker");
-  // the backlog position is owned by the page (the stage follows it); null = the live end
-  const idx: number = viewIdx ?? messages.length - 1;
-  const setIdx = (i: number) => setViewIdx(i >= messages.length - 1 ? null : i);
+  // `messages` (prop) is the timeline: markers filtered, chronological, a contiguous
+  // SUFFIX of the chat — older pages prepend as the backlog walks past the loaded edge.
+  // The backlog position is owned by the page as a message POSITION (the stage follows
+  // it); null = the live end. Indices below are into the loaded window only.
+  const found = viewPos === null ? -1 : messages.findIndex((m: Message) => m.position === viewPos);
+  const idx: number = found >= 0 ? found : messages.length - 1;
+  const setIdx = (i: number) => setViewPos(i >= messages.length - 1 ? null : messages[i].position);
   // paragraph page within the shown message — long messages advance VN-style,
   // paragraph by paragraph (display-only; the message itself stays whole).
   // Mounting mid-backlog (a show-on-stage jump) lands on the jumped message's last
   // page — it was already read in the log, no clicking through it again.
-  const [page, setPage] = useState(() => (viewIdx !== null ? Number.MAX_SAFE_INTEGER : 0));
+  const [page, setPage] = useState(() => (viewPos !== null ? Number.MAX_SAFE_INTEGER : 0));
   const atEnd = idx >= messages.length - 1;
   const shown: Message | undefined = messages[Math.min(idx, messages.length - 1)];
 
@@ -1056,16 +1136,30 @@ function DialogueLayout({
   useEffect(() => {
     if (streaming) wasStreaming.current = true;
   }, [streaming]);
-  // reset only when the message count actually changes, not on mount: a show-on-stage
-  // jump mounts this layout mid-backlog and must keep its position. Comparing against
-  // a ref (not skipping "the first run") stays correct under StrictMode's double-invoke.
-  const lastLen = useRef(messages.length);
+  // reset only when the TAIL actually changes, not on mount or on an older page
+  // prepending (which changes the count but not the tail): a show-on-stage jump mounts
+  // this layout mid-backlog and must keep its position, and backlog reading must survive
+  // pages loading in. Comparing against a ref (not skipping "the first run") stays
+  // correct under StrictMode's double-invoke.
+  const tailId: string | undefined = messages[messages.length - 1]?.id;
+  const lastTail = useRef(tailId);
   useEffect(() => {
-    if (messages.length === lastLen.current) return;
-    lastLen.current = messages.length;
-    setViewIdx(null); // a new reply jumps back to the live end
+    if (tailId === lastTail.current) return;
+    lastTail.current = tailId;
+    setViewPos(null); // a new reply jumps back to the live end
     setPage(wasStreaming.current ? Number.MAX_SAFE_INTEGER : 0);
     wasStreaming.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tailId]);
+
+  // stepping back past the oldest loaded body: pull the previous page, then take the
+  // step once it lands (the fold-driven stage doesn't wait — it has every event already)
+  const pendingStep = useRef(false);
+  useEffect(() => {
+    if (!pendingStep.current || idx <= 0) return;
+    pendingStep.current = false;
+    setIdx(idx - 1);
+    setPage(Number.MAX_SAFE_INTEGER);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
@@ -1093,12 +1187,15 @@ function DialogueLayout({
     else if (idx > 0) {
       setIdx(idx - 1);
       setPage(Number.MAX_SAFE_INTEGER);
+    } else if (hasOlder && !fetchingOlder) {
+      pendingStep.current = true;
+      void fetchOlder();
     }
   };
   // leave the backlog in one step, landing on the last page of the latest message so the
   // input is right there (it was already read — no clicking back through it)
   const toLive = () => {
-    setViewIdx(null);
+    setViewPos(null);
     setPage(Number.MAX_SAFE_INTEGER);
   };
   // latest-ref so the window listener binds once but always sees fresh page state
@@ -1198,7 +1295,10 @@ function DialogueLayout({
       <div className="absolute inset-0" onWheel={onStageWheel} />
       {!atEnd && (
         <Badge variant="secondary" rounded className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-          history {idx + 1}/{messages.length} — scroll or ←/→, Esc to return
+          {/* absolute numbering: the loaded window is a suffix of the timeline */}
+          history {(counts?.timeline ?? messages.length) - messages.length + idx + 1}/
+          {counts?.timeline ?? messages.length}
+          {fetchingOlder ? " (loading…)" : ""} — scroll or ←/→, Esc to return
         </Badge>
       )}
       <div

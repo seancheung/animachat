@@ -751,6 +751,28 @@ export function listMessages(chatId: string): Message[] {
   ).map(messageFromRow);
 }
 
+/** One keyset page of a chat's messages, NEWEST first — the client's scroll-up-for-older
+ *  timeline. The cursor is the last served row's position (unique per chat). */
+export function pageMessages(
+  chatId: string,
+  opts: { limit?: number; cursor?: string | null } = {}
+): Page<Message> {
+  const limit = clampLimit(opts.limit);
+  const cur = decodeCursor(opts.cursor);
+  if (opts.cursor && (!cur || typeof cur.v !== "number")) throw new PageError("invalid cursor");
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM messages WHERE chat_id=? ${cur ? "AND position < ?" : ""}
+       ORDER BY position DESC LIMIT ?`
+    )
+    .all(...(cur ? [chatId, cur.v, limit + 1] : [chatId, limit + 1])) as Row[];
+  const items = rows.slice(0, limit).map(messageFromRow);
+  return {
+    items,
+    nextCursor: rows.length > limit ? encodeCursor({ v: items[items.length - 1].position }) : null,
+  };
+}
+
 export function getMessage(id: string): Message | null {
   const r = getDb().prepare("SELECT * FROM messages WHERE id=?").get(id) as Row | undefined;
   return r ? messageFromRow(r) : null;
