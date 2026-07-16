@@ -138,46 +138,50 @@ export function ImportDialog({
             </Button>
           </div>
         )}
-        {TYPE_ORDER.map((type) => {
-          const group = items.filter((i) => i.type === type);
-          if (!group.length) return null;
-          const Icon = libraryTypeIcon(type);
-          return (
-            <div key={type}>
-              <div className="text-xs uppercase tracking-wider text-content-300 mb-1 flex items-center gap-1.5">
-                <Icon size={12} /> {type}s
+        {/* only the item list scrolls — a big bundle must not grow the dialog past the
+            viewport with the selected-count row and Import button riding along */}
+        <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+          {TYPE_ORDER.map((type) => {
+            const group = items.filter((i) => i.type === type);
+            if (!group.length) return null;
+            const Icon = libraryTypeIcon(type);
+            return (
+              <div key={type}>
+                <div className="text-xs uppercase tracking-wider text-content-300 mb-1 flex items-center gap-1.5">
+                  <Icon size={12} /> {type}s
+                </div>
+                <div className="space-y-1">
+                  {group.map((i) => {
+                    const k = keyOf(i);
+                    const locked = forced.has(k);
+                    return (
+                      <div key={k} className="flex items-center gap-2">
+                        <Checkbox
+                          value={checked.has(k) || locked}
+                          disabled={locked}
+                          onChange={(v) =>
+                            setChecked((prev) => {
+                              const next = new Set(prev);
+                              if (v) next.add(k);
+                              else next.delete(k);
+                              return next;
+                            })
+                          }
+                          label={i.name}
+                        />
+                        {locked && (
+                          <Badge variant="secondary" rounded>
+                            required
+                          </Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-1">
-                {group.map((i) => {
-                  const k = keyOf(i);
-                  const locked = forced.has(k);
-                  return (
-                    <div key={k} className="flex items-center gap-2">
-                      <Checkbox
-                        value={checked.has(k) || locked}
-                        disabled={locked}
-                        onChange={(v) =>
-                          setChecked((prev) => {
-                            const next = new Set(prev);
-                            if (v) next.add(k);
-                            else next.delete(k);
-                            return next;
-                          })
-                        }
-                        label={i.name}
-                      />
-                      {locked && (
-                        <Badge variant="secondary" rounded>
-                          required
-                        </Badge>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
         <div className="pt-2 flex items-center gap-3">
           <Button
             disabled={selected.size === 0 || importing}
