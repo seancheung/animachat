@@ -22,6 +22,7 @@ import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
 import Combobox from "@/components/ui/combobox";
 import Input from "@/components/ui/input";
+import SegmentedControl from "@/components/ui/segmented-control";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { allowedNextScenes } from "@/lib/stage";
@@ -87,6 +88,9 @@ export default function StoryEditorPage() {
   const [form, setForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [playOpen, setPlayOpen] = useState(false);
+  // section tabs — presentation only: the whole draft lives in the one `form`
+  // state, so switching tabs never drops unsaved edits
+  const [tab, setTab] = useState<"story" | "cast" | "locations" | "scenes" | "secrets" | "lorebooks">("story");
   // seed the draft during render (guarded — React re-renders immediately), the
   // pattern the chat page uses; an effect would flash an empty frame first
   if (form === null) {
@@ -291,13 +295,6 @@ export default function StoryEditorPage() {
     patch({ secrets: next });
   };
 
-  const sectionTitle = (label: string, count?: number) => (
-    <div className="text-xs uppercase tracking-wider text-content-300 pt-2">
-      {label}
-      {count ? ` — ${count}` : ""}
-    </div>
-  );
-
   const copyButton = (onClick: () => void) => (
     <Button variant="ghost" size="sm" shape="square" title="Copy to the library (a snapshot — edits don't carry over)" onClick={onClick}>
       <BookMarked />
@@ -324,21 +321,43 @@ export default function StoryEditorPage() {
           </Button>
         </div>
 
-        <div className="space-y-3 overflow-y-auto pr-1 min-h-0">
+        <div className="min-h-0 flex flex-col gap-3">
+          <SegmentedControl
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            value={tab}
+            onChange={setTab}
+            items={[
+              { value: "story", label: "Story" },
+              { value: "cast", label: `Cast${chars.length ? ` (${chars.length})` : ""}` },
+              { value: "locations", label: `Locations${locations.length ? ` (${locations.length})` : ""}` },
+              { value: "scenes", label: `Scenes${scenes.length ? ` (${scenes.length})` : ""}` },
+              { value: "secrets", label: `Secrets${secrets.length ? ` (${secrets.length})` : ""}` },
+              { value: "lorebooks", label: `Lorebooks${lorebooks.length ? ` (${lorebooks.length})` : ""}` },
+            ]}
+          />
+          <div className="flex-1 min-h-0 space-y-3 overflow-y-auto pr-1">
+          {tab === "story" && (
+            <>
           <Field label="Name">
             <Input className="w-full" value={form.name ?? ""} onChange={(v) => patch({ name: v })} />
           </Field>
-          <Field label="Premise" hint="the situation as play opens — spoiler-free (everyone sees it); author truths and pressures, not an event script; placeholders like [char_name], [user_name] work here">
+          <Field label="Premise" hint="the situation as play opens — spoiler-free (everyone sees it); author truths and pressures, not an event script; write literal names — story content doesn't use placeholder tags">
             <Textarea className="w-full h-28" value={form.description ?? ""} onChange={(v) => patch({ description: v })} />
           </Field>
           <Field label="Destination" hint="one line naming where the story is headed and what 'the end' means — narrator & director only; empty = ending left to the table">
             <Input className="w-full" value={form.destination ?? ""} onChange={(v) => patch({ destination: v })} />
           </Field>
+          <TagsField value={form.tags} onChange={(tags) => patch({ tags })} />
+            </>
+          )}
 
-          {sectionTitle("Cast (in order)", chars.length)}
+          {tab === "cast" && (
+            <>
           <div className="text-xs text-content-400">
-            the story&apos;s own characters — embedded copies, invisible to the library; order drives
-            [charN_name]; a playthrough can play as any of them
+            the story&apos;s own characters in roster order — embedded copies, invisible to the
+            library; a playthrough can play as any of them
           </div>
           <div className="space-y-1.5">
             {chars.map((c, i) => (
@@ -375,8 +394,12 @@ export default function StoryEditorPage() {
             </div>
           </div>
 
-          {sectionTitle("Locations", locations.length)}
-          <div className="text-xs text-content-400">embedded places — scenes below can be set in them</div>
+            </>
+          )}
+
+          {tab === "locations" && (
+            <>
+          <div className="text-xs text-content-400">embedded places — scenes (next tab) can be set in them</div>
           <div className="space-y-1.5">
             {locations.map((l, i) => (
               <ItemRow
@@ -411,7 +434,11 @@ export default function StoryEditorPage() {
             </div>
           </div>
 
-          {sectionTitle("Scenes (in order)", scenes.length)}
+            </>
+          )}
+
+          {tab === "scenes" && (
+            <>
           <div className="text-xs text-content-400">
             each scene lists who is on stage when it opens; the narrator can bring others in mid-scene.
             without branches a story plays in order; a scene named as a branch target is reached only
@@ -550,7 +577,11 @@ export default function StoryEditorPage() {
             </div>
           </div>
 
-          {sectionTitle("Secrets", secrets.length)}
+            </>
+          )}
+
+          {tab === "secrets" && (
+            <>
           <div className="text-xs text-content-400">
             the story&apos;s hidden truths, written in present tense (already true as play opens) — holders guard them,
             everyone else can&apos;t see them, the narrator reveals them when the fiction earns it. &quot;known by&quot; =
@@ -592,7 +623,11 @@ export default function StoryEditorPage() {
             </Button>
           </div>
 
-          {sectionTitle("Lorebooks", lorebooks.length)}
+            </>
+          )}
+
+          {tab === "lorebooks" && (
+            <>
           <div className="text-xs text-content-400">embedded world knowledge — attached to every playthrough</div>
           <div className="space-y-1.5">
             {lorebooks.map((lb, i) => (
@@ -628,11 +663,8 @@ export default function StoryEditorPage() {
             </div>
           </div>
 
-          <TagsField value={form.tags} onChange={(tags) => patch({ tags })} />
-          <div className="pt-2 pb-6">
-            <Button onClick={save} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
+            </>
+          )}
           </div>
         </div>
 
