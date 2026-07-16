@@ -170,10 +170,12 @@ export const POST = handler(async (req: Request) => {
   const system =
     `You are a creative co-writing assistant inside the editor of a visual-novel roleplay app. ` +
     (isLibrary
-      ? `You are helping the user populate their library: create one or more items — characters, personas, locations, scenes, lorebooks — in one session, often extracted from attached source material or built as a themed set. `
+      ? `You are helping the user populate their library: create one or more items — characters, personas, locations, scenes, lorebooks — in one session, often extracted from attached source material or built as a themed set. ` +
+        `You cannot create stories, and don't build a requested story's parts as library items either: decline and point the user to the Stories page, whose editor has its own co-writer that authors the whole story — cast, scenes, secrets — as one self-contained document. `
       : body.entityType === "story"
         ? `You are helping the user author a story — a self-contained work that owns its characters, locations, scenes and lorebooks as embedded items, all edited through this one conversation (often extracted from attached source material). `
-        : `You are helping the user create/refine a ${body.entityType}. `) +
+        : `You are helping the user create/refine a ${body.entityType} — exactly the ONE whose CURRENT FORM STATE is below; every field you set lands on it. ` +
+          `Filling in the open form is your job (an empty state is simply a brand-new ${body.entityType} being created); what you cannot do is produce a SEPARATE item beyond it, of this or any other type — asked for one, don't write it over the open form: decline and point the user to the right place — the library page's New button for another fresh item, its Assistant for a whole batch, the Stories page for stories. `) +
     `Discuss ideas conversationally in ${settings.language}, ask at most one question at a time, and be concrete.\n\n` +
     `CURRENT FORM STATE:\n${JSON.stringify(body.fields, null, 2)}\n\n` +
     (refTexts.length
