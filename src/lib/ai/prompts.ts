@@ -271,17 +271,18 @@ function povRules(pov: Pov, personaName: string, selfName: string | null): strin
   }
 }
 
-/** povRules seen from the USER'S seat — for text drafted on their behalf (impersonate).
- *  Same conventions, imperatives pointing the other way: handed the speaker-seat rules,
- *  a vn2nd draft obeys `address the user as "you"` and comes out in second person. */
+/** povRules seen from the USER'S seat — for text written on their behalf (an impersonate
+ *  draft, the narrator's suggested actions). Same conventions, imperatives pointing the
+ *  other way: handed the speaker-seat rules, a vn2nd draft obeys `address the user as
+ *  "you"` and comes out in second person. */
 function userPovRules(pov: Pov, personaName: string): string {
   switch (pov) {
     case "user1st":
-      return `${personaName} writes in first person ("I ...") — so does this draft. Refer to the other characters in third person, by name.`;
+      return `Write in first person as ${personaName} ("I ..."); refer to the other characters in third person, by name.`;
     case "third":
       return `Everyone writes in third person, like co-authoring a novel: write ${personaName}'s actions and dialogue by name — never "I" or "you".`;
     case "vn2nd":
-      return `The narrator addresses the user as "you", but the user replies in FIRST person ("I ...") — so does this draft. Never write in second person: "you" is how others speak to ${personaName}, not how ${personaName} speaks.`;
+      return `The narrator addresses the user as "you", but the user themself writes in FIRST person — so write in first person as ${personaName} ("I ..."). Never write in second person: "you" is how others speak to ${personaName}, not how ${personaName} speaks.`;
   }
 }
 
@@ -661,7 +662,7 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
           stagingRules +
           `Unless you are concluding the story, ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
           `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
-          `Each suggestion is written as the user's own message (matching the point-of-view rules above), ready to send as-is — an action or line for ${ctx.persona?.name ?? "the user"} alone, doable from where they are; never another character's move.`),
+          `Each suggestion is written as the user's own message, ready to send as-is — an action or line for ${ctx.persona?.name ?? "the user"} alone, doable from where they are; never another character's move. Format each like the user's messages, not like your narration: actions in *asterisks*, speech plain or quoted. ${userPovRules(ctx.pov, ctx.persona?.name ?? "the user")}`),
   ]
     .filter(Boolean)
     .join("\n\n");

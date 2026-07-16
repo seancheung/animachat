@@ -621,13 +621,13 @@ describe("impersonate POV (a draft on the user's behalf gets the user's seat, no
   it("vn2nd: drafts in the user's first person, never the narrator's second person", () => {
     const req = buildImpersonateRequest(povCtx("vn2nd"), modelRef);
     expect(req.system).not.toContain('Address the user directly as "you"');
-    expect(req.system).toContain('replies in FIRST person ("I ...")');
+    expect(req.system).toContain('write in first person as Ash ("I ...")');
     expect(req.system).toContain("Never write in second person");
   });
 
   it("user1st: the draft speaks as I, not about Ash from outside", () => {
     const req = buildImpersonateRequest(povCtx("user1st"), modelRef);
-    expect(req.system).toContain('Ash writes in first person ("I ...") — so does this draft');
+    expect(req.system).toContain('Write in first person as Ash ("I ...")');
     expect(req.system).not.toContain("Refer to the user as Ash");
   });
 
@@ -639,5 +639,14 @@ describe("impersonate POV (a draft on the user's behalf gets the user's seat, no
   it("character prompts keep the speaker-seat rules", () => {
     const req = buildCharacterRequest(povCtx("vn2nd"), mira, modelRef);
     expect(req.system).toContain('Address the user directly as "you"');
+  });
+
+  it("narrator options carry the user-seat convention next to the speaker-seat narration rules", () => {
+    const req = buildNarratorRequest({ ...povCtx("vn2nd"), chat: { ...chat, narratorEnabled: true } }, modelRef);
+    // the narration itself keeps the speaker seat…
+    expect(req.system).toContain('Address the user directly as "you"');
+    // …while the suggested actions get the user's format and POV explicitly
+    expect(req.system).toContain("Format each like the user's messages, not like your narration: actions in *asterisks*");
+    expect(req.system).toContain('write in first person as Ash ("I ...")');
   });
 });
