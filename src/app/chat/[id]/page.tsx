@@ -301,12 +301,10 @@ export default function ChatPage() {
   // In the dialogue box the reveal stops at the end of each page and waits for the reader
   // (picture mode has no dialogue box to click, so it types straight through).
   // The side panel skips the reveal entirely (speed 0): text appears as it arrives.
-  const [streamPage, setStreamPage] = useState(0);
   const revealedRef = useRef(0);
   const typewriter = useTypewriter({
     speed: layout === "dialogue" ? (settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed) : 0,
     paginate: layout === "dialogue" && !pictureMode,
-    pageIndex: streamPage,
     onReveal: ({ text, pageDone, hasMore }) => {
       setStreaming((s) => (s ? { ...s, text, pageDone, hasMore } : s));
       if (text) dropEcho(); // the reply has begun to appear — the user's line steps aside
@@ -468,7 +466,6 @@ export default function ChatPage() {
               blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
               typewriter.reset();
               revealedRef.current = 0;
-              setStreamPage(0);
               setStreaming({
                 role: ev.speaker.role,
                 characterId: ev.speaker.characterId,
@@ -876,8 +873,7 @@ export default function ChatPage() {
           panelBlur={panelBlur}
           characters={characters}
           streaming={streaming}
-          skipTyping={typewriter.skip}
-          onTurnPage={() => setStreamPage((p) => p + 1)}
+          advanceReveal={typewriter.advance}
           viewIdx={viewIdx}
           setViewIdx={setViewIdx}
           userEcho={userEcho}
@@ -972,8 +968,7 @@ function DialogueLayout({
   panelBlur,
   characters,
   streaming,
-  skipTyping,
-  onTurnPage,
+  advanceReveal,
   viewIdx,
   setViewIdx,
   userEcho,
@@ -1052,11 +1047,14 @@ function DialogueLayout({
 
   const advance = () => {
     if (echo) return; // the user's own line: nothing to advance to until the reply arrives
-    // mid-reveal, VN-style: a click first finishes typing this page, the next one turns
-    // it — and while the page is still typing there is nothing to turn to yet
+    // mid-reveal, VN-style: the typewriter decides synchronously — first finish typing
+    // this page, then turn to a page whose text has actually arrived. Deciding from
+    // this render's streaming.pageDone/hasMore instead would go stale for a frame after
+    // each turn, letting a wheel burst page past the streamed frontier — after which
+    // every later paragraph would type straight through its break, turning pages on
+    // its own for the rest of the message.
     if (isStreamingShown) {
-      if (!streaming.pageDone) skipTyping?.();
-      else if (streaming.hasMore) onTurnPage?.();
+      advanceReveal?.();
       return;
     }
     if (pageIdx < pages.length - 1) setPage(pageIdx + 1);
@@ -1124,17 +1122,29 @@ function DialogueLayout({
   }, [hidden]);
 
   // wheel on the stage navigates (VN backlog gesture); wheel over the dialogue
-  // box keeps scrolling the box's own overflowing content natively
-  const wheelAcc = useRef(0);
+  // box keeps scrolling the box's own overflowing content natively.
+  // One step per gesture: a trackpad flick keeps delivering momentum events for a
+  // second or more, so after a step the tail is swallowed until the wheel goes quiet
+  // (or reverses) — a flick can't cascade through several pages, and leftover deltas
+  // can't make a later feather-touch fire a phantom step.
+  const wheel = useRef({ acc: 0, at: 0, dir: 0, stepped: false });
   const onStageWheel = (e: React.WheelEvent) => {
-    wheelAcc.current += e.deltaY;
-    if (wheelAcc.current > 40) {
-      navRef.current.advance();
-      wheelAcc.current = 0;
-    } else if (wheelAcc.current < -40) {
-      navRef.current.retreat();
-      wheelAcc.current = 0;
+    if (e.deltaY === 0) return;
+    const w = wheel.current;
+    const dir = Math.sign(e.deltaY);
+    if (e.timeStamp - w.at > 200 || dir !== w.dir) {
+      w.acc = 0;
+      w.stepped = false;
     }
+    w.at = e.timeStamp;
+    w.dir = dir;
+    if (w.stepped) return;
+    w.acc += e.deltaY;
+    if (Math.abs(w.acc) <= 40) return;
+    if (w.acc > 0) navRef.current.advance();
+    else navRef.current.retreat();
+    w.stepped = true;
+    w.acc = 0;
   };
 
   // the box is height-capped and scrolls internally — follow the tail while

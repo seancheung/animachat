@@ -55,24 +55,25 @@ function pageLimit(buf: string, pageIndex: number): number {
  * speed 0 = no animation: text is revealed as it arrives.
  *
  * When `paginate` is on (the VN dialogue box), the reveal stops at the end of the page
- * being read and waits — the reader turns the page by bumping `pageIndex`; it never
- * advances on its own. finish() therefore only resolves once they have read to the end.
+ * being read and waits — the reader turns the page via advance(); it never advances on
+ * its own. The page index is owned here (not by the caller) so the skip-or-turn decision
+ * is made synchronously against the buffer — a burst of steps (wheel momentum, double
+ * clicks) can never move the gate past text that has actually arrived.
+ * finish() only resolves once the reader has read to the end.
  */
 export function useTypewriter({
   speed,
   paginate = false,
-  pageIndex = 0,
   onReveal,
 }: {
   speed: number;
   paginate?: boolean;
-  pageIndex?: number;
   onReveal: (r: Reveal) => void;
 }) {
   const st = useRef<TypeState>({ buf: "", shown: 0, carry: 0, raf: 0, lastTs: 0, done: null });
   // latest inputs, read by the rAF loop (which outlives any single render)
   const speedRef = useRef(speed);
-  const pageRef = useRef({ paginate, pageIndex });
+  const pageRef = useRef({ paginate, pageIndex: 0 });
   const revealRef = useRef(onReveal);
   useEffect(() => {
     speedRef.current = speed;
@@ -141,9 +142,7 @@ export function useTypewriter({
     };
 
     return {
-      /** Start a new message (drops anything still buffered). Rewinds the gate to page 0
-       *  right away — the caller's pageIndex reset only reaches us on the next render, and
-       *  the first chunks arrive before that. */
+      /** Start a new message (drops anything still buffered) and rewind the gate to page 0. */
       reset() {
         stop();
         st.current.buf = "";
@@ -169,7 +168,7 @@ export function useTypewriter({
         emit(); // the chunk may have opened a new page (hasMore) even if nothing is revealed
         run();
       },
-      /** The reader turned the page (or the gate moved): reveal on into it. */
+      /** The gate moved (pagination switched on/off mid-stream): reveal on into it. */
       retarget() {
         const s = st.current;
         const cap = limit();
@@ -191,15 +190,31 @@ export function useTypewriter({
           run();
         });
       },
-      /** Click mid-typing: finish typing the current page at once (VN skip). */
-      skip() {
+      /** A reader step (click, key, wheel notch) during the reveal, VN-style: finish
+       *  typing the current page at once (skip) — or, when it is already fully typed
+       *  and a further page's text has actually arrived, turn one page. At the
+       *  streamed frontier this is a no-op, so rapid steps can never over-turn. */
+      advance() {
         const s = st.current;
         const cap = limit();
         if (s.shown < cap) {
           s.shown = cap;
           emit();
+          settle();
+          return;
         }
-        settle();
+        const { paginate: on, pageIndex } = pageRef.current;
+        if (!on || s.buf.length <= cap) return; // nothing past this page yet
+        pageRef.current = { paginate: on, pageIndex: pageIndex + 1 };
+        if (speedRef.current <= 0) {
+          // no animation: the new page appears whole, like push() would show it
+          s.shown = limit();
+          emit();
+          settle();
+          return;
+        }
+        emit(); // pageDone/hasMore flip for the new page before its first characters type
+        run();
       },
       /** Stop / failure: reveal everything received, ignoring page gates, and let finish() go. */
       flush() {
@@ -213,11 +228,11 @@ export function useTypewriter({
     };
   }, []);
 
-  // the reader turned a page (or the layout changed) — move the gate
+  // pagination switched on/off (layout change, picture mode) — move the gate
   useEffect(() => {
-    pageRef.current = { paginate, pageIndex };
+    pageRef.current = { ...pageRef.current, paginate };
     api.retarget();
-  }, [paginate, pageIndex, api]);
+  }, [paginate, api]);
 
   useEffect(() => () => api.reset(), [api]);
   return api;
