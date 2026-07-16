@@ -5,9 +5,6 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-# toolchain fallback for better-sqlite3 if no musl prebuild matches this node
-RUN apk add --no-cache python3 make g++
-
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund
@@ -39,7 +36,8 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-VOLUME /app/data
+# stateless container — the database lives in Postgres (DATABASE_URL) and
+# uploaded assets in the S3/MinIO bucket (S3_* vars)
 EXPOSE 3000
 
 CMD ["node", "server.js"]

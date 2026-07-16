@@ -4,19 +4,30 @@ An AI-driven virtual character chat webapp with a visual-novel soul. Single-user
 
 ## Quick start
 
+Postgres and MinIO run in Docker; the app runs on your machine.
+
 ```bash
+docker compose up -d     # postgres + minio (+ one-shot bucket/user setup)
 npm install
 npm run dev
+```
+
+A fresh Postgres volume picks up the schema automatically (`migrations/` is mounted into the container's init directory). Later schema changes ship as new numbered files there and are applied manually:
+
+```bash
+docker compose exec -T postgres psql -U animachat -d animachat -f - < migrations/00X_whatever.sql
 ```
 
 Open http://localhost:3000 (or the port Next picks), then:
 
 1. **Settings** → add a provider (Anthropic or any OpenAI-compatible endpoint), add a model under it (with its context window size), and set it as the **global default model**.
-2. **Library** → starter characters and places are seeded on first run (Mira, Kael, the Moonlit Tavern; set `ANIMACHAT_SKIP_SEED=1` to start empty). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
+2. **Library** → starter characters and places come pre-seeded on a fresh install (Mira, Kael, the Moonlit Tavern — `migrations/002_seed.sql`; delete it before the first `docker compose up` to start empty). Create your own — every editor has an **AI co-writer panel** that fills the form as you chat with it.
 3. **Stories** → a story is a self-contained work: its cast, scenes, places and lore live *inside* it (embedded copies — the library stays a parts bin you copy from). A starter story is seeded; the story page's co-writer can author a whole story in one conversation, or extract one from an attached novel. Hit **Play** to start a playthrough (play as a cast member or a persona); finished and running playthroughs are listed right there.
 4. **Chats** → **+ New chat** for **Casual** (characters + persona, or narrator-only text adventure) or **Immersive** (a fixed scene or location) chats.
 
-All data lives in `./data` (SQLite + uploaded assets). `Settings → Backup` exports/restores the whole thing as one zip.
+Data lives in the docker volumes: the database in **Postgres** (`DATABASE_URL`, default `postgres://animachat:animachat@localhost:5432/animachat`), uploaded assets in the **MinIO** bucket (`S3_ENDPOINT`/`S3_BUCKET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`, defaults matching the compose file). Uploads go from the browser straight to the bucket via presigned URLs — set `S3_PUBLIC_ENDPOINT` to the MinIO address your browser can reach if it differs from the server's view (LAN/docker deploys). The **Settings transfer** panel moves the system configuration (providers, models, keys, preferences) between instances as one JSON file; library content and stories travel as export bundles.
+
+To run the app itself in Docker too: `docker compose --profile app up -d --build`.
 
 ## Suggested models per task
 
@@ -93,4 +104,4 @@ Chat prose carries seven inline tags, parsed out of the stream and stored as mes
 - `src/app/api/` — REST + SSE routes. `src/app/` + `src/components/` — UI.
 - `npm run build` — production build; `npm run typecheck` — typecheck; `npm test` — vitest unit tests (tag parser, placeholders, JSON extraction).
 
-No cloud, no telemetry, no accounts. Your keys stay in your local SQLite.
+No cloud, no telemetry, no accounts. Your keys stay in your local Postgres.

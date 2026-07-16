@@ -2,7 +2,7 @@ import { handler, ok } from "@/lib/api";
 import { getSettings, putSettings } from "@/lib/store";
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/types";
 
-export const GET = handler(() => ok(getSettings()));
+export const GET = handler(async () => ok(await getSettings()));
 
 export const PUT = handler(async (req: Request) => {
   const b = await req.json();
@@ -12,6 +12,6 @@ export const PUT = handler(async (req: Request) => {
   for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
     if (k in b) patch[k] = b[k];
   }
-  putSettings(patch);
-  return ok(getSettings());
+  await putSettings(patch);
+  return ok(await getSettings());
 });

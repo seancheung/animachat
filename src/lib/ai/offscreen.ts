@@ -32,38 +32,41 @@ export function runReturnPass(chatId: string): Promise<ReturnResult> {
  * The server is the authority — the client's gap check is only a saved request.
  */
 async function doReturnPass(chatId: string): Promise<ReturnResult> {
-  const ctx = buildContext(chatId);
+  const ctx = await buildContext(chatId);
+  // returnEligibility's note lookup stays sync (aliveness.ts is pure) — prefetch the notes
+  const noteCreatedAt = new Map<string, number | null>();
+  for (const c of ctx.characters) {
+    noteCreatedAt.set(c.id, (await getOffscreenNote(c.id, chatId))?.createdAt ?? null);
+  }
   const { generateFor, texter } = returnEligibility(
     ctx.chat,
     ctx.characters,
     ctx.messages,
-    (cid) => getOffscreenNote(cid, chatId)?.createdAt ?? null,
+    (cid) => noteCreatedAt.get(cid) ?? null,
     Date.now()
   );
   if (!generateFor.length) return NONE;
 
   const gap = humanDuration(resumeGapMs(ctx.messages, Date.now()));
-  const sheets = generateFor
-    .map((c) => {
-      const mind = getMindState(c.id, chatId)?.content;
-      const facts = listFacts(c.id, 5)
-        .map((f) => f.content)
-        .join(" | ");
-      return (
-        `${c.name}:\n${ctx.sub(c.description, c.name).slice(0, 600)}` +
+  const sheetParts: string[] = [];
+  for (const c of generateFor) {
+    const mind = (await getMindState(c.id, chatId))?.content;
+    const facts = (await listFacts(c.id, 5))
+      .map((f) => f.content)
+      .join(" | ");
+    sheetParts.push(
+      `${c.name}:\n${ctx.sub(c.description, c.name).slice(0, 600)}` +
         (mind ? `\nOn their mind lately: ${mind}` : "") +
         (facts ? `\nThey remember: ${facts}` : "")
-      );
-    })
-    .join("\n\n");
-  const tail = ctx.messages
-    .slice(-6)
-    .map((m) => {
-      const content = activeContent(m);
-      return content ? `${speakerName(ctx, m)}: ${content.slice(0, 300)}` : null;
-    })
-    .filter(Boolean)
-    .join("\n");
+    );
+  }
+  const sheets = sheetParts.join("\n\n");
+  const tailLines: string[] = [];
+  for (const m of ctx.messages.slice(-6)) {
+    const content = activeContent(m);
+    if (content) tailLines.push(`${await speakerName(ctx, m)}: ${content.slice(0, 300)}`);
+  }
+  const tail = tailLines.join("\n");
 
   const system =
     `You imagine the off-screen life of roleplay characters between conversations with ${ctx.persona?.name ?? "the user"}. ` +
@@ -75,7 +78,7 @@ async function doReturnPass(chatId: string): Promise<ReturnResult> {
     `Write the notes in ${ctx.language}.`;
   const user = `CHARACTERS:\n${sheets}\n\nHOW THE CONVERSATION LEFT OFF:\n${tail || "(no recent messages)"}`;
 
-  const modelRef = resolveModel("offscreen", ctx.chat);
+  const modelRef = await resolveModel("offscreen", ctx.chat);
   const raw = await callLlm({
     modelRef,
     system,
@@ -90,7 +93,7 @@ async function doReturnPass(chatId: string): Promise<ReturnResult> {
   for (const n of out?.notes ?? []) {
     const c = n.character && byName.get(n.character.toLowerCase());
     if (c && n.note && !generated.includes(c.id)) {
-      putOffscreenNote(c.id, chatId, n.note);
+      await putOffscreenNote(c.id, chatId, n.note);
       generated.push(c.id);
     }
   }

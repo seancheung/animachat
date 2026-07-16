@@ -1,8 +1,8 @@
 import { bad, handler, ok } from "@/lib/api";
 import { createProvider, listModels, listProviders } from "@/lib/store";
 
-export const GET = handler(() =>
-  ok({ providers: listProviders(), models: listModels() })
+export const GET = handler(async () =>
+  ok({ providers: await listProviders(), models: await listModels() })
 );
 
 export const POST = handler(async (req: Request) => {
@@ -12,5 +12,5 @@ export const POST = handler(async (req: Request) => {
   const baseUrl =
     b.baseUrl?.trim() ||
     (b.type === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
-  return ok(createProvider({ name: b.name, type: b.type, baseUrl, apiKey: b.apiKey ?? "" }));
+  return ok(await createProvider({ name: b.name, type: b.type, baseUrl, apiKey: b.apiKey ?? "" }));
 });

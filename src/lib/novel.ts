@@ -16,17 +16,17 @@ function contentOf(m: Message): string {
   return mentionsToPlain(m.variants[m.activeVariant]?.content ?? "");
 }
 
-export function speakerOf(chat: Chat, m: Message): string {
+export async function speakerOf(chat: Chat, m: Message): Promise<string> {
   if (m.role === "narrator") return "Narrator";
   if (m.role === "user") {
     const played = chat.personaCharacterId
       ? chat.storySnapshot?.characters.find((c) => c.id === chat.personaCharacterId)
       : null;
-    return played?.name ?? (chat.personaId ? getPersona(chat.personaId)?.name ?? "You" : "You");
+    return played?.name ?? (chat.personaId ? (await getPersona(chat.personaId))?.name ?? "You" : "You");
   }
   return (
     chat.storySnapshot?.characters.find((c) => c.id === m.characterId)?.name ??
-    getCharacter(m.characterId ?? "")?.name ??
+    (await getCharacter(m.characterId ?? ""))?.name ??
     chat.nameSnapshots[m.characterId ?? ""] ??
     "???"
   );
@@ -41,11 +41,11 @@ export interface NovelChapter {
 /** Chapter boundaries: a narrator message advancing the scene opens a chapter named after
  *  the scene (the message itself belongs to the new chapter); <the-end/> opens a final
  *  "The End" chapter that any epilogue messages fall into. Markers and empty messages drop. */
-export function splitChapters(chat: Chat, messages: Message[]): NovelChapter[] {
+export async function splitChapters(chat: Chat, messages: Message[]): Promise<NovelChapter[]> {
   const chapters: NovelChapter[] = [{ title: null, messages: [] }];
   for (const m of messages) {
     if (m.sceneEvent?.sceneId)
-      chapters.push({ title: chatScene(chat, m.sceneEvent.sceneId)?.name ?? "New scene", messages: [] });
+      chapters.push({ title: (await chatScene(chat, m.sceneEvent.sceneId))?.name ?? "New scene", messages: [] });
     if (m.role !== "marker" && contentOf(m)) chapters[chapters.length - 1].messages.push(m);
     if (m.sceneEvent?.theEnd) chapters.push({ title: "The End", messages: [] });
   }
@@ -53,21 +53,21 @@ export function splitChapters(chat: Chat, messages: Message[]): NovelChapter[] {
 }
 
 /** Plain transcript rendering of a chapter's messages, as markdown lines. */
-export function transcriptMd(chat: Chat, messages: Message[]): string[] {
+export async function transcriptMd(chat: Chat, messages: Message[]): Promise<string[]> {
   const lines: string[] = [];
   for (const m of messages) {
     const content = contentOf(m);
     if (m.role === "narrator") lines.push(`*${content.replace(/^\*|\*$/g, "")}*`, "");
-    else lines.push(`**${speakerOf(chat, m)}:** ${content}`, "");
+    else lines.push(`**${await speakerOf(chat, m)}:** ${content}`, "");
   }
   return lines;
 }
 
-export function toMarkdown(chat: Chat, messages: Message[]): string {
+export async function toMarkdown(chat: Chat, messages: Message[]): Promise<string> {
   const lines: string[] = [`# ${chat.title}`, ""];
-  for (const ch of splitChapters(chat, messages)) {
+  for (const ch of await splitChapters(chat, messages)) {
     if (ch.title) lines.push(`---`, "", `## ${ch.title}`, "");
-    lines.push(...transcriptMd(chat, ch.messages));
+    lines.push(...(await transcriptMd(chat, ch.messages)));
   }
   return lines.join("\n");
 }
@@ -93,8 +93,12 @@ export function chunkByTokens(messages: Message[], budget: number): Message[][] 
 }
 
 /** Speaker-labeled transcript as the rewrite model sees it. */
-export function transcriptForModel(chat: Chat, messages: Message[]): string {
-  return messages.map((m) => `${speakerOf(chat, m)}: ${contentOf(m)}`).join("\n\n");
+export async function transcriptForModel(chat: Chat, messages: Message[]): Promise<string> {
+  const lines: string[] = [];
+  for (const m of messages) {
+    lines.push(`${await speakerOf(chat, m)}: ${contentOf(m)}`);
+  }
+  return lines.join("\n\n");
 }
 
 export function buildNovelizeSystem(ctx: ChatContext, voice: NovelVoice): string {

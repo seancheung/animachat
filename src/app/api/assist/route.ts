@@ -1,6 +1,5 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
-import { debugResponseLogEnabled, writeDebugLog } from "@/lib/debugLog";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import { normalizeSelfTags } from "@/lib/ai/placeholders";
 import {
@@ -85,29 +84,29 @@ interface AssistBody {
 const ATTACHMENT_CHAR_CAP = 200_000;
 
 /** Serialize an attached library item for the system prompt; null if it no longer exists. */
-function referenceText(ref: { type: string; id: string }): string | null {
+async function referenceText(ref: { type: string; id: string }): Promise<string | null> {
   switch (ref.type) {
     case "character": {
-      const c = getCharacter(ref.id);
+      const c = await getCharacter(ref.id);
       if (!c) return null;
       return `CHARACTER "${c.name}"\n${c.description}${c.exampleDialogue ? `\nExample dialogue:\n${c.exampleDialogue}` : ""}`;
     }
     case "persona": {
-      const p = getPersona(ref.id);
+      const p = await getPersona(ref.id);
       return p && `PERSONA "${p.name}" (an identity the user plays)\n${p.description}`;
     }
     case "location": {
-      const l = getLocation(ref.id);
+      const l = await getLocation(ref.id);
       return l && `LOCATION "${l.name}"\n${l.description}`;
     }
     case "scene": {
-      const s = getScene(ref.id);
+      const s = await getScene(ref.id);
       if (!s) return null;
-      const loc = s.locationId ? getLocation(s.locationId) : null;
+      const loc = s.locationId ? await getLocation(s.locationId) : null;
       return `SCENE "${s.name}"${loc ? ` (at location "${loc.name}")` : ""}\n${s.setup}`;
     }
     case "story": {
-      const st = getStory(ref.id);
+      const st = await getStory(ref.id);
       if (!st) return null;
       // embedded document: every name resolves within the story itself
       const nameOf = (cid: string) => st.characters.find((c) => c.id === cid)?.name;
@@ -132,7 +131,7 @@ function referenceText(ref: { type: string; id: string }): string | null {
       );
     }
     case "lorebook": {
-      const lb = getLorebook(ref.id);
+      const lb = await getLorebook(ref.id);
       if (!lb) return null;
       return `LOREBOOK "${lb.name}"${lb.description ? ` — ${lb.description}` : ""}\n${lb.entries
         .map((e) => `- ${e.title}: ${e.content}`)
@@ -152,15 +151,17 @@ export const POST = handler(async (req: Request) => {
 
   let modelRef;
   try {
-    modelRef = resolveModel("assist");
+    modelRef = await resolveModel("assist");
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
-  const settings = getSettings();
+  const settings = await getSettings();
   const isLibrary = body.entityType === "library";
   // whole-batch modes (the Assistant, whole-document stories) need room for many items
   const bigBatch = isLibrary || body.entityType === "story";
-  const refTexts = (body.references ?? []).map(referenceText).filter(Boolean) as string[];
+  const refTexts = (await Promise.all((body.references ?? []).map(referenceText))).filter(
+    Boolean
+  ) as string[];
   const attachTexts = (body.attachments ?? [])
     .filter((a) => a?.text)
     .map((a) => {
@@ -360,7 +361,6 @@ export const POST = handler(async (req: Request) => {
           // configured retry count — pointless after a maxTokens cutoff, where the cure
           // is a shorter batch, not better syntax.
           const fixupRetries = truncated ? 0 : Math.max(0, settings.assistFixupRetries);
-          const fixups: string[] = [];
           let raw = m[1].trim();
           let lastReply = buf;
           let fields;
@@ -402,7 +402,6 @@ export const POST = handler(async (req: Request) => {
                 console.error("assist: fixup request failed:", fixupErr);
                 break;
               }
-              fixups.push(fixed);
               lastReply = fixed;
               const fm = fixed.match(fieldsRe);
               raw = (fm ? fm[1] : fixed).trim();
@@ -421,30 +420,6 @@ export const POST = handler(async (req: Request) => {
                   ? "\n(I produced malformed field data — the form holds what parsed cleanly along the way; ask me to try again for the rest.)"
                   : "\n(I produced malformed field data — ask me to try again.)",
             });
-            if (debugResponseLogEnabled()) {
-              try {
-                const url = writeDebugLog(
-                  "assist",
-                  [
-                    "AnimaChat assist debug log — the <fields> block failed to parse",
-                    `time: ${new Date().toISOString()}`,
-                    `entityType: ${body.entityType}`,
-                    `truncated by maxTokens: ${truncated}`,
-                    `fixup attempts: ${fixups.length}`,
-                    "",
-                    "--- error (last attempt) ---",
-                    e instanceof Error ? (e.stack ?? e.message) : String(e),
-                    "",
-                    "--- raw model response ---",
-                    buf,
-                    ...fixups.flatMap((f, i) => ["", `--- fixup attempt ${i + 1} response ---`, f]),
-                  ].join("\n")
-                );
-                send({ type: "log", url });
-              } catch (logErr) {
-                console.error("assist: could not write debug log:", logErr);
-              }
-            }
           }
         } else if (truncated) {
           send({

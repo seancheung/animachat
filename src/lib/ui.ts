@@ -76,13 +76,30 @@ export function assetUrl(id: string | null | undefined): string | null {
   return id ? `/api/assets/${id}` : null;
 }
 
+async function sha256HexOf(buf: ArrayBuffer): Promise<string> {
+  if (globalThis.crypto?.subtle) {
+    const d = await crypto.subtle.digest("SHA-256", buf);
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  // crypto.subtle doesn't exist on insecure origins (plain-HTTP LAN access)
+  const { sha256 } = await import("js-sha256");
+  return sha256(new Uint8Array(buf));
+}
+
+/** Direct-to-bucket upload: hash the file, get a presigned PUT (a known hash
+ *  skips the upload — content-addressed dedup), PUT straight to storage, then
+ *  finalize to register the asset. The bytes never pass through the app server. */
 export async function uploadFile(file: File | Blob, name = "file"): Promise<string> {
-  const fd = new FormData();
-  fd.append("file", file, file instanceof File ? file.name : name);
-  const res = await fetch("/api/assets", { method: "POST", body: fd });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error ?? "upload failed");
-  return data.id as string;
+  const filename = file instanceof File ? file.name : name;
+  const mime = file.type || "application/octet-stream";
+  const buf = await file.arrayBuffer();
+  const hash = await sha256HexOf(buf);
+  const presign = await api.post("/api/assets/presign", { hash, mime, size: buf.byteLength, filename });
+  if (presign.existing) return presign.id as string;
+  const put = await fetch(presign.url, { method: "PUT", headers: presign.headers, body: buf });
+  if (!put.ok) throw new Error(`upload failed (${put.status})`);
+  await api.post("/api/assets/finalize", { hash, mime, filename });
+  return presign.id as string;
 }
 
 export function download(url: string) {

@@ -41,8 +41,8 @@ export function estimateTokens(text: string): number {
  * Resolution order: per-character model (group chats) -> per-chat model
  * -> task's assigned model -> global default.
  */
-export function resolveModel(task: AiTask, chat?: Chat | null, characterId?: string | null): ResolvedModel {
-  const settings = getSettings();
+export async function resolveModel(task: AiTask, chat?: Chat | null, characterId?: string | null): Promise<ResolvedModel> {
+  const settings = await getSettings();
   const candidates: (string | null | undefined)[] = [
     task === "chat" && characterId ? chat?.charModels?.[characterId] : null,
     task === "chat" || task === "narrator" ? chat?.modelId : null,
@@ -51,9 +51,9 @@ export function resolveModel(task: AiTask, chat?: Chat | null, characterId?: str
   ];
   for (const id of candidates) {
     if (!id) continue;
-    const model = getModel(id);
+    const model = await getModel(id);
     if (!model) continue;
-    const provider = getProvider(model.providerId);
+    const provider = await getProvider(model.providerId);
     if (provider) return { model, provider };
   }
   throw new AiConfigError(
@@ -272,7 +272,7 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
     // cached prompt legitimately has input 0
     input = usage && usage.input + cacheRead + cacheWrite > 0 ? usage.input : estimateTokens(promptText);
     output = usage?.output || estimateTokens(collected);
-    logUsage({
+    void logUsage({
       provider: req.modelRef.provider.name,
       model: req.modelRef.model.modelId,
       feature: req.feature,
@@ -281,7 +281,7 @@ export async function* streamLlm(req: LlmRequest): AsyncGenerator<StreamEvent> {
       cacheReadTokens: cacheRead,
       cacheWriteTokens: cacheWrite,
       outputTokens: output,
-    });
+    }).catch((e) => console.error(e));
   }
   yield { type: "usage", input, cacheRead, cacheWrite, output };
 }

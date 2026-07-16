@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { handler, ok } from "@/lib/api";
+import { deleteAssetObjects, listAssetObjects } from "@/lib/assets";
 import { assetIdsOf } from "@/lib/bundle";
-import { ASSETS_DIR } from "@/lib/db";
 import { storyDocAssetIds } from "@/lib/storyDoc";
 import {
   deleteAssets,
@@ -15,16 +13,16 @@ import {
 } from "@/lib/store";
 
 /** Every asset id the library, a story document, or a playthrough snapshot still points at. */
-function referencedIds(): Set<string> {
+async function referencedIds(): Promise<Set<string>> {
   const refs = new Set<string>();
-  for (const c of listCharacters()) for (const id of assetIdsOf("character", c)) refs.add(id);
-  for (const l of listLocations()) for (const id of assetIdsOf("location", l)) refs.add(id);
-  for (const s of listScenes()) for (const id of assetIdsOf("scene", s)) refs.add(id);
+  for (const c of await listCharacters()) for (const id of assetIdsOf("character", c)) refs.add(id);
+  for (const l of await listLocations()) for (const id of assetIdsOf("location", l)) refs.add(id);
+  for (const s of await listScenes()) for (const id of assetIdsOf("scene", s)) refs.add(id);
   // stories embed their items — their documents hold asset refs of their own
-  for (const st of listStories()) for (const id of storyDocAssetIds(st)) refs.add(id);
+  for (const st of await listStories()) for (const id of storyDocAssetIds(st)) refs.add(id);
   // playthroughs are self-contained: their snapshots keep assets alive after
   // the library items (or the story) are deleted
-  for (const chat of listChats()) {
+  for (const chat of await listChats()) {
     if (chat.storySnapshot) for (const id of storyDocAssetIds(chat.storySnapshot)) refs.add(id);
   }
   return refs;
@@ -33,22 +31,19 @@ function referencedIds(): Set<string> {
 /** Fresh uploads sit unreferenced until their editor is saved — leave them alone. */
 const PRUNE_GRACE_MS = 60 * 60 * 1000;
 
-/** Orphans: asset rows and stray files on disk that no entity references. */
-function collectOrphans(): { ids: string[]; bytes: number } {
-  const refs = referencedIds();
-  const rows = listAssets();
+/** Orphans: asset rows and stray bucket objects that no entity references. */
+async function collectOrphans(): Promise<{ ids: string[]; bytes: number }> {
+  const refs = await referencedIds();
+  const rows = await listAssets();
   const known = new Set(rows.map((r) => r.id));
   const cutoff = Date.now() - PRUNE_GRACE_MS;
   const orphans = new Map<string, number>();
   for (const r of rows) if (!refs.has(r.id) && r.createdAt < cutoff) orphans.set(r.id, r.size);
-  if (fs.existsSync(ASSETS_DIR)) {
-    for (const f of fs.readdirSync(ASSETS_DIR)) {
-      if (!/^[a-f0-9]{32}$/.test(f) || known.has(f) || refs.has(f)) continue;
-      // file without a DB row (e.g. leftover from an interrupted upload)
-      const stat = fs.statSync(path.join(ASSETS_DIR, f));
-      if (stat.mtimeMs >= cutoff) continue;
-      orphans.set(f, stat.size);
-    }
+  for (const o of await listAssetObjects()) {
+    if (known.has(o.id) || refs.has(o.id)) continue;
+    // object without a DB row (e.g. a direct upload that was never finalized)
+    if (o.lastModified >= cutoff) continue;
+    orphans.set(o.id, o.size);
   }
   let bytes = 0;
   for (const size of orphans.values()) bytes += size;
@@ -56,21 +51,15 @@ function collectOrphans(): { ids: string[]; bytes: number } {
 }
 
 /** Dry run: what a prune would remove. */
-export const GET = handler(() => {
-  const { ids, bytes } = collectOrphans();
+export const GET = handler(async () => {
+  const { ids, bytes } = await collectOrphans();
   return ok({ count: ids.length, bytes });
 });
 
-/** Delete orphaned asset rows and their files. */
-export const POST = handler(() => {
-  const { ids, bytes } = collectOrphans();
-  deleteAssets(ids);
-  for (const id of ids) {
-    try {
-      fs.unlinkSync(path.join(ASSETS_DIR, id));
-    } catch {
-      /* already gone */
-    }
-  }
+/** Delete orphaned asset rows and their bucket objects. */
+export const POST = handler(async () => {
+  const { ids, bytes } = await collectOrphans();
+  await deleteAssets(ids);
+  await deleteAssetObjects(ids);
   return ok({ removed: ids.length, bytes });
 });

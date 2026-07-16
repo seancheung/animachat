@@ -1,8 +1,5 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import JSZip from "jszip";
-import { ASSETS_DIR } from "./db";
+import { ASSET_ID_RE, getAssetBuffer, writeVerifiedAsset } from "./assets";
 import {
   getAsset,
   getCharacter,
@@ -45,7 +42,7 @@ interface Manifest {
   assets: { id: string; filename: string; mime: string }[];
 }
 
-const getters: Record<BundleItemType, (id: string) => any> = {
+const getters: Record<BundleItemType, (id: string) => Promise<any>> = {
   character: getCharacter,
   persona: getPersona,
   location: getLocation,
@@ -74,31 +71,19 @@ export function assetIdsOf(type: BundleItemType, data: any): string[] {
   }
 }
 
-/** Write an imported asset only if its bytes hash to its claimed id (ids are
- *  content addresses, so an existing file is by definition identical and is never
- *  overwritten — a manifest can't replace another asset's bytes on disk).
- *  False = the bytes don't match the id; the asset is skipped. */
-export function writeVerifiedAsset(id: string, data: Buffer): boolean {
-  const file = path.join(ASSETS_DIR, id);
-  if (fs.existsSync(file)) return true;
-  if (crypto.createHash("sha256").update(data).digest("hex").slice(0, 32) !== id) return false;
-  fs.writeFileSync(file, data);
-  return true;
-}
-
 /** Build a zip bundle for the given items. A story is self-contained (its items
  *  are embedded in the document); library scenes pull in their locations. */
 export async function exportBundle(items: { type: BundleItemType; id: string }[]): Promise<Buffer> {
   const expanded = new Map<string, ManifestItem>();
-  const add = (type: BundleItemType, id: string) => {
+  const add = async (type: BundleItemType, id: string) => {
     const key = `${type}:${id}`;
     if (expanded.has(key)) return;
-    const data = getters[type](id);
+    const data = await getters[type](id);
     if (!data) return;
     expanded.set(key, { type, data });
-    if (type === "scene" && data.locationId) add("location", data.locationId);
+    if (type === "scene" && data.locationId) await add("location", data.locationId);
   };
-  for (const it of items) add(it.type, it.id);
+  for (const it of items) await add(it.type, it.id);
 
   const zip = new JSZip();
   const assets: Manifest["assets"] = [];
@@ -107,10 +92,10 @@ export async function exportBundle(items: { type: BundleItemType; id: string }[]
     for (const aid of assetIdsOf(type, data)) {
       if (seenAssets.has(aid)) continue;
       seenAssets.add(aid);
-      const meta = getAsset(aid);
-      const file = path.join(ASSETS_DIR, aid);
-      if (meta && fs.existsSync(file)) {
-        zip.file(`assets/${aid}`, fs.readFileSync(file));
+      const meta = await getAsset(aid);
+      const bytes = meta ? await getAssetBuffer(aid) : null;
+      if (meta && bytes) {
+        zip.file(`assets/${aid}`, bytes);
         assets.push({ id: aid, filename: meta.filename, mime: meta.mime });
       }
     }
@@ -192,27 +177,26 @@ export async function importBundle(
   // assets are content-addressed, so identical files simply land on the same id;
   // only write the ones the (possibly filtered) items actually reference
   const wanted = new Set(manifest.items.flatMap((i) => assetIdsOf(i.type, i.data)));
-  fs.mkdirSync(ASSETS_DIR, { recursive: true });
   for (const a of manifest.assets ?? []) {
     if (!wanted.has(a.id)) continue;
     const f = zip.file(`assets/${a.id}`);
-    if (!f || !/^[a-f0-9]{32}$/.test(a.id)) continue;
+    if (!f || !ASSET_ID_RE.test(a.id)) continue;
     const data = await f.async("nodebuffer");
-    if (!writeVerifiedAsset(a.id, data)) continue;
-    registerAsset(a.id, a.filename, a.mime, data.length);
+    if (!(await writeVerifiedAsset(a.id, data, a.mime))) continue;
+    await registerAsset(a.id, a.filename, a.mime, data.length);
   }
 
-  // the entity phase is fully synchronous — atomic, so a malformed item mid-bundle
-  // can't leave a half-imported library (already-written asset files are content-
-  // addressed orphans at worst, reclaimed by the prune)
-  return inTransaction(() => {
+  // the entity phase runs in one transaction — atomic, so a malformed item
+  // mid-bundle can't leave a half-imported library (already-written asset
+  // objects are content-addressed orphans at worst, reclaimed by the prune)
+  return inTransaction(async () => {
     const existingNames: Record<BundleItemType, Set<string>> = {
-      character: new Set(listCharacters().map((x) => x.name.toLowerCase())),
-      persona: new Set(listPersonas().map((x) => x.name.toLowerCase())),
-      location: new Set(listLocations().map((x) => x.name.toLowerCase())),
-      scene: new Set(listScenes().map((x) => x.name.toLowerCase())),
-      story: new Set(listStories().map((x) => x.name.toLowerCase())),
-      lorebook: new Set(listLorebooks().map((x) => x.name.toLowerCase())),
+      character: new Set((await listCharacters()).map((x) => x.name.toLowerCase())),
+      persona: new Set((await listPersonas()).map((x) => x.name.toLowerCase())),
+      location: new Set((await listLocations()).map((x) => x.name.toLowerCase())),
+      scene: new Set((await listScenes()).map((x) => x.name.toLowerCase())),
+      story: new Set((await listStories()).map((x) => x.name.toLowerCase())),
+      lorebook: new Set((await listLorebooks()).map((x) => x.name.toLowerCase())),
     };
     const idMap = new Map<string, string>(); // old id -> new id
     const imported: Record<string, number> = {};
@@ -227,22 +211,22 @@ export async function importBundle(
     };
 
     for (const it of byType("location")) {
-      const saved = saveLocation(prep("location", it.data) as Partial<Location>);
+      const saved = await saveLocation(prep("location", it.data) as Partial<Location>);
       idMap.set(it.data.id, saved.id);
       count("location");
     }
     for (const it of byType("scene")) {
       const fields = prep("scene", it.data) as Partial<Scene>;
       if (fields.locationId) fields.locationId = idMap.get(fields.locationId) ?? null;
-      idMap.set(it.data.id, saveScene(fields).id);
+      idMap.set(it.data.id, (await saveScene(fields)).id);
       count("scene");
     }
     for (const it of byType("character")) {
-      idMap.set(it.data.id, saveCharacter(prep("character", it.data) as Partial<Character>).id);
+      idMap.set(it.data.id, (await saveCharacter(prep("character", it.data) as Partial<Character>)).id);
       count("character");
     }
     for (const it of byType("lorebook")) {
-      idMap.set(it.data.id, saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>).id);
+      idMap.set(it.data.id, (await saveLorebook(prep("lorebook", it.data) as Partial<Lorebook>)).id);
       count("lorebook");
     }
     // stories are self-contained documents — remint their embedded ids so an
@@ -251,11 +235,11 @@ export async function importBundle(
     for (const it of byType("story")) {
       const fields = prep("story", it.data) as Partial<Story>;
       const reminted = remintStoryDoc(normalizeStoryDoc(fields));
-      idMap.set(it.data.id, saveStory({ ...fields, ...reminted }).id);
+      idMap.set(it.data.id, (await saveStory({ ...fields, ...reminted })).id);
       count("story");
     }
     for (const it of byType("persona")) {
-      idMap.set(it.data.id, savePersona(prep("persona", it.data) as Partial<Persona>).id);
+      idMap.set(it.data.id, (await savePersona(prep("persona", it.data) as Partial<Persona>)).id);
       count("persona");
     }
     return { imported };

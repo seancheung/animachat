@@ -26,10 +26,10 @@ const TAIL_CHARS = 600;
 /** Plain transcript export (instant, no AI). */
 export const GET = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const chat = getChat(id);
+  const chat = await getChat(id);
   if (!chat) return bad("Chat not found", 404);
   const format = new URL(req.url).searchParams.get("format") === "epub" ? "epub" : "md";
-  const md = toMarkdown(chat, listMessages(chat.id));
+  const md = await toMarkdown(chat, await listMessages(chat.id));
   if (format === "md") {
     return new Response(md, {
       headers: {
@@ -61,7 +61,7 @@ interface RewriteBody {
  */
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const chat = getChat(id);
+  const chat = await getChat(id);
   if (!chat) return bad("Chat not found", 404);
   const body = (await req.json().catch(() => ({}))) as RewriteBody;
   const format = body.format === "epub" ? "epub" : "md";
@@ -70,13 +70,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   let ctx: ChatContext;
   let modelRef: ResolvedModel;
   try {
-    ctx = buildContext(id);
-    modelRef = resolveModel("novelize", chat);
+    ctx = await buildContext(id);
+    modelRef = await resolveModel("novelize", chat);
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 400);
   }
 
-  const chapters = splitChapters(chat, ctx.messages);
+  const chapters = await splitChapters(chat, ctx.messages);
   const system = buildNovelizeSystem(ctx, voice);
   const encoder = new TextEncoder();
   const abort = new AbortController();
@@ -113,7 +113,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
                 modelRef,
                 system,
                 messages: [
-                  { role: "user", content: novelizeUserMessage(tail, transcriptForModel(chat, parts[p])) },
+                  { role: "user", content: novelizeUserMessage(tail, await transcriptForModel(chat, parts[p])) },
                 ],
                 maxTokens: REWRITE_MAX_TOKENS,
                 feature: "novelize",
@@ -128,7 +128,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             if (abort.signal.aborted) break;
             // fail-soft: this part keeps the plain transcript rendering instead
             send({ type: "notice", message: e instanceof Error ? e.message : String(e) });
-            lines.push(...transcriptMd(chat, parts[p]));
+            lines.push(...(await transcriptMd(chat, parts[p])));
           }
         }
       }

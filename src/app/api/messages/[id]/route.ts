@@ -7,7 +7,7 @@ import { deleteMessage, getMessage, invalidateSummary, updateMessage } from "@/l
  */
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const msg = getMessage(id);
+  const msg = await getMessage(id);
   if (!msg) return bad("Message not found", 404);
   const b = await req.json();
 
@@ -22,9 +22,9 @@ export const PATCH = handler(async (req: Request, { params }: IdParams) => {
       emotion: b.emotion !== undefined ? b.emotion : v.emotion,
       options: b.options !== undefined ? b.options : v.options,
     };
-    invalidateSummary(msg.chatId, msg.position);
+    await invalidateSummary(msg.chatId, msg.position);
   }
-  const updated = updateMessage(id, {
+  const updated = await updateMessage(id, {
     variants,
     activeVariant: b.activeVariant,
     sceneEvent: b.sceneEvent,
@@ -34,9 +34,9 @@ export const PATCH = handler(async (req: Request, { params }: IdParams) => {
 
 export const DELETE = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const msg = getMessage(id);
+  const msg = await getMessage(id);
   if (!msg) return ok({ ok: true });
-  invalidateSummary(msg.chatId, msg.position);
-  deleteMessage(id);
+  await invalidateSummary(msg.chatId, msg.position);
+  await deleteMessage(id);
   return ok({ ok: true });
 });

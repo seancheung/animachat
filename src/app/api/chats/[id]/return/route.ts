@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  *  ineligible chat is a cheap no-op, so the client may fire it optimistically. */
 export const POST = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
-  if (!getChat(id)) return bad("Chat not found", 404);
+  if (!(await getChat(id))) return bad("Chat not found", 404);
   try {
     return ok(await runReturnPass(id));
   } catch (e) {

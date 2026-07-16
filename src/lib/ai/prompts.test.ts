@@ -1,7 +1,4 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildCharacterRequest,
   buildDirectorRequest,
@@ -17,12 +14,13 @@ import type { Character, Chat, Message, MessageRole, Scene, SceneEvent, StorySna
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "@/lib/types";
 import type { ResolvedModel } from "./client";
 
-// prompts.ts reads through the store — point it at a throwaway DB. The store opens
-// its connection lazily on first query, so setting the env here (after imports) is safe.
-process.env.ANIMACHAT_DB_PATH = path.join(
-  fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
-  "test.db"
-);
+// prompts.ts reads through the store — point it at a throwaway Postgres
+// schema. Imports hoist above this assignment, but the store connects lazily
+// on first query, so setting the env here is safe. The app runs no DDL:
+// beforeAll applies migrations/*.sql into the schema, afterAll drops it.
+const TEST_SCHEMA = `test_prompts_${process.pid.toString(36)}_${Date.now().toString(36)}`;
+process.env.ANIMACHAT_PG_SCHEMA = TEST_SCHEMA;
+import { dropTestSchema, initTestSchema } from "@/lib/testDb";
 import {
   putMindState,
   putOffscreenNote,
@@ -33,6 +31,9 @@ import {
   savePersona,
   saveScene,
 } from "@/lib/store";
+
+beforeAll(() => initTestSchema(TEST_SCHEMA));
+afterAll(() => dropTestSchema(TEST_SCHEMA));
 
 function makeCharacter(id: string, name: string): Character {
   return {
@@ -163,25 +164,25 @@ const stageOf = (sceneId: string | null, locationId: string | null) => ({
 });
 
 describe("resolveStageAssets stage style", () => {
-  it("merges per-field with location fields winning, and strips the enabled flag", () => {
-    const loc = saveLocation({ name: "L1", stageStyle: { enabled: true, panelBg: "#111111", accent: "#aaaaaa" } });
-    const scn = saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222", stageBg: "#000000" } });
-    const st = resolveStageAssets(chat, stageOf(scn.id, loc.id)).stageStyle;
+  it("merges per-field with location fields winning, and strips the enabled flag", async () => {
+    const loc = await saveLocation({ name: "L1", stageStyle: { enabled: true, panelBg: "#111111", accent: "#aaaaaa" } });
+    const scn = await saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222", stageBg: "#000000" } });
+    const st = (await resolveStageAssets(chat, stageOf(scn.id, loc.id))).stageStyle;
     expect(st).toMatchObject({ panelBg: "#111111", accent: "#aaaaaa", stageBg: "#000000" });
     expect(st).not.toHaveProperty("enabled");
   });
 
-  it("styles are opt-in: a style without enabled: true contributes nothing", () => {
-    const loc = saveLocation({ name: "L2", stageStyle: { panelBg: "#111111" } });
-    const scn = saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222" } });
-    expect(resolveStageAssets(chat, stageOf(scn.id, loc.id)).stageStyle?.panelBg).toBe("#222222");
+  it("styles are opt-in: a style without enabled: true contributes nothing", async () => {
+    const loc = await saveLocation({ name: "L2", stageStyle: { panelBg: "#111111" } });
+    const scn = await saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222" } });
+    expect((await resolveStageAssets(chat, stageOf(scn.id, loc.id))).stageStyle?.panelBg).toBe("#222222");
   });
 
-  it("returns null when the only style is not enabled", () => {
-    const off = saveLocation({ name: "L3", stageStyle: { panelBg: "#111111", enabled: false } });
-    expect(resolveStageAssets(chat, stageOf(null, off.id)).stageStyle).toBeNull();
-    const absent = saveLocation({ name: "L4", stageStyle: { panelBg: "#111111" } });
-    expect(resolveStageAssets(chat, stageOf(null, absent.id)).stageStyle).toBeNull();
+  it("returns null when the only style is not enabled", async () => {
+    const off = await saveLocation({ name: "L3", stageStyle: { panelBg: "#111111", enabled: false } });
+    expect((await resolveStageAssets(chat, stageOf(null, off.id))).stageStyle).toBeNull();
+    const absent = await saveLocation({ name: "L4", stageStyle: { panelBg: "#111111" } });
+    expect((await resolveStageAssets(chat, stageOf(null, absent.id))).stageStyle).toBeNull();
   });
 });
 
@@ -236,41 +237,41 @@ describe("computeStage (playthrough presence & ending)", () => {
     createdAt: 0,
   });
 
-  it("opens on the first scene with its cast", () => {
-    const st = computeStage(playChat, []);
+  it("opens on the first scene with its cast", async () => {
+    const st = await computeStage(playChat, []);
     expect(st.sceneId).toBe("s1");
     expect(st.present).toEqual(["c1"]);
     expect(st.ended).toBe(false);
   });
 
-  it("folds enter/leave events; a scene change resets to the new scene's cast", () => {
+  it("folds enter/leave events; a scene change resets to the new scene's cast", async () => {
     const msgs = [
       narratorEvent(0, { enter: ["c2"] }),
       narratorEvent(1, { leave: ["c1"] }),
     ];
-    let st = computeStage(playChat, msgs);
+    let st = await computeStage(playChat, msgs);
     expect(st.present).toEqual(["c2"]);
-    st = computeStage(playChat, [...msgs, narratorEvent(2, { sceneId: "s2" })]);
+    st = await computeStage(playChat, [...msgs, narratorEvent(2, { sceneId: "s2" })]);
     expect(st.sceneId).toBe("s2");
     expect(st.present).toEqual(["c1", "c2"]);
   });
 
-  it("never puts the played character (a non-participant) on stage", () => {
+  it("never puts the played character (a non-participant) on stage", async () => {
     const asMira: Chat = { ...playChat, characterIds: ["c2"], personaCharacterId: "c1" };
-    const st = computeStage(asMira, [narratorEvent(0, { sceneId: "s2" })]);
+    const st = await computeStage(asMira, [narratorEvent(0, { sceneId: "s2" })]);
     expect(st.present).toEqual(["c2"]);
   });
 
-  it("derives the ended flag, and rewinding before The End un-ends the story", () => {
+  it("derives the ended flag, and rewinding before The End un-ends the story", async () => {
     const msgs = [narratorEvent(0, { sceneId: "s2" }), narratorEvent(1, { theEnd: true })];
-    expect(computeStage(playChat, msgs).ended).toBe(true);
-    expect(computeStage(playChat, msgs, 0).ended).toBe(false);
+    expect((await computeStage(playChat, msgs)).ended).toBe(true);
+    expect((await computeStage(playChat, msgs, 0)).ended).toBe(false);
   });
 
-  it("folds reveal events, and rewinding before a reveal un-reveals it", () => {
+  it("folds reveal events, and rewinding before a reveal un-reveals it", async () => {
     const msgs = [narratorEvent(0, { enter: ["c2"] }), narratorEvent(1, { reveal: ["sec1"] })];
-    expect(computeStage(playChat, msgs).revealed).toEqual(["sec1"]);
-    expect(computeStage(playChat, msgs, 0).revealed).toEqual([]);
+    expect((await computeStage(playChat, msgs)).revealed).toEqual(["sec1"]);
+    expect((await computeStage(playChat, msgs, 0)).revealed).toEqual([]);
   });
 });
 
@@ -315,33 +316,33 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     };
   }
 
-  it("only the holder carries an unrevealed secret; others never see it", () => {
+  it("only the holder carries an unrevealed secret; others never see it", async () => {
     const ctx = storyCtx([]);
-    const kaelReq = buildCharacterRequest(ctx, kael, modelRef);
+    const kaelReq = await buildCharacterRequest(ctx, kael, modelRef);
     expect(kaelReq.system).toContain("SECRETS KAEL KEEPS");
     expect(kaelReq.system).toContain("Kael owes the Ashen Guild too.");
-    const miraReq = buildCharacterRequest(ctx, mira, modelRef);
+    const miraReq = await buildCharacterRequest(ctx, mira, modelRef);
     expect(miraReq.system).not.toContain("Kael owes the Ashen Guild too.");
   });
 
-  it("a revealed secret becomes open truth for everyone and leaves the guarded block", () => {
+  it("a revealed secret becomes open truth for everyone and leaves the guarded block", async () => {
     const ctx = storyCtx(["sec1"]);
-    const miraReq = buildCharacterRequest(ctx, mira, modelRef);
+    const miraReq = await buildCharacterRequest(ctx, mira, modelRef);
     expect(miraReq.system).toContain("TRUTHS NOW IN THE OPEN");
     expect(miraReq.system).toContain("Kael owes the Ashen Guild too.");
-    const kaelReq = buildCharacterRequest(ctx, kael, modelRef);
+    const kaelReq = await buildCharacterRequest(ctx, kael, modelRef);
     expect(kaelReq.system).not.toContain("SECRETS KAEL KEEPS");
   });
 
-  it("the narrator carries the speaker law naming the cast", () => {
-    const req = buildNarratorRequest(storyCtx([]), modelRef);
+  it("the narrator carries the speaker law naming the cast", async () => {
+    const req = await buildNarratorRequest(storyCtx([]), modelRef);
     expect(req.system).toContain("THE CAST'S VOICES ARE NEVER YOURS");
     expect(req.system).toContain("Mira, Kael");
     expect(req.system).toContain("An entered character takes the very next turn");
   });
 
-  it("the narrator sees the contract, destination, and all secrets with hints", () => {
-    const req = buildNarratorRequest(storyCtx([]), modelRef);
+  it("the narrator sees the contract, destination, and all secrets with hints", async () => {
+    const req = await buildNarratorRequest(storyCtx([]), modelRef);
     expect(req.system).toContain("THIS SCENE'S JOB");
     expect(req.system).toContain("Entangle the user in the debt");
     expect(req.system).toContain("The scene is done when: someone commits to helping");
@@ -351,15 +352,15 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     expect(req.system).toContain("<reveal>Title</reveal>");
   });
 
-  it("the director sees secret titles and the contract, never secret contents", () => {
-    const req = buildDirectorRequest(storyCtx([]), modelRef);
+  it("the director sees secret titles and the contract, never secret contents", async () => {
+    const req = await buildDirectorRequest(storyCtx([]), modelRef);
     expect(req.system).toContain(`"Kael's own debt"`);
     expect(req.system).toContain("Scene goal: Entangle the user in the debt");
     expect(req.system).toContain("headed toward: Ends at dawn");
     expect(req.system).not.toContain("Kael owes the Ashen Guild too.");
   });
 
-  it("playing a cast member anchors the narrator's camera and options to them", () => {
+  it("playing a cast member anchors the narrator's camera and options to them", async () => {
     const base = storyCtx([]);
     const ctx: ChatContext = {
       ...base,
@@ -369,7 +370,7 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
       playedCharacter: kael,
       persona: { id: "c2", name: "Kael", description: "", tags: [], createdAt: 0, updatedAt: 0 },
     };
-    const req = buildNarratorRequest(ctx, modelRef);
+    const req = await buildNarratorRequest(ctx, modelRef);
     expect(req.system).toContain("THE CAMERA IS KAEL");
     expect(req.system).toContain("an action or line for Kael alone");
     expect(req.system).toContain("If Kael dies or leaves the story for good");
@@ -526,8 +527,8 @@ describe("narrator branching & offstage pressures", () => {
     };
   }
 
-  it("lists the open roads with their hints and instructs the targeted tag", () => {
-    const req = buildNarratorRequest(branchCtx("s1"), modelRef);
+  it("lists the open roads with their hints and instructs the targeted tag", async () => {
+    const req = await buildNarratorRequest(branchCtx("s1"), modelRef);
     expect(req.system).toContain("WHERE THE STORY CAN GO NEXT");
     expect(req.system).toContain(`"The Collectors' Terms" — Grey gloves at the door.`);
     expect(req.system).toContain("(this road when: if the debt stands)");
@@ -536,24 +537,24 @@ describe("narrator branching & offstage pressures", () => {
     expect(req.system).not.toContain("this is the FINAL scene");
   });
 
-  it("a branch-target ending offers no next scene — it is the final scene", () => {
-    const req = buildNarratorRequest(branchCtx("s2a"), modelRef);
+  it("a branch-target ending offers no next scene — it is the final scene", async () => {
+    const req = await buildNarratorRequest(branchCtx("s2a"), modelRef);
     expect(req.system).not.toContain("WHERE THE STORY CAN GO NEXT");
     expect(req.system).not.toContain("NEXT SCENE");
     expect(req.system).toContain("this is the FINAL scene");
   });
 
-  it("a played cast member collapses the branch to their one road — bare tag, no menu", () => {
+  it("a played cast member collapses the branch to their one road — bare tag, no menu", async () => {
     // Kael is only in s2a: the s2b road is one his story doesn't take
-    const req = buildNarratorRequest(branchCtx("s1", "c2"), modelRef);
+    const req = await buildNarratorRequest(branchCtx("s1", "c2"), modelRef);
     expect(req.system).toContain("NEXT SCENE (if the story should advance): The Collectors' Terms");
     expect(req.system).toContain("(this road when: if the debt stands)");
     expect(req.system).not.toContain("WHERE THE STORY CAN GO NEXT");
     expect(req.system).toContain("<next-scene/>");
   });
 
-  it("carries the offstage pressure as part of the scene's job", () => {
-    const req = buildNarratorRequest(branchCtx("s1"), modelRef);
+  it("carries the offstage pressure as part of the scene's job", async () => {
+    const req = await buildNarratorRequest(branchCtx("s1"), modelRef);
     expect(req.system).toContain("THIS SCENE'S JOB");
     expect(req.system).toContain("Meanwhile, elsewhere: the collectors work their way up the river road");
   });
@@ -562,42 +563,42 @@ describe("narrator branching & offstage pressures", () => {
 describe("buildCharacterRequest", () => {
   const mira = makeCharacter("c1", "Mira");
 
-  it("includes example dialogue early in a chat", () => {
+  it("includes example dialogue early in a chat", async () => {
     const ctx = makeCtx(makeMessages(exchange("c1", 2)), [mira]);
-    const req = buildCharacterRequest(ctx, mira, modelRef);
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).toContain("EXAMPLE OF HOW Mira SPEAKS");
   });
 
-  it("drops example dialogue once the character has enough replies in the window", () => {
+  it("drops example dialogue once the character has enough replies in the window", async () => {
     const ctx = makeCtx(makeMessages(exchange("c1", 8)), [mira]);
-    const req = buildCharacterRequest(ctx, mira, modelRef);
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).not.toContain("EXAMPLE OF HOW");
   });
 
-  it("counts only the character's own replies toward the fade", () => {
+  it("counts only the character's own replies toward the fade", async () => {
     const kael = makeCharacter("c2", "Kael");
     const messages = makeMessages([...exchange("c2", 10), ...exchange("c1", 2)]);
     const ctx = makeCtx(messages, [mira, kael]);
-    const req = buildCharacterRequest(ctx, mira, modelRef);
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).toContain("EXAMPLE OF HOW Mira SPEAKS");
-    expect(buildCharacterRequest(ctx, kael, modelRef).system).not.toContain("EXAMPLE OF HOW");
+    expect((await buildCharacterRequest(ctx, kael, modelRef)).system).not.toContain("EXAMPLE OF HOW");
   });
 
-  it("binds [char_name] in a sheet to that sheet's character, not the chat's first character", () => {
+  it("binds [char_name] in a sheet to that sheet's character, not the chat's first character", async () => {
     const kael = makeCharacter("c2", "Kael");
     kael.description = "[char_name] of Varr, knight-errant.";
     const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira, kael]);
     ctx.sub = (text, selfName) =>
       substitutePlaceholders(text, { characterNames: ["Mira", "Kael"], selfName });
-    const req = buildCharacterRequest(ctx, kael, modelRef);
+    const req = await buildCharacterRequest(ctx, kael, modelRef);
     expect(req.system).toContain("Kael of Varr");
     // and in Mira's prompt, Kael's sheet in OTHER CHARACTERS still resolves to Kael
-    expect(buildCharacterRequest(ctx, mira, modelRef).system).toContain("Kael of Varr");
+    expect((await buildCharacterRequest(ctx, mira, modelRef)).system).toContain("Kael of Varr");
   });
 
-  it("always instructs against reciting the character sheet", () => {
+  it("always instructs against reciting the character sheet", async () => {
     const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira]);
-    const req = buildCharacterRequest(ctx, mira, modelRef);
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
     expect(req.system).toContain("private background knowledge");
   });
 });
@@ -609,16 +610,16 @@ describe("playing as narrator (the user is the narrator)", () => {
     chat: { ...chat, playAsNarrator: true, narratorEnabled: false },
   });
 
-  it("frames the user as the narrator and pins third person in character prompts", () => {
-    const req = buildCharacterRequest(gmCtx(), mira, modelRef);
+  it("frames the user as the narrator and pins third person in character prompts", async () => {
+    const req = await buildCharacterRequest(gmCtx(), mira, modelRef);
     expect(req.system).toContain("THE USER IS THE NARRATOR");
     expect(req.system).toContain("third person");
     // the persona-mode user-format rule is replaced, not merely appended to
     expect(req.system).not.toContain("their unmarked text is usually speech");
   });
 
-  it("impersonate drafts narration, with narrator messages as the user's own side", () => {
-    const req = buildImpersonateRequest(gmCtx(), modelRef);
+  it("impersonate drafts narration, with narrator messages as the user's own side", async () => {
+    const req = await buildImpersonateRequest(gmCtx(), modelRef);
     expect(req.system).toContain("NARRATION");
     expect(req.system).toContain("Never write the characters' dialogue");
     // the narrator-role message is the user's own → assistant side of the history
@@ -634,31 +635,31 @@ describe("impersonate POV (a draft on the user's behalf gets the user's seat, no
     persona: { id: "p1", name: "Ash", description: "A wandering scribe.", tags: [], createdAt: 0, updatedAt: 0 },
   });
 
-  it("vn2nd: drafts in the user's first person, never the narrator's second person", () => {
-    const req = buildImpersonateRequest(povCtx("vn2nd"), modelRef);
+  it("vn2nd: drafts in the user's first person, never the narrator's second person", async () => {
+    const req = await buildImpersonateRequest(povCtx("vn2nd"), modelRef);
     expect(req.system).not.toContain('Address the user directly as "you"');
     expect(req.system).toContain('write in first person as Ash ("I ...")');
     expect(req.system).toContain("Never write in second person");
   });
 
-  it("user1st: the draft speaks as I, not about Ash from outside", () => {
-    const req = buildImpersonateRequest(povCtx("user1st"), modelRef);
+  it("user1st: the draft speaks as I, not about Ash from outside", async () => {
+    const req = await buildImpersonateRequest(povCtx("user1st"), modelRef);
     expect(req.system).toContain('Write in first person as Ash ("I ...")');
     expect(req.system).not.toContain("Refer to the user as Ash");
   });
 
-  it("third: the draft stays in third person by name", () => {
-    const req = buildImpersonateRequest(povCtx("third"), modelRef);
+  it("third: the draft stays in third person by name", async () => {
+    const req = await buildImpersonateRequest(povCtx("third"), modelRef);
     expect(req.system).toContain(`write Ash's actions and dialogue by name`);
   });
 
-  it("character prompts keep the speaker-seat rules", () => {
-    const req = buildCharacterRequest(povCtx("vn2nd"), mira, modelRef);
+  it("character prompts keep the speaker-seat rules", async () => {
+    const req = await buildCharacterRequest(povCtx("vn2nd"), mira, modelRef);
     expect(req.system).toContain('Address the user directly as "you"');
   });
 
-  it("narrator options carry the user-seat convention next to the speaker-seat narration rules", () => {
-    const req = buildNarratorRequest({ ...povCtx("vn2nd"), chat: { ...chat, narratorEnabled: true } }, modelRef);
+  it("narrator options carry the user-seat convention next to the speaker-seat narration rules", async () => {
+    const req = await buildNarratorRequest({ ...povCtx("vn2nd"), chat: { ...chat, narratorEnabled: true } }, modelRef);
     // the narration itself keeps the speaker seat…
     expect(req.system).toContain('Address the user directly as "you"');
     // …while the suggested actions get the user's format and POV explicitly
@@ -672,11 +673,15 @@ describe("aliveness prompt gates", () => {
   // mind states / offscreen notes / relationships live behind foreign keys — these
   // tests need real rows, not the in-memory fixtures. Traits are opted in here:
   // aliveness is all-off by default.
-  const dbChar = saveCharacter({
-    name: "Vale",
-    aliveness: { initiative: true, timeAware: true, mindState: true, offscreenLife: "off" },
+  let dbChar: Character;
+  let dbChat: Chat;
+  beforeAll(async () => {
+    dbChar = await saveCharacter({
+      name: "Vale",
+      aliveness: { initiative: true, timeAware: true, mindState: true, offscreenLife: "off" },
+    });
+    dbChat = await saveChat({ title: "aliveness", characterIds: [dbChar.id] });
   });
-  const dbChat = saveChat({ title: "aliveness", characterIds: [dbChar.id] });
   const at = (ts: number) => (m: Message, i: number, all: Message[]) => ({
     ...m,
     createdAt: ts + i - all.length,
@@ -696,53 +701,53 @@ describe("aliveness prompt gates", () => {
     };
   };
 
-  it("initiative block rides its toggle, and defaults to off", () => {
-    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).toContain("HAS A LIFE OF THEIR OWN");
+  it("initiative block rides its toggle, and defaults to off", async () => {
+    expect((await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef)).system).toContain("HAS A LIFE OF THEIR OWN");
     const quiet = { ...dbChar, aliveness: { ...dbChar.aliveness, initiative: false } };
-    expect(buildCharacterRequest(ctxFor(quiet), quiet, modelRef).system).not.toContain("HAS A LIFE OF THEIR OWN");
+    expect((await buildCharacterRequest(ctxFor(quiet), quiet, modelRef)).system).not.toContain("HAS A LIFE OF THEIR OWN");
     // a character that never opted in stays purely reactive
     const plain = { ...dbChar, aliveness: { ...DEFAULT_ALIVENESS } };
-    expect(buildCharacterRequest(ctxFor(plain), plain, modelRef).system).not.toContain("HAS A LIFE OF THEIR OWN");
+    expect((await buildCharacterRequest(ctxFor(plain), plain, modelRef)).system).not.toContain("HAS A LIFE OF THEIR OWN");
   });
 
-  it("story mode suppresses every aliveness block regardless of toggles", () => {
-    putMindState(dbChar.id, dbChat.id, "restless");
-    const req = buildCharacterRequest(ctxFor(dbChar, { snapshot: true, msgAt: Date.now() - 8 * HOUR }), dbChar, modelRef);
+  it("story mode suppresses every aliveness block regardless of toggles", async () => {
+    await putMindState(dbChar.id, dbChat.id, "restless");
+    const req = await buildCharacterRequest(ctxFor(dbChar, { snapshot: true, msgAt: Date.now() - 8 * HOUR }), dbChar, modelRef);
     expect(req.system).not.toContain("HAS A LIFE OF THEIR OWN");
     expect(req.system).not.toContain("ON VALE'S MIND");
     expect(req.system).not.toContain("TIME: about");
   });
 
-  it("a real gap surfaces as a TIME note only when time awareness is on", () => {
+  it("a real gap surfaces as a TIME note only when time awareness is on", async () => {
     const old = { msgAt: Date.now() - 30 * HOUR };
-    expect(buildCharacterRequest(ctxFor(dbChar, old), dbChar, modelRef).system).toContain("TIME: about 30 hours");
-    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).not.toContain("TIME: about");
+    expect((await buildCharacterRequest(ctxFor(dbChar, old), dbChar, modelRef)).system).toContain("TIME: about 30 hours");
+    expect((await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef)).system).not.toContain("TIME: about");
     const timeless = { ...dbChar, aliveness: { ...dbChar.aliveness, timeAware: false } };
-    expect(buildCharacterRequest(ctxFor(timeless, old), timeless, modelRef).system).not.toContain("TIME: about");
+    expect((await buildCharacterRequest(ctxFor(timeless, old), timeless, modelRef)).system).not.toContain("TIME: about");
   });
 
-  it("mind state and off-screen notes inject from the store behind their gates", () => {
-    putMindState(dbChar.id, dbChat.id, "still turning the argument over");
-    putOffscreenNote(dbChar.id, dbChat.id, "has been repainting the shop");
-    const req = buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef);
+  it("mind state and off-screen notes inject from the store behind their gates", async () => {
+    await putMindState(dbChar.id, dbChat.id, "still turning the argument over");
+    await putOffscreenNote(dbChar.id, dbChat.id, "has been repainting the shop");
+    const req = await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef);
     expect(req.system).toContain("still turning the argument over");
     // offscreenLife defaults to off — the stored note must NOT leak in
     expect(req.system).not.toContain("repainting the shop");
     const texter = { ...dbChar, aliveness: { ...dbChar.aliveness, offscreenLife: "texts" as const } };
-    expect(buildCharacterRequest(ctxFor(texter), texter, modelRef).system).toContain("repainting the shop");
+    expect((await buildCharacterRequest(ctxFor(texter), texter, modelRef)).system).toContain("repainting the shop");
   });
 
-  it("a returning turn instructs the character to re-open the conversation", () => {
-    const req = buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef, { returning: true });
+  it("a returning turn instructs the character to re-open the conversation", async () => {
+    const req = await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef, { returning: true });
     expect(req.system).toContain("re-opening the conversation");
-    expect(buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef).system).not.toContain("re-opening the conversation");
+    expect((await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef)).system).not.toContain("re-opening the conversation");
   });
 
-  it("relationship lines carry an affinity tone reading", () => {
-    const persona = savePersona({ name: "Rin" });
-    putRelationship(dbChar.id, persona.id, 70, "shared a rooftop dinner");
+  it("relationship lines carry an affinity tone reading", async () => {
+    const persona = await savePersona({ name: "Rin" });
+    await putRelationship(dbChar.id, persona.id, 70, "shared a rooftop dinner");
     const ctx = { ...ctxFor(dbChar), persona };
-    const req = buildCharacterRequest(ctx, dbChar, modelRef);
+    const req = await buildCharacterRequest(ctx, dbChar, modelRef);
     expect(req.system).toContain("affinity 70/100 (close and at ease)");
     expect(req.system).toContain("let the affinity color tone and openness");
   });

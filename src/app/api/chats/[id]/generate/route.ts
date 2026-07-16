@@ -97,8 +97,8 @@ async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
 
   // story mode: the DIRECTOR routes — contract-aware, may schedule narrator + reactor
   if (ctx.chat.mode === "story" && ctx.snapshot) {
-    const modelRef = resolveModel("director", ctx.chat);
-    const req = buildDirectorRequest(ctx, modelRef);
+    const modelRef = await resolveModel("director", ctx.chat);
+    const req = await buildDirectorRequest(ctx, modelRef);
     const raw = await callLlm({
       modelRef,
       system: req.system,
@@ -126,8 +126,8 @@ async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
   }
 
   // casual/immersive group chat and/or narrator: ask the orchestrator
-  const modelRef = resolveModel("orchestrator", ctx.chat);
-  const req = buildOrchestratorRequest(ctx, modelRef);
+  const modelRef = await resolveModel("orchestrator", ctx.chat);
+  const req = await buildOrchestratorRequest(ctx, modelRef);
   const raw = await callLlm({
     modelRef,
     system: req.system,
@@ -192,14 +192,14 @@ function resolveNextScene(ctx: ChatContext, target: string | null): string | nul
   return allowed[0];
 }
 
-function maybeGenerateTitle(chatId: string) {
+async function maybeGenerateTitle(chatId: string) {
   try {
-    const ctx = buildContext(chatId);
+    const ctx = await buildContext(chatId);
     // playthroughs are titled at creation ("Playthrough — <played name>") — never by AI
     if (ctx.chat.mode === "story") return;
     if (ctx.chat.title !== "New chat" || ctx.messages.length < 2) return;
-    const modelRef = resolveModel("title", ctx.chat);
-    const req = buildTitleRequest(ctx);
+    const modelRef = await resolveModel("title", ctx.chat);
+    const req = await buildTitleRequest(ctx);
     void callLlm({
       modelRef,
       system: req.system,
@@ -208,9 +208,9 @@ function maybeGenerateTitle(chatId: string) {
       feature: "title",
       chatId,
     })
-      .then((t) => {
+      .then(async (t) => {
         const title = t.trim().split("\n")[0].replace(/^["'#\s]+|["'\s]+$/g, "").slice(0, 80);
-        if (title) saveChat({ id: chatId, title });
+        if (title) await saveChat({ id: chatId, title });
       })
       .catch(() => {});
   } catch {
@@ -220,21 +220,21 @@ function maybeGenerateTitle(chatId: string) {
 
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id: chatId } = await params;
-  if (!getChat(chatId)) return bad("Chat not found", 404);
+  if (!(await getChat(chatId))) return bad("Chat not found", 404);
   const body = (await req.json()) as GenerateBody;
 
   // append the user's message first so it's part of the context — converting exact
   // @Name/@all into <mention> tags against the on-stage cast (presence can't change
   // from a user message, so resolving names pre-append is safe)
   if (body.userText?.trim()) {
-    const pre = buildContext(chatId);
+    const pre = await buildContext(chatId);
     body.userText = tagMentions(body.userText.trim(), pre.present.map((c) => c.name));
     // playing as narrator: the user's messages ARE narrator messages — narration, not
     // a persona's dialogue (casual/immersive only, so no staging tags to parse)
-    appendMessage({ chatId, role: pre.chat.playAsNarrator ? "narrator" : "user", content: body.userText });
+    await appendMessage({ chatId, role: pre.chat.playAsNarrator ? "narrator" : "user", content: body.userText });
   }
 
-  let ctx = buildContext(chatId);
+  let ctx = await buildContext(chatId);
 
   // texts-first re-guard: between the return pass and this request the tail may
   // have moved (another tab's turn landed) — then the return is already spoken
@@ -253,7 +253,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
   // regeneration targets an existing message; context stops before it
   let regenTarget: Message | null = null;
   if (body.regenerateMessageId) {
-    regenTarget = getMessage(body.regenerateMessageId);
+    regenTarget = await getMessage(body.regenerateMessageId);
     if (!regenTarget || regenTarget.chatId !== chatId) return bad("Message to regenerate not found");
     if (regenTarget.role !== "character" && regenTarget.role !== "narrator")
       return bad("Only AI messages can be regenerated");
@@ -284,7 +284,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
       speakers = await pickSpeakers(ctx, body);
     }
     // resolve the first speaker's model up front so config problems fail the request
-    resolveModel(
+    await resolveModel(
       speakers[0].role === "narrator" ? "narrator" : "chat",
       ctx.chat,
       speakers[0].character?.id
@@ -325,7 +325,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         // and so the infinite-mentions toggle is re-read live from the chat
         let turnCtx: ChatContext;
         try {
-          turnCtx = regenTarget ? buildContext(chatId, regenMessages) : buildContext(chatId);
+          turnCtx = regenTarget ? await buildContext(chatId, regenMessages) : await buildContext(chatId);
         } catch (e) {
           // e.g. the chat was deleted from another tab mid-chain — end the stream
           // with an error event instead of crashing it
@@ -344,7 +344,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         let modelRef: ResolvedModel;
         try {
-          modelRef = resolveModel(
+          modelRef = await resolveModel(
             speaker.role === "narrator" ? "narrator" : "chat",
             turnCtx.chat,
             speaker.character?.id
@@ -356,8 +356,8 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
         const built =
           speaker.role === "narrator"
-            ? buildNarratorRequest(turnCtx, modelRef)
-            : buildCharacterRequest(turnCtx, speaker.character!, modelRef, {
+            ? await buildNarratorRequest(turnCtx, modelRef)
+            : await buildCharacterRequest(turnCtx, speaker.character!, modelRef, {
                 returning: speaker.returning,
               });
 
@@ -467,16 +467,16 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             // tail-ness is re-verified inside addVariant — a message frozen while we
             // streamed (follow-up landed, concurrent regen won) returns null and this
             // variant is discarded instead of resurrecting the frozen message's swipes
-            saved = addVariant(regenTarget.id, {
+            saved = await addVariant(regenTarget.id, {
               content,
               emotion,
               options,
               sceneEvent,
               createdAt: Date.now(),
             });
-            if (saved) setRawOutput(saved.id, saved.activeVariant, raw);
+            if (saved) await setRawOutput(saved.id, saved.activeVariant, raw);
           } else {
-            saved = appendMessage({
+            saved = await appendMessage({
               chatId,
               role: speaker.role,
               characterId: speaker.character?.id ?? null,
@@ -489,13 +489,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           }
           if (saved) {
             savedAny = true;
-            const fresh = buildContext(chatId);
-            const stage = computeStage(fresh.chat, fresh.messages);
+            const fresh = await buildContext(chatId);
+            const stage = await computeStage(fresh.chat, fresh.messages);
             send({
               type: "done",
               message: saved,
               options,
-              stage: { ...stage, ...resolveStageAssets(fresh.chat, stage) },
+              stage: { ...stage, ...(await resolveStageAssets(fresh.chat, stage)) },
             });
 
             // a mid-scene entrance hands the entered cast the next turns: the narrator
@@ -532,7 +532,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
 
       if (savedAny) {
         void runMemoryPass(chatId).catch(() => {});
-        maybeGenerateTitle(chatId);
+        void maybeGenerateTitle(chatId).catch(() => {});
       }
       try {
         controller.close();

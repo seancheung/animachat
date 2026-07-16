@@ -1,8 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
 import JSZip from "jszip";
-import { ASSETS_DIR } from "./db";
-import { writeVerifiedAsset } from "./bundle";
+import { ASSET_ID_RE, getAssetBuffer, writeVerifiedAsset } from "./assets";
 import { storyDocAssetIds } from "./storyDoc";
 import {
   appendMessage,
@@ -34,13 +31,13 @@ interface ChatArchive {
  * (Archives from before the fork feature may carry a `checkpoints` field — ignored.)
  */
 export async function exportChatArchive(chatId: string): Promise<Buffer> {
-  const chat = getChat(chatId);
+  const chat = await getChat(chatId);
   if (!chat) throw new Error("Chat not found");
 
   // complete the name snapshots so the archive shows names without the library
   const nameSnapshots = { ...chat.nameSnapshots };
   for (const cid of chat.characterIds) {
-    const c = getCharacter(cid);
+    const c = await getCharacter(cid);
     if (c) nameSnapshots[cid] = c.name;
   }
 
@@ -49,10 +46,10 @@ export async function exportChatArchive(chatId: string): Promise<Buffer> {
   const zip = new JSZip();
   const assets: ChatArchive["assets"] = [];
   for (const aid of assetIds) {
-    const meta = getAsset(aid);
-    const file = path.join(ASSETS_DIR, aid);
-    if (meta && fs.existsSync(file)) {
-      zip.file(`assets/${aid}`, fs.readFileSync(file));
+    const meta = await getAsset(aid);
+    const bytes = meta ? await getAssetBuffer(aid) : null;
+    if (meta && bytes) {
+      zip.file(`assets/${aid}`, bytes);
       assets.push({ id: aid, filename: meta.filename, mime: meta.mime });
     }
   }
@@ -62,7 +59,7 @@ export async function exportChatArchive(chatId: string): Promise<Buffer> {
     kind: "chat",
     version: 1,
     chat: { ...chat, nameSnapshots },
-    messages: listMessages(chatId),
+    messages: await listMessages(chatId),
     assets,
   };
   zip.file("chat.json", JSON.stringify(manifest, null, 2));
@@ -85,23 +82,22 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
     throw new Error(`This chat archive uses format version ${manifest.version} — made by a newer AnimaChat`);
 
   // assets are content-addressed — identical files land on the same id
-  fs.mkdirSync(ASSETS_DIR, { recursive: true });
   for (const a of manifest.assets ?? []) {
     const f = zip.file(`assets/${a.id}`);
-    if (!f || !/^[a-f0-9]{32}$/.test(a.id)) continue;
+    if (!f || !ASSET_ID_RE.test(a.id)) continue;
     const data = await f.async("nodebuffer");
-    if (!writeVerifiedAsset(a.id, data)) continue;
-    registerAsset(a.id, a.filename, a.mime, data.length);
+    if (!(await writeVerifiedAsset(a.id, data, a.mime))) continue;
+    await registerAsset(a.id, a.filename, a.mime, data.length);
   }
 
   // atomic: a malformed message mid-archive must not leave a half-imported chat
-  return inTransaction(() => {
+  return inTransaction(async () => {
     const { id: _id, createdAt: _c, updatedAt: _u, ...chatFields } = manifest.chat ?? ({} as Chat);
-    const chat = saveChat(chatFields);
+    const chat = await saveChat(chatFields);
 
     for (const m of manifest.messages ?? []) {
       const first = m.variants?.[0];
-      const saved = appendMessage({
+      const saved = await appendMessage({
         chatId: chat.id,
         role: m.role,
         characterId: m.characterId ?? null,
@@ -114,7 +110,7 @@ export async function importChatArchive(buf: Buffer): Promise<Chat> {
       // archives from before the raw_outputs table carried raw model output
       // inside variants — debug data that doesn't travel, so drop it
       if (Array.isArray(m.variants))
-        updateMessage(saved.id, {
+        await updateMessage(saved.id, {
           variants: m.variants.map(({ raw: _raw, ...v }: { raw?: unknown } & Message["variants"][number]) => v),
           activeVariant: m.activeVariant ?? 0,
         });

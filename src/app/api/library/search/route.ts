@@ -3,7 +3,7 @@ import { LIBRARY_TYPE_KEYS, clampLimit, searchLibraryNames, type LibraryType } f
 
 /** Name search across the whole library (or one `type`, or a comma-separated `types`
  *  subset): `{ items: {type,id,name}[], nextCursor }`. */
-export const GET = handler((req: Request) => {
+export const GET = handler(async (req: Request) => {
   const sp = new URL(req.url).searchParams;
   const type = sp.get("type") ?? undefined;
   if (type && !LIBRARY_TYPE_KEYS.includes(type as LibraryType)) return bad("invalid type");
@@ -11,7 +11,7 @@ export const GET = handler((req: Request) => {
   if (types && (!types.length || types.some((t) => !LIBRARY_TYPE_KEYS.includes(t as LibraryType))))
     return bad("invalid types");
   return ok(
-    searchLibraryNames({
+    await searchLibraryNames({
       q: sp.get("q") ?? undefined,
       type: type as LibraryType | undefined,
       types: types as LibraryType[] | undefined,

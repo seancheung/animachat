@@ -31,13 +31,13 @@ function storyListItem(s: Story) {
   };
 }
 
-export const GET = handler((req: Request) => {
-  const page = pageStories(pageOpts(req));
+export const GET = handler(async (req: Request) => {
+  const page = await pageStories(pageOpts(req));
   return ok({ items: page.items.map(storyListItem), nextCursor: page.nextCursor });
 });
 
 export const POST = handler(async (req: Request) => {
   const body = await req.json();
   delete body.id; // creation never trusts a client id
-  return ok(saveStory(body));
+  return ok(await saveStory(body));
 });

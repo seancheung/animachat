@@ -14,11 +14,11 @@ export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   for (const k of ["inputPrice", "cacheReadPrice", "cacheWritePrice", "outputPrice"] as const) {
     if (k in b) b[k] = price(b[k]);
   }
-  const updated = updateModel(id, b);
+  const updated = await updateModel(id, b);
   return updated ? ok(updated) : bad("Model not found", 404);
 });
 
 export const DELETE = handler(async (_req: Request, { params }: IdParams) => {
-  deleteModel((await params).id);
+  await deleteModel((await params).id);
   return ok({ ok: true });
 });

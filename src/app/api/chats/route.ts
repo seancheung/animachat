@@ -14,27 +14,34 @@ import {
 } from "@/lib/store";
 import type { ChatMode, StorySnapshot } from "@/lib/types";
 
-export const GET = handler((req: Request) => {
+export const GET = handler(async (req: Request) => {
   const sp = new URL(req.url).searchParams;
   const kind = sp.get("kind");
-  const page = pageChats({
+  const page = await pageChats({
     q: sp.get("q") ?? undefined,
     folder: sp.get("folder") ?? undefined,
     kind: kind === "chats" || kind === "playthroughs" ? kind : undefined,
     limit: clampLimit(sp.get("limit")),
     cursor: sp.get("cursor"),
   });
-  return ok({
-    items: page.items.map((c) => ({
+  const items = [];
+  for (const c of page.items) {
+    const characterNames: string[] = [];
+    for (const id of c.characterIds)
+      characterNames.push((await getCharacter(id))?.name ?? c.nameSnapshots[id] ?? "?");
+    items.push({
       ...c,
       storySnapshot: undefined, // heavy; the chat page fetches it via /api/chats/[id]
-      characterNames: c.characterIds.map((id) => getCharacter(id)?.name ?? c.nameSnapshots[id] ?? "?"),
+      characterNames,
       personaName: c.personaId
-        ? (getPersona(c.personaId)?.name ?? null)
+        ? ((await getPersona(c.personaId))?.name ?? null)
         : c.personaCharacterId
           ? (c.nameSnapshots[c.personaCharacterId] ?? null)
           : null,
-    })),
+    });
+  }
+  return ok({
+    items,
     nextCursor: page.nextCursor,
   });
 });
@@ -66,8 +73,8 @@ export const POST = handler(async (req: Request) => {
     if (!characterIds.length && !narratorEnabled)
       return bad("A casual chat needs at least one character, or the narrator enabled");
   } else if (mode === "immersive") {
-    if (b.sceneId && getScene(b.sceneId)) sceneId = b.sceneId;
-    else if (b.locationId && getLocation(b.locationId)) locationId = b.locationId;
+    if (b.sceneId && (await getScene(b.sceneId))) sceneId = b.sceneId;
+    else if (b.locationId && (await getLocation(b.locationId))) locationId = b.locationId;
     else return bad("An immersive chat requires a scene or a location");
     if (!characterIds.length && !narratorEnabled)
       return bad("An immersive chat needs at least one character, or the narrator enabled");
@@ -75,7 +82,7 @@ export const POST = handler(async (req: Request) => {
     // story mode = a playthrough: the story is already a self-contained document,
     // so the snapshot is a frozen copy of it (saveStory keeps its internal
     // references self-healed — nothing to resolve against the library)
-    const story = b.storyId ? getStory(b.storyId) : null;
+    const story = b.storyId ? await getStory(b.storyId) : null;
     if (!story) return bad("A playthrough requires a story");
     storyId = story.id;
     narratorEnabled = true; // the narrator directs playthroughs — always on
@@ -122,20 +129,20 @@ export const POST = handler(async (req: Request) => {
     const playedName = personaCharacterId
       ? storySnapshot.characters.find((c) => c.id === personaCharacterId)?.name
       : personaId
-        ? getPersona(personaId)?.name
+        ? (await getPersona(personaId))?.name
         : null;
     defaultTitle = `Playthrough — ${playedName ?? story.name}`;
   }
 
   // display-name fallback so history stays readable after a library character is deleted
-  const nameSnapshots = Object.fromEntries(
-    [...characterIds, ...(personaCharacterId ? [personaCharacterId] : [])].flatMap((id) => {
-      const name = storySnapshot?.characters.find((c) => c.id === id)?.name ?? getCharacter(id)?.name;
-      return name ? [[id, name]] : [];
-    })
-  );
+  const nameSnapshotEntries: [string, string][] = [];
+  for (const id of [...characterIds, ...(personaCharacterId ? [personaCharacterId] : [])]) {
+    const name = storySnapshot?.characters.find((c) => c.id === id)?.name ?? (await getCharacter(id))?.name;
+    if (name) nameSnapshotEntries.push([id, name]);
+  }
+  const nameSnapshots = Object.fromEntries(nameSnapshotEntries);
 
-  const chat = saveChat({
+  const chat = await saveChat({
     title: b.title || defaultTitle,
     mode,
     characterIds,
@@ -162,10 +169,10 @@ export const POST = handler(async (req: Request) => {
   // (everywhere else the narrator opens the chat, triggered by the client — and when the
   // USER is the narrator, the opening move is theirs)
   if (mode === "casual" && !narratorEnabled && !playAsNarrator && characterIds.length === 1 && b.greetings === true) {
-    const c = getCharacter(characterIds[0]);
+    const c = await getCharacter(characterIds[0]);
     if (c?.greeting) {
-      const persona = personaId ? getPersona(personaId) : null;
-      appendMessage({
+      const persona = personaId ? await getPersona(personaId) : null;
+      await appendMessage({
         chatId: chat.id,
         role: "character",
         characterId: c.id,

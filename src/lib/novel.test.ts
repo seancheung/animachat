@@ -1,15 +1,17 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Chat, Message, MessageRole, SceneEvent } from "@/lib/types";
 
-// novel.ts reads through the store (speaker names) — point it at a throwaway DB.
-process.env.ANIMACHAT_DB_PATH = path.join(
-  fs.mkdtempSync(path.join(os.tmpdir(), "animachat-test-")),
-  "test.db"
-);
+// novel.ts reads through the store (speaker names) — point it at a throwaway
+// Postgres schema (imports hoist, but the store connects lazily on first
+// query, so setting the env here is safe). The app runs no DDL: beforeAll
+// applies migrations/*.sql into the schema, afterAll drops it.
+const TEST_SCHEMA = `test_novel_${process.pid.toString(36)}_${Date.now().toString(36)}`;
+process.env.ANIMACHAT_PG_SCHEMA = TEST_SCHEMA;
+import { dropTestSchema, initTestSchema } from "./testDb";
 import { chunkByTokens, splitChapters, toMarkdown, transcriptForModel } from "./novel";
+
+beforeAll(() => initTestSchema(TEST_SCHEMA));
+afterAll(() => dropTestSchema(TEST_SCHEMA));
 
 const chat: Chat = {
   id: "chat1",
@@ -57,13 +59,13 @@ function msg(
 }
 
 describe("splitChapters", () => {
-  it("puts a scene-advancing message into the chapter it opens", () => {
+  it("puts a scene-advancing message into the chapter it opens", async () => {
     const messages = [
       msg(0, "user", "hello"),
       msg(1, "narrator", "the scene shifts", { sceneEvent: { sceneId: "s-unknown" } }),
       msg(2, "user", "onward"),
     ];
-    const chapters = splitChapters(chat, messages);
+    const chapters = await splitChapters(chat, messages);
     expect(chapters).toHaveLength(2);
     expect(chapters[0].title).toBeNull();
     expect(chapters[0].messages.map((m) => m.id)).toEqual(["m0"]);
@@ -72,25 +74,25 @@ describe("splitChapters", () => {
     expect(chapters[1].messages.map((m) => m.id)).toEqual(["m1", "m2"]);
   });
 
-  it("opens a 'The End' chapter after the concluding message; epilogue falls into it", () => {
+  it("opens a 'The End' chapter after the concluding message; epilogue falls into it", async () => {
     const messages = [
       msg(0, "narrator", "it ends", { sceneEvent: { theEnd: true } }),
       msg(1, "user", "what a ride"),
     ];
-    const chapters = splitChapters(chat, messages);
+    const chapters = await splitChapters(chat, messages);
     expect(chapters.map((c) => c.title)).toEqual([null, "The End"]);
     expect(chapters[0].messages.map((m) => m.id)).toEqual(["m0"]);
     expect(chapters[1].messages.map((m) => m.id)).toEqual(["m1"]);
   });
 
-  it("keeps an empty titled chapter and drops markers and empty messages", () => {
+  it("keeps an empty titled chapter and drops markers and empty messages", async () => {
     const messages = [
       msg(0, "user", "hi"),
       msg(1, "marker", "checkpoint"),
       msg(2, "narrator", ""),
       msg(3, "narrator", "fin", { sceneEvent: { theEnd: true } }),
     ];
-    const chapters = splitChapters(chat, messages);
+    const chapters = await splitChapters(chat, messages);
     expect(chapters.map((c) => c.title)).toEqual([null, "The End"]);
     expect(chapters[0].messages.map((m) => m.id)).toEqual(["m0", "m3"]);
     expect(chapters[1].messages).toEqual([]);
@@ -98,14 +100,14 @@ describe("splitChapters", () => {
 });
 
 describe("toMarkdown", () => {
-  it("renders speaker labels, italic narrator lines, and headings", () => {
+  it("renders speaker labels, italic narrator lines, and headings", async () => {
     const messages = [
       msg(0, "user", "hello there"),
       msg(1, "character", `*smiles* "Welcome."`, { characterId: "c1" }),
       msg(2, "narrator", "*Night falls.*"),
       msg(3, "narrator", "fin", { sceneEvent: { theEnd: true } }),
     ];
-    const md = toMarkdown(chat, messages);
+    const md = await toMarkdown(chat, messages);
     expect(md).toContain("# Test");
     expect(md).toContain("**You:** hello there");
     expect(md).toContain(`**Mira:** *smiles* "Welcome."`); // name from nameSnapshots fallback
@@ -113,8 +115,8 @@ describe("toMarkdown", () => {
     expect(md).toContain("## The End");
   });
 
-  it("flattens mention tags to plain @Name", () => {
-    const md = toMarkdown(chat, [msg(0, "character", "<mention>Mira</mention> look!", { characterId: "c1" })]);
+  it("flattens mention tags to plain @Name", async () => {
+    const md = await toMarkdown(chat, [msg(0, "character", "<mention>Mira</mention> look!", { characterId: "c1" })]);
     expect(md).toContain("@Mira look!");
     expect(md).not.toContain("<mention>");
   });
@@ -138,8 +140,8 @@ describe("chunkByTokens", () => {
 });
 
 describe("transcriptForModel", () => {
-  it("labels every line with the speaker, narrator included", () => {
-    const t = transcriptForModel(chat, [
+  it("labels every line with the speaker, narrator included", async () => {
+    const t = await transcriptForModel(chat, [
       msg(0, "user", "hi"),
       msg(1, "narrator", "Rain taps the window."),
       msg(2, "character", `"Hello."`, { characterId: "c1" }),

@@ -49,22 +49,32 @@ import { alivenessOf, EMOTIONS } from "@/lib/types";
  * the stage while browsing the backlog); these wrappers bind the store's library
  * lookups for casual/immersive chats and keep every server-side import unchanged. */
 
-const storeLib: LibraryResolvers = { scene: getScene, location: getLocation };
-
-export function chatScene(chat: Chat, id: string | null | undefined): Scene | null {
-  return chatScenePure(chat, id, storeLib);
+export async function chatScene(chat: Chat, id: string | null | undefined): Promise<Scene | null> {
+  const scene = id ? await getScene(id) : null;
+  const lib: LibraryResolvers = { scene: () => scene };
+  return chatScenePure(chat, id, lib);
 }
 
-export function chatLocation(chat: Chat, id: string | null | undefined): Location | null {
-  return chatLocationPure(chat, id, storeLib);
+export async function chatLocation(chat: Chat, id: string | null | undefined): Promise<Location | null> {
+  const location = id ? await getLocation(id) : null;
+  const lib: LibraryResolvers = { location: () => location };
+  return chatLocationPure(chat, id, lib);
 }
 
-export function computeStage(chat: Chat, messages: Message[], uptoPosition?: number): StageState {
-  return computeStagePure(chat, messages, uptoPosition, storeLib);
+export async function computeStage(chat: Chat, messages: Message[], uptoPosition?: number): Promise<StageState> {
+  const scenes = new Map<string, Scene | null>();
+  for (const id of [chat.sceneId, ...messages.map((m) => m.sceneEvent?.sceneId)]) {
+    if (id && !scenes.has(id)) scenes.set(id, await getScene(id));
+  }
+  const lib: LibraryResolvers = { scene: (id) => scenes.get(id) ?? null };
+  return computeStagePure(chat, messages, uptoPosition, lib);
 }
 
-export function resolveStageAssets(chat: Chat, state: StageState): StageAssets {
-  return resolveStageAssetsPure(chat, state, storeLib);
+export async function resolveStageAssets(chat: Chat, state: StageState): Promise<StageAssets> {
+  const scene = state.sceneId ? await getScene(state.sceneId) : null;
+  const location = state.locationId ? await getLocation(state.locationId) : null;
+  const lib: LibraryResolvers = { scene: () => scene, location: () => location };
+  return resolveStageAssetsPure(chat, state, lib);
 }
 
 export type { StageAssets, StageState };
@@ -104,19 +114,26 @@ export interface ChatContext {
 
 /** Pass messagesOverride to build the context as of a truncated timeline (regeneration):
  *  stage state, presence and the ended flag are all derived from the given messages. */
-export function buildContext(chatId: string, messagesOverride?: Message[]): ChatContext {
-  const chat = getChat(chatId);
+export async function buildContext(chatId: string, messagesOverride?: Message[]): Promise<ChatContext> {
+  const chat = await getChat(chatId);
   if (!chat) throw new Error("Chat not found");
-  const settings = getSettings();
-  const messages = messagesOverride ?? listMessages(chatId);
-  const stage = computeStage(chat, messages);
-  const summary = getSummary(chatId);
+  const settings = await getSettings();
+  const messages = messagesOverride ?? (await listMessages(chatId));
+  const stage = await computeStage(chat, messages);
+  const summary = await getSummary(chatId);
   const snapshot = chat.mode === "story" ? chat.storySnapshot : null;
-  const characters = snapshot
-    ? chat.characterIds
-        .map((id) => snapshot.characters.find((c) => c.id === id))
-        .filter((c): c is Character => !!c)
-    : chat.characterIds.map(getCharacter).filter((c): c is Character => !!c);
+  let characters: Character[];
+  if (snapshot) {
+    characters = chat.characterIds
+      .map((id) => snapshot.characters.find((c) => c.id === id))
+      .filter((c): c is Character => !!c);
+  } else {
+    characters = [];
+    for (const id of chat.characterIds) {
+      const c = await getCharacter(id);
+      if (c) characters.push(c);
+    }
+  }
   const playedCharacter =
     (chat.personaCharacterId && snapshot?.characters.find((c) => c.id === chat.personaCharacterId)) || null;
   // playing a roster member: their sheet doubles as the persona
@@ -130,11 +147,18 @@ export function buildContext(chatId: string, messagesOverride?: Message[]): Chat
         updatedAt: playedCharacter.updatedAt,
       }
     : chat.personaId
-      ? getPersona(chat.personaId)
+      ? await getPersona(chat.personaId)
       : null;
   const present = stage.present ? characters.filter((c) => stage.present!.includes(c.id)) : characters;
-  const scene = chatScene(chat, stage.sceneId);
-  const location = chatLocation(chat, stage.locationId);
+  const scene = await chatScene(chat, stage.sceneId);
+  const location = await chatLocation(chat, stage.locationId);
+  const lorebooks: Lorebook[] = snapshot ? snapshot.lorebooks : [];
+  if (!snapshot) {
+    for (const id of chat.lorebookIds) {
+      const l = await getLorebook(id);
+      if (l) lorebooks.push(l);
+    }
+  }
   return {
     chat,
     settings,
@@ -149,9 +173,7 @@ export function buildContext(chatId: string, messagesOverride?: Message[]): Chat
     scene,
     location,
     ended: stage.ended,
-    lorebooks: snapshot
-      ? snapshot.lorebooks
-      : chat.lorebookIds.map(getLorebook).filter((l): l is Lorebook => !!l),
+    lorebooks,
     messages,
     summaryText: summary.content,
     summaryCovered: summary.coveredPosition,
@@ -185,13 +207,13 @@ export function activeEmotion(m: Message): string | null {
   return m.variants[m.activeVariant]?.emotion ?? null;
 }
 
-export function speakerName(ctx: ChatContext, m: Message): string {
+export async function speakerName(ctx: ChatContext, m: Message): Promise<string> {
   if (m.role === "user") return ctx.persona?.name ?? "User";
   if (m.role === "narrator") return "Narrator";
   if (m.role === "character") {
     return (
       ctx.characters.find((c) => c.id === m.characterId)?.name ??
-      getCharacter(m.characterId ?? "")?.name ??
+      (await getCharacter(m.characterId ?? ""))?.name ??
       ctx.chat.nameSnapshots[m.characterId ?? ""] ??
       "???"
     );
@@ -199,11 +221,11 @@ export function speakerName(ctx: ChatContext, m: Message): string {
   return "";
 }
 
-function renderMessageLine(ctx: ChatContext, m: Message): string | null {
+async function renderMessageLine(ctx: ChatContext, m: Message): Promise<string | null> {
   if (m.role === "marker") return null; // legacy role — nothing creates markers anymore
   const content = activeContent(m);
   if (!content) return null;
-  return `${speakerName(ctx, m)}: ${content}`;
+  return `${await speakerName(ctx, m)}: ${content}`;
 }
 
 /** Select the recent messages that fit the verbatim window budget.
@@ -380,12 +402,12 @@ function userFormatRules(ctx: ChatContext): string {
  * Convert history into alternating LlmMessages from the point of view of one speaker
  * ("assistant" = that speaker's own messages). Merges consecutive same-role turns.
  */
-export function historyAsMessages(
+export async function historyAsMessages(
   ctx: ChatContext,
   window: Message[],
   isSelf: (m: Message) => boolean,
   selfEmotionTags: boolean
-): LlmMessage[] {
+): Promise<LlmMessage[]> {
   const out: LlmMessage[] = [];
   const push = (role: "user" | "assistant", content: string) => {
     if (!content) return;
@@ -398,7 +420,7 @@ export function historyAsMessages(
       const emo = activeEmotion(m);
       push("assistant", (selfEmotionTags && emo ? `<emo>${emo}</emo>` : "") + activeContent(m));
     } else {
-      const line = renderMessageLine(ctx, m);
+      const line = await renderMessageLine(ctx, m);
       if (line) push("user", line);
     }
   }
@@ -421,12 +443,12 @@ export interface BuiltRequest {
 /** Own replies in the verbatim window before example dialogue drops out of the prompt. */
 const EXAMPLE_DIALOGUE_FADE = 8;
 
-export function buildCharacterRequest(
+export async function buildCharacterRequest(
   ctx: ChatContext,
   character: Character,
   model: ResolvedModel,
   opts?: { returning?: boolean }
-): BuiltRequest {
+): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
   const personaName = ctx.persona?.name ?? "the user";
@@ -440,23 +462,23 @@ export function buildCharacterRequest(
   const ownReplies = window.filter(
     (m) => m.role === "character" && m.characterId === character.id
   ).length;
-  const facts = listFacts(character.id, 50);
+  const facts = await listFacts(character.id, 50);
   // playing a cast member: the "user relationship" is really character↔character
   const rel =
     ctx.persona && ctx.settings.userRelationshipsEnabled && character.trackRelationship
       ? ctx.playedCharacter
-        ? getCharRelationship(character.id, ctx.playedCharacter.id)
-        : getRelationship(character.id, ctx.persona.id)
+        ? await getCharRelationship(character.id, ctx.playedCharacter.id)
+        : await getRelationship(character.id, ctx.persona.id)
       : null;
   const others = ctx.present.filter((c) => c.id !== character.id);
   // this character's view of the other characters present (global switch + both sides' tracking)
-  const charRels =
-    ctx.settings.charRelationshipsEnabled && character.trackRelationship
-      ? others
-        .filter((o) => o.trackRelationship)
-        .map((o) => ({ other: o, rel: getCharRelationship(character.id, o.id) }))
-        .filter((x): x is { other: Character; rel: CharRelationship } => !!x.rel)
-    : [];
+  const charRels: { other: Character; rel: CharRelationship }[] = [];
+  if (ctx.settings.charRelationshipsEnabled && character.trackRelationship) {
+    for (const o of others.filter((o) => o.trackRelationship)) {
+      const r = await getCharRelationship(character.id, o.id);
+      if (r) charRels.push({ other: o, rel: r });
+    }
+  }
 
   const emotions = [
     ...EMOTIONS,
@@ -464,13 +486,13 @@ export function buildCharacterRequest(
   ].join(", ");
 
   // aliveness blocks (casual/immersive only — `alive` is all-off in story mode)
-  const mind = alive.mindState ? getMindState(character.id, ctx.chat.id) : null;
+  const mind = alive.mindState ? await getMindState(character.id, ctx.chat.id) : null;
   const mindBlock = mind?.content
     ? `WHAT'S ON ${character.name.toUpperCase()}'S MIND RIGHT NOW (private inner state — let it color the reply without announcing it; it may shift through play):\n${mind.content}`
     : "";
   const offscreen =
     alive.offscreenLife !== "off" && ctx.chat.mode === "casual"
-      ? getOffscreenNote(character.id, ctx.chat.id)
+      ? await getOffscreenNote(character.id, ctx.chat.id)
       : null;
   const offscreenBlock = offscreen?.content
     ? `WHAT ${character.name.toUpperCase()} HAS BEEN UP TO SINCE THE LAST CONVERSATION (their off-screen life — bring it up only as it naturally would come up):\n${offscreen.content}`
@@ -557,11 +579,11 @@ export function buildCharacterRequest(
 
   return {
     system,
-    messages: historyAsMessages(ctx, window, (m) => m.role === "character" && m.characterId === character.id, true),
+    messages: await historyAsMessages(ctx, window, (m) => m.role === "character" && m.characterId === character.id, true),
   };
 }
 
-export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
+export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
 
@@ -715,16 +737,18 @@ export function buildNarratorRequest(ctx: ChatContext, model: ResolvedModel): Bu
 
   return {
     system,
-    messages: historyAsMessages(ctx, window, (m) => m.role === "narrator", false),
+    messages: await historyAsMessages(ctx, window, (m) => m.role === "narrator", false),
   };
 }
 
-export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
+export async function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model).slice(-12);
-  const transcript = window
-    .map((m) => renderMessageLine(ctx, m) ?? "")
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [];
+  for (const m of window) {
+    const line = await renderMessageLine(ctx, m);
+    if (line) lines.push(line);
+  }
+  const transcript = lines.join("\n");
   const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`);
   if (ctx.chat.narratorEnabled) candidates.push(`"narrator" = the scene narrator`);
   const system =
@@ -743,12 +767,14 @@ export function buildOrchestratorRequest(ctx: ChatContext, model: ResolvedModel)
  * writes prose and never passes hidden instructions to speakers. It sees secret
  * TITLES and reveal state only, never contents — it paces, it doesn't narrate.
  */
-export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
+export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model).slice(-12);
-  const transcript = window
-    .map((m) => renderMessageLine(ctx, m) ?? "")
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [];
+  for (const m of window) {
+    const line = await renderMessageLine(ctx, m);
+    if (line) lines.push(line);
+  }
+  const transcript = lines.join("\n");
   const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`);
   candidates.push(`"narrator" = the narrator, the world's voice`);
 
@@ -794,7 +820,7 @@ export function buildDirectorRequest(ctx: ChatContext, model: ResolvedModel): Bu
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho acts next?` }] };
 }
 
-export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel): BuiltRequest {
+export async function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model);
   const system = [
     `You write the next message ON BEHALF OF THE USER in a roleplay chat.`,
@@ -811,16 +837,17 @@ export function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel):
   return {
     system,
     // as narrator, the user's own past messages are the narrator-role ones (no AI narrator exists)
-    messages: historyAsMessages(ctx, window, (m) => m.role === (ctx.chat.playAsNarrator ? "narrator" : "user"), false),
+    messages: await historyAsMessages(ctx, window, (m) => m.role === (ctx.chat.playAsNarrator ? "narrator" : "user"), false),
   };
 }
 
-export function buildTitleRequest(ctx: ChatContext): BuiltRequest {
-  const transcript = ctx.messages
-    .slice(0, 6)
-    .map((m) => renderMessageLine(ctx, m) ?? "")
-    .filter(Boolean)
-    .join("\n");
+export async function buildTitleRequest(ctx: ChatContext): Promise<BuiltRequest> {
+  const lines: string[] = [];
+  for (const m of ctx.messages.slice(0, 6)) {
+    const line = await renderMessageLine(ctx, m);
+    if (line) lines.push(line);
+  }
+  const transcript = lines.join("\n");
   return {
     system: `Generate a short evocative title (max 6 words) for this roleplay chat, in ${ctx.language}. Respond with the title only — no quotes, no punctuation around it.`,
     messages: [{ role: "user", content: transcript || "An empty chat." }],

@@ -13,10 +13,36 @@ import {
 
 export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const chat = getChat(id);
+  const chat = await getChat(id);
   if (!chat) return bad("Chat not found", 404);
-  const ctx = buildContext(id);
+  const ctx = await buildContext(id);
   const stage = ctx.stage;
+  // every scene id referenced by a stage event, resolved to a name (snapshot first,
+  // then the library) — so the client never needs the scene list
+  const sceneNameEntries: [string, string][] = [];
+  for (const sid of [...new Set(ctx.messages.flatMap((m) => (m.sceneEvent?.sceneId ? [m.sceneEvent.sceneId] : [])))]) {
+    const name = ctx.snapshot?.scenes.find((s) => s.id === sid)?.name ?? (await getScene(sid))?.name;
+    if (name) sceneNameEntries.push([sid, name]);
+  }
+  // the user side: persona↔character, or the played character's char↔char pairs
+  const relationshipEntries: (readonly [string, unknown])[] = [];
+  for (const cid of chat.characterIds) {
+    const r = chat.personaCharacterId
+      ? await getCharRelationship(cid, chat.personaCharacterId)
+      : chat.personaId
+        ? await getRelationship(cid, chat.personaId)
+        : null;
+    if (r) relationshipEntries.push([cid, r] as const);
+  }
+  // each chat character's view of the other chat characters
+  const charRelationshipEntries: (readonly [string, unknown[]])[] = [];
+  for (const cid of chat.characterIds) {
+    const rels = (await listCharRelationships(cid)).filter((r) => chat.characterIds.includes(r.otherId));
+    const mapped = [];
+    for (const r of rels)
+      mapped.push({ ...r, otherName: (await getCharacter(r.otherId))?.name ?? chat.nameSnapshots[r.otherId] ?? "?" });
+    charRelationshipEntries.push([cid, mapped] as const);
+  }
   return ok({
     chat,
     // bodies are paged separately (GET ./messages); this payload carries the sparse
@@ -33,45 +59,16 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
         ? [{ position: m.position, characterId: m.characterId, emotion: m.variants[m.activeVariant]?.emotion ?? null }]
         : []
     ),
-    stage: { ...stage, ...resolveStageAssets(chat, stage) },
+    stage: { ...stage, ...(await resolveStageAssets(chat, stage)) },
     characters: ctx.characters,
     persona: ctx.persona,
     playedCharacter: ctx.playedCharacter,
     storyName: ctx.snapshot?.name ?? null,
     storyScenes: ctx.snapshot?.scenes ?? [],
-    // every scene id referenced by a stage event, resolved to a name (snapshot first,
-    // then the library) — so the client never needs the scene list
-    sceneNames: Object.fromEntries(
-      [...new Set(ctx.messages.flatMap((m) => (m.sceneEvent?.sceneId ? [m.sceneEvent.sceneId] : [])))].flatMap(
-        (sid) => {
-          const name = ctx.snapshot?.scenes.find((s) => s.id === sid)?.name ?? getScene(sid)?.name;
-          return name ? [[sid, name]] : [];
-        }
-      )
-    ),
+    sceneNames: Object.fromEntries(sceneNameEntries),
     ended: ctx.ended,
-    // the user side: persona↔character, or the played character's char↔char pairs
-    relationships: Object.fromEntries(
-      chat.characterIds
-        .map((cid) => [
-          cid,
-          chat.personaCharacterId
-            ? getCharRelationship(cid, chat.personaCharacterId)
-            : chat.personaId
-              ? getRelationship(cid, chat.personaId)
-              : null,
-        ] as const)
-        .filter(([, r]) => r)
-    ),
-    // each chat character's view of the other chat characters
-    charRelationships: Object.fromEntries(
-      chat.characterIds.map((cid) => [
-        cid,
-        listCharRelationships(cid)
-          .filter((r) => chat.characterIds.includes(r.otherId))
-          .map((r) => ({ ...r, otherName: getCharacter(r.otherId)?.name ?? chat.nameSnapshots[r.otherId] ?? "?" })),
-      ])
-    ),
+    relationships: Object.fromEntries(relationshipEntries),
+    charRelationships: Object.fromEntries(charRelationshipEntries),
   });
 });
 
@@ -82,14 +79,14 @@ const MUTABLE_CHAT_FIELDS = ["title", "folder", "tags", "modelId", "charModels",
 
 export const PATCH = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  if (!getChat(id)) return bad("Chat not found", 404);
+  if (!(await getChat(id))) return bad("Chat not found", 404);
   const body = await req.json();
   const patch: Record<string, unknown> = {};
   for (const k of MUTABLE_CHAT_FIELDS) if (k in body) patch[k] = body[k];
-  return ok(saveChat({ ...patch, id }));
+  return ok(await saveChat({ ...patch, id }));
 });
 
 export const DELETE = handler(async (_req: Request, { params }: IdParams) => {
-  deleteChat((await params).id);
+  await deleteChat((await params).id);
   return ok({ ok: true });
 });

@@ -18,20 +18,20 @@ import {
  */
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  const src = getChat(id);
+  const src = await getChat(id);
   if (!src) return bad("Chat not found", 404);
   const b = await req.json().catch(() => ({}));
-  const anchor = b.messageId ? getMessage(b.messageId) : null;
+  const anchor = b.messageId ? await getMessage(b.messageId) : null;
   if (!anchor || anchor.chatId !== id) return bad("messageId must reference a message in this chat");
 
   // atomic: a mid-copy failure must not leave a half-forked chat behind
-  const fork = inTransaction(() => {
+  const fork = await inTransaction(async () => {
     const { id: _id, createdAt: _c, updatedAt: _u, ...fields } = src;
-    const created = saveChat({ ...fields, title: `${src.title} (fork)` });
-    for (const m of listMessages(id)) {
+    const created = await saveChat({ ...fields, title: `${src.title} (fork)` });
+    for (const m of await listMessages(id)) {
       if (m.position > anchor.position) break;
       const v = m.variants[m.activeVariant];
-      appendMessage({
+      await appendMessage({
         chatId: created.id,
         role: m.role,
         characterId: m.characterId,
@@ -41,13 +41,13 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         sceneEvent: m.sceneEvent,
       });
     }
-    const summary = getSummary(id);
+    const summary = await getSummary(id);
     if (summary.content && summary.coveredPosition <= anchor.position) {
       // fork positions are contiguous; remap coverage by counting copied messages
-      const covered = listMessages(id).filter(
+      const covered = (await listMessages(id)).filter(
         (m) => m.position <= anchor.position && m.position <= summary.coveredPosition
       ).length;
-      putSummary(created.id, summary.content, covered - 1);
+      await putSummary(created.id, summary.content, covered - 1);
     }
     return created;
   });

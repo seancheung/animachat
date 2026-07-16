@@ -9,14 +9,14 @@ export const dynamic = "force-dynamic";
  *  Aborting keeps whatever was written — a half-draft is still a starting point. */
 export const POST = handler(async (req: Request, { params }: IdParams) => {
   const { id } = await params;
-  if (!getChat(id)) return bad("Chat not found", 404);
-  const ctx = buildContext(id);
+  if (!(await getChat(id))) return bad("Chat not found", 404);
+  const ctx = await buildContext(id);
 
   let built;
   let modelRef;
   try {
-    modelRef = resolveModel("impersonate", ctx.chat);
-    built = buildImpersonateRequest(ctx, modelRef);
+    modelRef = await resolveModel("impersonate", ctx.chat);
+    built = await buildImpersonateRequest(ctx, modelRef);
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }

@@ -9,7 +9,7 @@ import {
   listStories,
 } from "@/lib/store";
 
-const LISTS: [BundleItemType, () => { id: string }[]][] = [
+const LISTS: [BundleItemType, () => Promise<{ id: string }[]>][] = [
   ["character", listCharacters],
   ["persona", listPersonas],
   ["location", listLocations],
@@ -30,9 +30,13 @@ export const POST = handler(async (req: Request) => {
   if (b.all !== undefined && !ALL_SCOPES[b.all]) return bad("unknown export scope");
   // all-mode enumerates server-side — the client only sees paginated lists
   const items = b.all
-    ? LISTS.filter(([type]) => ALL_SCOPES[b.all].includes(type)).flatMap(([type, list]) =>
-        list().map((x) => ({ type, id: x.id }))
-      )
+    ? (
+        await Promise.all(
+          LISTS.filter(([type]) => ALL_SCOPES[b.all].includes(type)).map(async ([type, list]) =>
+            (await list()).map((x) => ({ type, id: x.id }))
+          )
+        )
+      ).flat()
     : ((b.items ?? []) as { type: BundleItemType; id: string }[]);
   if (!items.length)
     return bad(

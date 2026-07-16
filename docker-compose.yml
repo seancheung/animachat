@@ -1,0 +1,99 @@
+services:
+  # The app container is profile-gated: plain `docker compose up -d` starts only
+  # the infra (postgres + minio) for local `npm run dev`; add `--profile app`
+  # to run the built app too.
+  app:
+    profiles: ["app"]
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://animachat:animachat@postgres:5432/animachat
+      S3_ENDPOINT: http://minio:9000
+      # presigned upload URLs are signed against this host — it must be the
+      # MinIO address the BROWSER can reach (LAN deploys: http://<host-ip>:9000)
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_BUCKET: animachat
+      S3_ACCESS_KEY: animachat
+      S3_SECRET_KEY: animachat
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: animachat
+      POSTGRES_PASSWORD: animachat
+      POSTGRES_DB: animachat
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # schema — applied automatically on a FRESH volume only; on an existing
+      # database run new files manually:
+      #   docker compose exec -T postgres psql -U animachat -d animachat -f - < migrations/00X_*.sql
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U animachat -d animachat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      S3_ACCESS_KEY: animachat
+      S3_SECRET_KEY: animachat
+      S3_BUCKET: animachat
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc admin user add local animachat animachat || true;
+      mc admin policy attach local readwrite --user animachat || true;
+      mc mb --ignore-existing local/animachat"
+
+volumes:
+  postgres_data:
+  # redis_data:
+  minio_data:

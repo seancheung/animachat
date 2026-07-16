@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, Download, FileText, FileUp, Paperclip, SendHorizontal, Square, Undo2, X } from "lucide-react";
+import { CheckIcon, FileText, FileUp, Paperclip, SendHorizontal, Square, Undo2, X } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/LibraryPicker";
 import Badge from "@/components/ui/badge";
@@ -15,8 +15,6 @@ interface Msg {
   content: string;
   /** this reply wrote fields into the form — shown as a styled block under the text */
   applied?: boolean;
-  /** download URL of a server-written debug log (malformed field data) */
-  debugLog?: string;
 }
 
 interface TextFile {
@@ -90,9 +88,8 @@ export function AssistPanel({
     let acc = "";
     let applied = false;
     let partialLanded = false;
-    let debugLog: string | undefined;
     const show = () =>
-      setMessages([...history, { role: "assistant", content: acc.trim(), applied, debugLog }]);
+      setMessages([...history, { role: "assistant", content: acc.trim(), applied }]);
     // Coalescing apply queue: partial payloads are cumulative, so only the
     // newest matters; the chain keeps async onFields applications in order —
     // the final block must land after any in-flight partial.
@@ -142,9 +139,6 @@ export function AssistPanel({
             setDrafting(null);
             applyQueued(ev.fields);
             applied = true;
-            show();
-          } else if (ev.type === "log" && ev.url) {
-            debugLog = ev.url;
             show();
           } else if (ev.type === "error") {
             acc += `\n⚠ ${ev.message}`;
@@ -210,16 +204,6 @@ export function AssistPanel({
               <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-primary-400/90">
                 <CheckIcon /> Applied to the form
               </div>
-            )}
-            {m.debugLog && (
-              <a
-                href={m.debugLog}
-                download
-                className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-base-400 bg-base-300/40 px-2 py-1 text-xs text-content-300 hover:text-content-100"
-                title="The raw model response and the parse error, for diagnosing what went wrong"
-              >
-                <Download size={12} /> Download debug log
-              </a>
             )}
             {m.role === "user" && onRestore && !busy && (
               <button

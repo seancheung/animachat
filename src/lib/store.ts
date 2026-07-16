@@ -1,4 +1,4 @@
-import { getDb, now, uid } from "./db";
+import { all, get, run, inTransaction, lockChat, now, uid, type Row } from "./db";
 import type {
   Chat,
   Character,
@@ -22,8 +22,7 @@ import type {
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { normalizeStoryDoc } from "./storyDoc";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type Row = Record<string, any>;
+export { inTransaction };
 
 const J = {
   parse<T>(s: unknown, fallback: T): T {
@@ -39,17 +38,10 @@ const J = {
   },
 };
 
-/** Run several store mutations atomically. better-sqlite3 is synchronous, so any
- *  sync function body works; nested calls (e.g. appendMessage inside a fork copy)
- *  join the outer transaction via savepoints. Never await inside `fn`. */
-export function inTransaction<T>(fn: () => T): T {
-  return getDb().transaction(fn)();
-}
-
 /* ---------------- settings ---------------- */
 
-export function getSettings(): Settings {
-  const rows = getDb().prepare("SELECT key, value FROM settings").all() as Row[];
+export async function getSettings(): Promise<Settings> {
+  const rows = await all("SELECT key, value FROM settings");
   const stored: Record<string, unknown> = {};
   for (const r of rows) {
     // a corrupt row must not override a good default with null (a stored JSON
@@ -60,15 +52,14 @@ export function getSettings(): Settings {
   return { ...DEFAULT_SETTINGS, ...stored } as Settings;
 }
 
-export function putSettings(patch: Partial<Settings>) {
-  const db = getDb();
-  const stmt = db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
-  );
-  const tx = db.transaction(() => {
-    for (const [k, v] of Object.entries(patch)) stmt.run(k, J.str(v));
+export async function putSettings(patch: Partial<Settings>): Promise<void> {
+  await inTransaction(async () => {
+    for (const [k, v] of Object.entries(patch))
+      await run(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [k, J.str(v)]
+      );
   });
-  tx();
 }
 
 /* ---------------- providers & models ---------------- */
@@ -82,35 +73,37 @@ const providerFromRow = (r: Row): Provider => ({
   createdAt: r.created_at,
 });
 
-export function listProviders(): Provider[] {
-  return (getDb().prepare("SELECT * FROM providers ORDER BY created_at").all() as Row[]).map(providerFromRow);
+export async function listProviders(): Promise<Provider[]> {
+  return (await all("SELECT * FROM providers ORDER BY created_at")).map(providerFromRow);
 }
 
-export function getProvider(id: string): Provider | null {
-  const r = getDb().prepare("SELECT * FROM providers WHERE id=?").get(id) as Row | undefined;
+export async function getProvider(id: string): Promise<Provider | null> {
+  const r = await get("SELECT * FROM providers WHERE id=?", [id]);
   return r ? providerFromRow(r) : null;
 }
 
-export function createProvider(p: Pick<Provider, "name" | "type" | "baseUrl" | "apiKey">): Provider {
-  const row = { id: uid(), created_at: now(), ...p };
-  getDb()
-    .prepare("INSERT INTO providers (id, name, type, base_url, api_key, created_at) VALUES (?,?,?,?,?,?)")
-    .run(row.id, p.name, p.type, p.baseUrl, p.apiKey, row.created_at);
-  return getProvider(row.id)!;
+export async function createProvider(
+  p: Pick<Provider, "name" | "type" | "baseUrl" | "apiKey">
+): Promise<Provider> {
+  const id = uid();
+  await run("INSERT INTO providers (id, name, type, base_url, api_key, created_at) VALUES (?,?,?,?,?,?)", [
+    id, p.name, p.type, p.baseUrl, p.apiKey, now(),
+  ]);
+  return (await getProvider(id))!;
 }
 
-export function updateProvider(id: string, p: Partial<Provider>) {
-  const cur = getProvider(id);
+export async function updateProvider(id: string, p: Partial<Provider>): Promise<Provider | null> {
+  const cur = await getProvider(id);
   if (!cur) return null;
   const m = { ...cur, ...p };
-  getDb()
-    .prepare("UPDATE providers SET name=?, type=?, base_url=?, api_key=? WHERE id=?")
-    .run(m.name, m.type, m.baseUrl, m.apiKey, id);
+  await run("UPDATE providers SET name=?, type=?, base_url=?, api_key=? WHERE id=?", [
+    m.name, m.type, m.baseUrl, m.apiKey, id,
+  ]);
   return getProvider(id);
 }
 
-export function deleteProvider(id: string) {
-  getDb().prepare("DELETE FROM providers WHERE id=?").run(id);
+export async function deleteProvider(id: string): Promise<void> {
+  await run("DELETE FROM providers WHERE id=?", [id]);
 }
 
 const modelFromRow = (r: Row): Model => ({
@@ -127,79 +120,75 @@ const modelFromRow = (r: Row): Model => ({
   createdAt: r.created_at,
 });
 
-export function listModels(): Model[] {
-  return (getDb().prepare("SELECT * FROM models ORDER BY created_at").all() as Row[]).map(modelFromRow);
+export async function listModels(): Promise<Model[]> {
+  return (await all("SELECT * FROM models ORDER BY created_at")).map(modelFromRow);
 }
 
-export function getModel(id: string): Model | null {
-  const r = getDb().prepare("SELECT * FROM models WHERE id=?").get(id) as Row | undefined;
+export async function getModel(id: string): Promise<Model | null> {
+  const r = await get("SELECT * FROM models WHERE id=?", [id]);
   return r ? modelFromRow(r) : null;
 }
 
-export function createModel(
+export async function createModel(
   m: Pick<
     Model,
     "providerId" | "modelId" | "displayName" | "contextWindow" | "inputPrice" | "cacheReadPrice" | "cacheWritePrice" | "outputPrice" | "customBody"
   >
-): Model {
+): Promise<Model> {
   const id = uid();
-  getDb()
-    .prepare(
-      "INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
+  await run(
+    "INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    [
       id, m.providerId, m.modelId, m.displayName, m.contextWindow,
       m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
-      m.customBody ? J.str(m.customBody) : null, now()
-    );
-  return getModel(id)!;
+      m.customBody ? J.str(m.customBody) : null, now(),
+    ]
+  );
+  return (await getModel(id))!;
 }
 
-export function updateModel(id: string, p: Partial<Model>) {
-  const cur = getModel(id);
+export async function updateModel(id: string, p: Partial<Model>): Promise<Model | null> {
+  const cur = await getModel(id);
   if (!cur) return null;
   const m = { ...cur, ...p };
-  getDb()
-    .prepare(
-      "UPDATE models SET model_id=?, display_name=?, context_window=?, input_price=?, cache_read_price=?, cache_write_price=?, output_price=?, custom_body=? WHERE id=?"
-    )
-    .run(
+  await run(
+    "UPDATE models SET model_id=?, display_name=?, context_window=?, input_price=?, cache_read_price=?, cache_write_price=?, output_price=?, custom_body=? WHERE id=?",
+    [
       m.modelId, m.displayName, m.contextWindow,
       m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
-      m.customBody ? J.str(m.customBody) : null, id
-    );
+      m.customBody ? J.str(m.customBody) : null, id,
+    ]
+  );
   return getModel(id);
 }
 
-export function deleteModel(id: string) {
-  getDb().prepare("DELETE FROM models WHERE id=?").run(id);
+export async function deleteModel(id: string): Promise<void> {
+  await run("DELETE FROM models WHERE id=?", [id]);
 }
 
 /* Id-preserving insert-or-update, for settings transfer between instances —
    keeps model ids stable so defaultModelId/taskModels references survive. */
 
-export function upsertProvider(p: Omit<Provider, "createdAt">): Provider {
-  getDb()
-    .prepare(
-      `INSERT INTO providers (id, name, type, base_url, api_key, created_at) VALUES (?,?,?,?,?,?)
-       ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, base_url=excluded.base_url, api_key=excluded.api_key`
-    )
-    .run(p.id, p.name, p.type, p.baseUrl, p.apiKey, now());
-  return getProvider(p.id)!;
+export async function upsertProvider(p: Omit<Provider, "createdAt">): Promise<Provider> {
+  await run(
+    `INSERT INTO providers (id, name, type, base_url, api_key, created_at) VALUES (?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, base_url=excluded.base_url, api_key=excluded.api_key`,
+    [p.id, p.name, p.type, p.baseUrl, p.apiKey, now()]
+  );
+  return (await getProvider(p.id))!;
 }
 
-export function upsertModel(m: Omit<Model, "createdAt">): Model {
-  getDb()
-    .prepare(
-      `INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id, model_id=excluded.model_id, display_name=excluded.display_name, context_window=excluded.context_window, input_price=excluded.input_price, cache_read_price=excluded.cache_read_price, cache_write_price=excluded.cache_write_price, output_price=excluded.output_price, custom_body=excluded.custom_body`
-    )
-    .run(
+export async function upsertModel(m: Omit<Model, "createdAt">): Promise<Model> {
+  await run(
+    `INSERT INTO models (id, provider_id, model_id, display_name, context_window, input_price, cache_read_price, cache_write_price, output_price, custom_body, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET provider_id=excluded.provider_id, model_id=excluded.model_id, display_name=excluded.display_name, context_window=excluded.context_window, input_price=excluded.input_price, cache_read_price=excluded.cache_read_price, cache_write_price=excluded.cache_write_price, output_price=excluded.output_price, custom_body=excluded.custom_body`,
+    [
       m.id, m.providerId, m.modelId, m.displayName, m.contextWindow,
       m.inputPrice ?? null, m.cacheReadPrice ?? null, m.cacheWritePrice ?? null, m.outputPrice ?? null,
-      m.customBody ? J.str(m.customBody) : null, now()
-    );
-  return getModel(m.id)!;
+      m.customBody ? J.str(m.customBody) : null, now(),
+    ]
+  );
+  return (await getModel(m.id))!;
 }
 
 /* ---------------- generic entity helpers ---------------- */
@@ -232,17 +221,17 @@ const characterFromRow = (r: Row): Character => ({
   updatedAt: r.updated_at,
 });
 
-export function listCharacters(): Character[] {
-  return (getDb().prepare("SELECT * FROM characters ORDER BY name").all() as Row[]).map(characterFromRow);
+export async function listCharacters(): Promise<Character[]> {
+  return (await all("SELECT * FROM characters ORDER BY name")).map(characterFromRow);
 }
 
-export function getCharacter(id: string): Character | null {
-  const r = getDb().prepare("SELECT * FROM characters WHERE id=?").get(id) as Row | undefined;
+export async function getCharacter(id: string): Promise<Character | null> {
+  const r = await get("SELECT * FROM characters WHERE id=?", [id]);
   return r ? characterFromRow(r) : null;
 }
 
-export function saveCharacter(c: Partial<Character> & { id?: string }): Character {
-  const existing = c.id ? getCharacter(c.id) : null;
+export async function saveCharacter(c: Partial<Character> & { id?: string }): Promise<Character> {
+  const existing = c.id ? await getCharacter(c.id) : null;
   const m: Character = touch({
     id: existing?.id ?? c.id ?? uid(),
     name: "Unnamed",
@@ -264,38 +253,25 @@ export function saveCharacter(c: Partial<Character> & { id?: string }): Characte
     ...existing,
     ...c,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
-       VALUES (@id,@name,@avatar,@description,@greeting,@example,@imagePrompt,@sprites,@spriteSfx,@custom,@sfx,@trackRel,@aliveness,@idle,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, avatar_asset=@avatar, description=@description, greeting=@greeting,
-         example_dialogue=@example, image_prompt=@imagePrompt, sprites=@sprites, sprite_sfx=@spriteSfx, custom_expressions=@custom, typing_sfx_asset=@sfx,
-         track_relationship=@trackRel, aliveness=@aliveness, idle_motion=@idle, tags=@tags, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      name: m.name,
-      avatar: m.avatarAsset,
-      description: m.description,
-      greeting: m.greeting,
-      example: m.exampleDialogue,
-      imagePrompt: m.imagePrompt,
-      sprites: J.str(m.sprites),
-      spriteSfx: J.str(m.spriteSfx),
-      custom: J.str(m.customExpressions),
-      sfx: m.typingSfxAsset,
-      trackRel: m.trackRelationship ? 1 : 0,
-      aliveness: J.str({ ...DEFAULT_ALIVENESS, ...m.aliveness }),
-      idle: m.idleMotion ? 1 : 0,
-      tags: J.str(m.tags),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getCharacter(m.id)!;
+  await run(
+    `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, avatar_asset=excluded.avatar_asset, description=excluded.description, greeting=excluded.greeting,
+       example_dialogue=excluded.example_dialogue, image_prompt=excluded.image_prompt, sprites=excluded.sprites, sprite_sfx=excluded.sprite_sfx,
+       custom_expressions=excluded.custom_expressions, typing_sfx_asset=excluded.typing_sfx_asset,
+       track_relationship=excluded.track_relationship, aliveness=excluded.aliveness, idle_motion=excluded.idle_motion, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [
+      m.id, m.name, m.avatarAsset, m.description, m.greeting, m.exampleDialogue, m.imagePrompt,
+      J.str(m.sprites), J.str(m.spriteSfx), J.str(m.customExpressions), m.typingSfxAsset,
+      m.trackRelationship ? 1 : 0, J.str({ ...DEFAULT_ALIVENESS, ...m.aliveness }), m.idleMotion ? 1 : 0,
+      J.str(m.tags), m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getCharacter(m.id))!;
 }
 
-export function deleteCharacter(id: string) {
-  getDb().prepare("DELETE FROM characters WHERE id=?").run(id);
+export async function deleteCharacter(id: string): Promise<void> {
+  await run("DELETE FROM characters WHERE id=?", [id]);
 }
 
 /* ---------------- personas ---------------- */
@@ -309,17 +285,17 @@ const personaFromRow = (r: Row): Persona => ({
   updatedAt: r.updated_at,
 });
 
-export function listPersonas(): Persona[] {
-  return (getDb().prepare("SELECT * FROM personas ORDER BY name").all() as Row[]).map(personaFromRow);
+export async function listPersonas(): Promise<Persona[]> {
+  return (await all("SELECT * FROM personas ORDER BY name")).map(personaFromRow);
 }
 
-export function getPersona(id: string): Persona | null {
-  const r = getDb().prepare("SELECT * FROM personas WHERE id=?").get(id) as Row | undefined;
+export async function getPersona(id: string): Promise<Persona | null> {
+  const r = await get("SELECT * FROM personas WHERE id=?", [id]);
   return r ? personaFromRow(r) : null;
 }
 
-export function savePersona(p: Partial<Persona> & { id?: string }): Persona {
-  const existing = p.id ? getPersona(p.id) : null;
+export async function savePersona(p: Partial<Persona> & { id?: string }): Promise<Persona> {
+  const existing = p.id ? await getPersona(p.id) : null;
   const m: Persona = touch({
     id: existing?.id ?? p.id ?? uid(),
     name: "You",
@@ -330,17 +306,16 @@ export function savePersona(p: Partial<Persona> & { id?: string }): Persona {
     ...existing,
     ...p,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO personas (id,name,description,tags,created_at,updated_at) VALUES (@id,@name,@description,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, tags=@tags, updated_at=@updated`
-    )
-    .run({ id: m.id, name: m.name, description: m.description, tags: J.str(m.tags), created: m.createdAt, updated: m.updatedAt });
-  return getPersona(m.id)!;
+  await run(
+    `INSERT INTO personas (id,name,description,tags,created_at,updated_at) VALUES (?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [m.id, m.name, m.description, J.str(m.tags), m.createdAt, m.updatedAt]
+  );
+  return (await getPersona(m.id))!;
 }
 
-export function deletePersona(id: string) {
-  getDb().prepare("DELETE FROM personas WHERE id=?").run(id);
+export async function deletePersona(id: string): Promise<void> {
+  await run("DELETE FROM personas WHERE id=?", [id]);
 }
 
 /* ---------------- locations ---------------- */
@@ -359,17 +334,17 @@ const locationFromRow = (r: Row): Location => ({
   updatedAt: r.updated_at,
 });
 
-export function listLocations(): Location[] {
-  return (getDb().prepare("SELECT * FROM locations ORDER BY name").all() as Row[]).map(locationFromRow);
+export async function listLocations(): Promise<Location[]> {
+  return (await all("SELECT * FROM locations ORDER BY name")).map(locationFromRow);
 }
 
-export function getLocation(id: string): Location | null {
-  const r = getDb().prepare("SELECT * FROM locations WHERE id=?").get(id) as Row | undefined;
+export async function getLocation(id: string): Promise<Location | null> {
+  const r = await get("SELECT * FROM locations WHERE id=?", [id]);
   return r ? locationFromRow(r) : null;
 }
 
-export function saveLocation(x: Partial<Location> & { id?: string }): Location {
-  const existing = x.id ? getLocation(x.id) : null;
+export async function saveLocation(x: Partial<Location> & { id?: string }): Promise<Location> {
+  const existing = x.id ? await getLocation(x.id) : null;
   const m: Location = touch({
     id: existing?.id ?? x.id ?? uid(),
     name: "Unnamed place",
@@ -385,30 +360,20 @@ export function saveLocation(x: Partial<Location> & { id?: string }): Location {
     ...existing,
     ...x,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
-       VALUES (@id,@name,@description,@imagePrompt,@art,@bgm,@amb,@style,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, image_prompt=@imagePrompt, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, tags=@tags, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      imagePrompt: m.imagePrompt,
-      art: m.artworkAsset,
-      bgm: m.bgmAsset,
-      amb: m.ambientAsset,
-      style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
-      tags: J.str(m.tags),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getLocation(m.id)!;
+  await run(
+    `INSERT INTO locations (id,name,description,image_prompt,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, image_prompt=excluded.image_prompt, artwork_asset=excluded.artwork_asset, bgm_asset=excluded.bgm_asset, ambient_asset=excluded.ambient_asset, stage_style=excluded.stage_style, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [
+      m.id, m.name, m.description, m.imagePrompt, m.artworkAsset, m.bgmAsset, m.ambientAsset,
+      m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getLocation(m.id))!;
 }
 
-export function deleteLocation(id: string) {
-  getDb().prepare("DELETE FROM locations WHERE id=?").run(id);
+export async function deleteLocation(id: string): Promise<void> {
+  await run("DELETE FROM locations WHERE id=?", [id]);
 }
 
 /* ---------------- scenes ---------------- */
@@ -428,17 +393,17 @@ const sceneFromRow = (r: Row): Scene => ({
   updatedAt: r.updated_at,
 });
 
-export function listScenes(): Scene[] {
-  return (getDb().prepare("SELECT * FROM scenes ORDER BY name").all() as Row[]).map(sceneFromRow);
+export async function listScenes(): Promise<Scene[]> {
+  return (await all("SELECT * FROM scenes ORDER BY name")).map(sceneFromRow);
 }
 
-export function getScene(id: string): Scene | null {
-  const r = getDb().prepare("SELECT * FROM scenes WHERE id=?").get(id) as Row | undefined;
+export async function getScene(id: string): Promise<Scene | null> {
+  const r = await get("SELECT * FROM scenes WHERE id=?", [id]);
   return r ? sceneFromRow(r) : null;
 }
 
-export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
-  const existing = x.id ? getScene(x.id) : null;
+export async function saveScene(x: Partial<Scene> & { id?: string }): Promise<Scene> {
+  const existing = x.id ? await getScene(x.id) : null;
   const m: Scene = touch({
     id: existing?.id ?? x.id ?? uid(),
     name: "Unnamed scene",
@@ -455,31 +420,20 @@ export function saveScene(x: Partial<Scene> & { id?: string }): Scene {
     ...existing,
     ...x,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
-       VALUES (@id,@name,@setup,@imagePrompt,@loc,@art,@bgm,@amb,@style,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, setup=@setup, image_prompt=@imagePrompt, location_id=@loc, artwork_asset=@art, bgm_asset=@bgm, ambient_asset=@amb, stage_style=@style, tags=@tags, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      name: m.name,
-      setup: m.setup,
-      imagePrompt: m.imagePrompt,
-      loc: m.locationId,
-      art: m.artworkAsset,
-      bgm: m.bgmAsset,
-      amb: m.ambientAsset,
-      style: m.stageStyle ? JSON.stringify(m.stageStyle) : null,
-      tags: J.str(m.tags),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getScene(m.id)!;
+  await run(
+    `INSERT INTO scenes (id,name,setup,image_prompt,location_id,artwork_asset,bgm_asset,ambient_asset,stage_style,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, setup=excluded.setup, image_prompt=excluded.image_prompt, location_id=excluded.location_id, artwork_asset=excluded.artwork_asset, bgm_asset=excluded.bgm_asset, ambient_asset=excluded.ambient_asset, stage_style=excluded.stage_style, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [
+      m.id, m.name, m.setup, m.imagePrompt, m.locationId, m.artworkAsset, m.bgmAsset, m.ambientAsset,
+      m.stageStyle ? JSON.stringify(m.stageStyle) : null, J.str(m.tags), m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getScene(m.id))!;
 }
 
-export function deleteScene(id: string) {
-  getDb().prepare("DELETE FROM scenes WHERE id=?").run(id);
+export async function deleteScene(id: string): Promise<void> {
+  await run("DELETE FROM scenes WHERE id=?", [id]);
 }
 
 /* ---------------- stories ---------------- */
@@ -503,17 +457,17 @@ const storyFromRow = (r: Row): Story => ({
   updatedAt: r.updated_at,
 });
 
-export function listStories(): Story[] {
-  return (getDb().prepare("SELECT * FROM stories ORDER BY name").all() as Row[]).map(storyFromRow);
+export async function listStories(): Promise<Story[]> {
+  return (await all("SELECT * FROM stories ORDER BY name")).map(storyFromRow);
 }
 
-export function getStory(id: string): Story | null {
-  const r = getDb().prepare("SELECT * FROM stories WHERE id=?").get(id) as Row | undefined;
+export async function getStory(id: string): Promise<Story | null> {
+  const r = await get("SELECT * FROM stories WHERE id=?", [id]);
   return r ? storyFromRow(r) : null;
 }
 
-export function saveStory(x: Partial<Story> & { id?: string }): Story {
-  const existing = x.id ? getStory(x.id) : null;
+export async function saveStory(x: Partial<Story> & { id?: string }): Promise<Story> {
+  const existing = x.id ? await getStory(x.id) : null;
   const merged = { ...existing, ...x };
   const m: Story = {
     id: existing?.id ?? x.id ?? uid(),
@@ -522,31 +476,21 @@ export function saveStory(x: Partial<Story> & { id?: string }): Story {
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
   };
-  getDb()
-    .prepare(
-      `INSERT INTO stories (id,name,description,destination,secrets,characters,scenes,locations,lorebooks,tags,created_at,updated_at)
-       VALUES (@id,@name,@description,@destination,@secrets,@chars,@scenes,@locs,@lore,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, destination=@destination, secrets=@secrets, characters=@chars, scenes=@scenes, locations=@locs, lorebooks=@lore, tags=@tags, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      destination: m.destination,
-      secrets: J.str(m.secrets),
-      chars: J.str(m.characters),
-      scenes: J.str(m.scenes),
-      locs: J.str(m.locations),
-      lore: J.str(m.lorebooks),
-      tags: J.str(m.tags),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getStory(m.id)!;
+  await run(
+    `INSERT INTO stories (id,name,description,destination,secrets,characters,scenes,locations,lorebooks,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, destination=excluded.destination, secrets=excluded.secrets, characters=excluded.characters, scenes=excluded.scenes, locations=excluded.locations, lorebooks=excluded.lorebooks, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [
+      m.id, m.name, m.description, m.destination,
+      J.str(m.secrets), J.str(m.characters), J.str(m.scenes), J.str(m.locations), J.str(m.lorebooks),
+      J.str(m.tags), m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getStory(m.id))!;
 }
 
-export function deleteStory(id: string) {
-  getDb().prepare("DELETE FROM stories WHERE id=?").run(id);
+export async function deleteStory(id: string): Promise<void> {
+  await run("DELETE FROM stories WHERE id=?", [id]);
 }
 
 /* ---------------- library integrity ---------------- */
@@ -557,10 +501,11 @@ export function deleteStory(id: string) {
  * reference the library). Chats never block: playthroughs are self-contained
  * snapshots, casual/immersive chats degrade fail-soft.
  */
-export function libraryReferences(type: "location", id: string): string[] {
+export async function libraryReferences(type: "location", id: string): Promise<string[]> {
   const refs: string[] = [];
   if (type === "location") {
-    for (const s of listScenes()) if (s.locationId === id) refs.push(`scene "${s.name}"`);
+    const rows = await all("SELECT name FROM scenes WHERE location_id=? ORDER BY name", [id]);
+    for (const r of rows) refs.push(`scene "${r.name}"`);
   }
   return refs;
 }
@@ -577,17 +522,17 @@ const lorebookFromRow = (r: Row): Lorebook => ({
   updatedAt: r.updated_at,
 });
 
-export function listLorebooks(): Lorebook[] {
-  return (getDb().prepare("SELECT * FROM lorebooks ORDER BY name").all() as Row[]).map(lorebookFromRow);
+export async function listLorebooks(): Promise<Lorebook[]> {
+  return (await all("SELECT * FROM lorebooks ORDER BY name")).map(lorebookFromRow);
 }
 
-export function getLorebook(id: string): Lorebook | null {
-  const r = getDb().prepare("SELECT * FROM lorebooks WHERE id=?").get(id) as Row | undefined;
+export async function getLorebook(id: string): Promise<Lorebook | null> {
+  const r = await get("SELECT * FROM lorebooks WHERE id=?", [id]);
   return r ? lorebookFromRow(r) : null;
 }
 
-export function saveLorebook(x: Partial<Lorebook> & { id?: string }): Lorebook {
-  const existing = x.id ? getLorebook(x.id) : null;
+export async function saveLorebook(x: Partial<Lorebook> & { id?: string }): Promise<Lorebook> {
+  const existing = x.id ? await getLorebook(x.id) : null;
   const m: Lorebook = touch({
     id: existing?.id ?? x.id ?? uid(),
     name: "Untitled lorebook",
@@ -599,25 +544,16 @@ export function saveLorebook(x: Partial<Lorebook> & { id?: string }): Lorebook {
     ...existing,
     ...x,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO lorebooks (id,name,description,entries,tags,created_at,updated_at) VALUES (@id,@name,@description,@entries,@tags,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET name=@name, description=@description, entries=@entries, tags=@tags, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      entries: J.str(m.entries),
-      tags: J.str(m.tags),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getLorebook(m.id)!;
+  await run(
+    `INSERT INTO lorebooks (id,name,description,entries,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, entries=excluded.entries, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [m.id, m.name, m.description, J.str(m.entries), J.str(m.tags), m.createdAt, m.updatedAt]
+  );
+  return (await getLorebook(m.id))!;
 }
 
-export function deleteLorebook(id: string) {
-  getDb().prepare("DELETE FROM lorebooks WHERE id=?").run(id);
+export async function deleteLorebook(id: string): Promise<void> {
+  await run("DELETE FROM lorebooks WHERE id=?", [id]);
 }
 
 /* ---------------- chats ---------------- */
@@ -648,17 +584,17 @@ const chatFromRow = (r: Row): Chat => ({
   updatedAt: r.updated_at,
 });
 
-export function listChats(): Chat[] {
-  return (getDb().prepare("SELECT * FROM chats ORDER BY updated_at DESC").all() as Row[]).map(chatFromRow);
+export async function listChats(): Promise<Chat[]> {
+  return (await all("SELECT * FROM chats ORDER BY updated_at DESC")).map(chatFromRow);
 }
 
-export function getChat(id: string): Chat | null {
-  const r = getDb().prepare("SELECT * FROM chats WHERE id=?").get(id) as Row | undefined;
+export async function getChat(id: string): Promise<Chat | null> {
+  const r = await get("SELECT * FROM chats WHERE id=?", [id]);
   return r ? chatFromRow(r) : null;
 }
 
-export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
-  const existing = x.id ? getChat(x.id) : null;
+export async function saveChat(x: Partial<Chat> & { id?: string }): Promise<Chat> {
+  const existing = x.id ? await getChat(x.id) : null;
   const m: Chat = touch({
     id: existing?.id ?? x.id ?? uid(),
     title: "New chat",
@@ -686,49 +622,30 @@ export function saveChat(x: Partial<Chat> & { id?: string }): Chat {
     ...existing,
     ...x,
   });
-  getDb()
-    .prepare(
-      `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,play_as_narrator,overrides,created_at,updated_at)
-       VALUES (@id,@title,@mode,@folder,@tags,@story,@scene,@loc,@lore,@chars,@persona,@personaChar,@snapshot,@names,@model,@charModels,@language,@pov,@narrator,@playNarrator,@overrides,@created,@updated)
-       ON CONFLICT(id) DO UPDATE SET title=@title, mode=@mode, folder=@folder, tags=@tags, story_id=@story, scene_id=@scene, location_id=@loc,
-         lorebook_ids=@lore, character_ids=@chars, persona_id=@persona, persona_character_id=@personaChar, story_snapshot=@snapshot,
-         name_snapshots=@names, model_id=@model, char_models=@charModels,
-         language=@language, pov=@pov, narrator_enabled=@narrator, play_as_narrator=@playNarrator, overrides=@overrides, updated_at=@updated`
-    )
-    .run({
-      id: m.id,
-      title: m.title,
-      mode: m.mode,
-      folder: m.folder,
-      tags: J.str(m.tags),
-      story: m.storyId,
-      scene: m.sceneId,
-      loc: m.locationId,
-      lore: J.str(m.lorebookIds),
-      chars: J.str(m.characterIds),
-      persona: m.personaId,
-      personaChar: m.personaCharacterId,
-      snapshot: m.storySnapshot ? J.str(m.storySnapshot) : null,
-      names: J.str(m.nameSnapshots),
-      model: m.modelId,
-      charModels: J.str(m.charModels),
-      language: m.language,
-      pov: m.pov,
-      narrator: m.narratorEnabled ? 1 : 0,
-      playNarrator: m.playAsNarrator ? 1 : 0,
-      overrides: J.str(m.overrides),
-      created: m.createdAt,
-      updated: m.updatedAt,
-    });
-  return getChat(m.id)!;
+  await run(
+    `INSERT INTO chats (id,title,mode,folder,tags,story_id,scene_id,location_id,lorebook_ids,character_ids,persona_id,persona_character_id,story_snapshot,name_snapshots,model_id,char_models,language,pov,narrator_enabled,play_as_narrator,overrides,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET title=excluded.title, mode=excluded.mode, folder=excluded.folder, tags=excluded.tags, story_id=excluded.story_id, scene_id=excluded.scene_id, location_id=excluded.location_id,
+       lorebook_ids=excluded.lorebook_ids, character_ids=excluded.character_ids, persona_id=excluded.persona_id, persona_character_id=excluded.persona_character_id, story_snapshot=excluded.story_snapshot,
+       name_snapshots=excluded.name_snapshots, model_id=excluded.model_id, char_models=excluded.char_models,
+       language=excluded.language, pov=excluded.pov, narrator_enabled=excluded.narrator_enabled, play_as_narrator=excluded.play_as_narrator, overrides=excluded.overrides, updated_at=excluded.updated_at`,
+    [
+      m.id, m.title, m.mode, m.folder, J.str(m.tags), m.storyId, m.sceneId, m.locationId,
+      J.str(m.lorebookIds), J.str(m.characterIds), m.personaId, m.personaCharacterId,
+      m.storySnapshot ? J.str(m.storySnapshot) : null, J.str(m.nameSnapshots), m.modelId, J.str(m.charModels),
+      m.language, m.pov, m.narratorEnabled ? 1 : 0, m.playAsNarrator ? 1 : 0, J.str(m.overrides),
+      m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getChat(m.id))!;
 }
 
-export function deleteChat(id: string) {
-  getDb().prepare("DELETE FROM chats WHERE id=?").run(id);
+export async function deleteChat(id: string): Promise<void> {
+  await run("DELETE FROM chats WHERE id=?", [id]);
 }
 
-export function touchChat(id: string) {
-  getDb().prepare("UPDATE chats SET updated_at=? WHERE id=?").run(now(), id);
+export async function touchChat(id: string): Promise<void> {
+  await run("UPDATE chats SET updated_at=? WHERE id=?", [now(), id]);
 }
 
 /* ---------------- messages ---------------- */
@@ -745,27 +662,24 @@ const messageFromRow = (r: Row): Message => ({
   createdAt: r.created_at,
 });
 
-export function listMessages(chatId: string): Message[] {
-  return (
-    getDb().prepare("SELECT * FROM messages WHERE chat_id=? ORDER BY position").all(chatId) as Row[]
-  ).map(messageFromRow);
+export async function listMessages(chatId: string): Promise<Message[]> {
+  return (await all("SELECT * FROM messages WHERE chat_id=? ORDER BY position", [chatId])).map(messageFromRow);
 }
 
 /** One keyset page of a chat's messages, NEWEST first — the client's scroll-up-for-older
  *  timeline. The cursor is the last served row's position (unique per chat). */
-export function pageMessages(
+export async function pageMessages(
   chatId: string,
   opts: { limit?: number; cursor?: string | null } = {}
-): Page<Message> {
+): Promise<Page<Message>> {
   const limit = clampLimit(opts.limit);
   const cur = decodeCursor(opts.cursor);
   if (opts.cursor && (!cur || typeof cur.v !== "number")) throw new PageError("invalid cursor");
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM messages WHERE chat_id=? ${cur ? "AND position < ?" : ""}
-       ORDER BY position DESC LIMIT ?`
-    )
-    .all(...(cur ? [chatId, cur.v, limit + 1] : [chatId, limit + 1])) as Row[];
+  const rows = await all(
+    `SELECT * FROM messages WHERE chat_id=? ${cur ? "AND position < ?" : ""}
+     ORDER BY position DESC LIMIT ?`,
+    cur ? [chatId, cur.v, limit + 1] : [chatId, limit + 1]
+  );
   const items = rows.slice(0, limit).map(messageFromRow);
   return {
     items,
@@ -773,12 +687,12 @@ export function pageMessages(
   };
 }
 
-export function getMessage(id: string): Message | null {
-  const r = getDb().prepare("SELECT * FROM messages WHERE id=?").get(id) as Row | undefined;
+export async function getMessage(id: string): Promise<Message | null> {
+  const r = await get("SELECT * FROM messages WHERE id=?", [id]);
   return r ? messageFromRow(r) : null;
 }
 
-export function appendMessage(m: {
+export async function appendMessage(m: {
   chatId: string;
   role: Message["role"];
   characterId?: string | null;
@@ -788,29 +702,32 @@ export function appendMessage(m: {
   /** raw model output before tag parsing (AI messages only) */
   raw?: string | null;
   sceneEvent?: SceneEvent | null;
-}): Message {
-  const db = getDb();
+}): Promise<Message> {
   // the freeze is destructive (swipes dropped, raw outputs pruned) — atomically
   // paired with the insert so a failed append can't cost the previous tail its
   // alternatives without appending anything
-  const id = db.transaction(() => {
+  const id = await inTransaction(async () => {
+    // one timeline writer per chat at a time: the row lock serializes the
+    // freeze + MAX(position) + insert sequence (SQLite did this by being
+    // single-writer; Postgres interleaves)
+    await lockChat(m.chatId);
     // freeze the previous tail: alternatives (swipes) live on the newest message only —
     // once a follow-up lands, the chosen variant is the message and the others are dropped
-    const prevRow = db
-      .prepare("SELECT * FROM messages WHERE chat_id=? ORDER BY position DESC LIMIT 1")
-      .get(m.chatId) as Row | undefined;
+    const prevRow = await get("SELECT * FROM messages WHERE chat_id=? ORDER BY position DESC LIMIT 1", [
+      m.chatId,
+    ]);
     if (prevRow) {
       const prev = messageFromRow(prevRow);
       if (prev.variants.length > 1) {
         const keptIndex = prev.variants[prev.activeVariant] ? prev.activeVariant : 0;
-        updateMessage(prev.id, { variants: [prev.variants[keptIndex]], activeVariant: 0 });
+        await updateMessage(prev.id, { variants: [prev.variants[keptIndex]], activeVariant: 0 });
         // raw outputs follow their variants: keep only the chosen one, re-keyed to 0
-        db.prepare("DELETE FROM raw_outputs WHERE message_id=? AND variant_index<>?").run(prev.id, keptIndex);
-        db.prepare("UPDATE raw_outputs SET variant_index=0 WHERE message_id=?").run(prev.id);
+        await run("DELETE FROM raw_outputs WHERE message_id=? AND variant_index<>?", [prev.id, keptIndex]);
+        await run("UPDATE raw_outputs SET variant_index=0 WHERE message_id=?", [prev.id]);
       }
     }
-    const pos =
-      ((db.prepare("SELECT MAX(position) AS p FROM messages WHERE chat_id=?").get(m.chatId) as Row)?.p ?? -1) + 1;
+    const maxRow = await get("SELECT MAX(position) AS p FROM messages WHERE chat_id=?", [m.chatId]);
+    const pos = (maxRow?.p ?? -1) + 1;
     const variant: MessageVariant = {
       content: m.content,
       emotion: m.emotion ?? null,
@@ -819,47 +736,44 @@ export function appendMessage(m: {
       createdAt: now(),
     };
     const newId = uid();
-    db.prepare(
+    await run(
       `INSERT INTO messages (id, chat_id, position, role, character_id, variants, active_variant, scene_event, created_at)
-       VALUES (?,?,?,?,?,?,0,?,?)`
-    ).run(
-      newId,
-      m.chatId,
-      pos,
-      m.role,
-      m.characterId ?? null,
-      J.str([variant]),
-      m.sceneEvent ? J.str(m.sceneEvent) : null,
-      now()
+       VALUES (?,?,?,?,?,?,0,?,?)`,
+      [
+        newId, m.chatId, pos, m.role, m.characterId ?? null,
+        J.str([variant]), m.sceneEvent ? J.str(m.sceneEvent) : null, now(),
+      ]
     );
-    touchChat(m.chatId);
-    if (m.raw != null) setRawOutput(newId, 0, m.raw);
+    await touchChat(m.chatId);
+    if (m.raw != null) await setRawOutput(newId, 0, m.raw);
     return newId;
-  })();
-  return getMessage(id)!;
+  });
+  return (await getMessage(id))!;
 }
 
 /** Attach a model's raw pre-parse output to a message variant. Debugging data,
  *  database-only: never read by the app, never sent to clients, forks or archives. */
-export function setRawOutput(messageId: string, variantIndex: number, raw: string) {
-  getDb()
-    .prepare("INSERT OR REPLACE INTO raw_outputs (message_id, variant_index, raw) VALUES (?,?,?)")
-    .run(messageId, variantIndex, raw);
+export async function setRawOutput(messageId: string, variantIndex: number, raw: string): Promise<void> {
+  await run(
+    `INSERT INTO raw_outputs (message_id, variant_index, raw) VALUES (?,?,?)
+     ON CONFLICT(message_id, variant_index) DO UPDATE SET raw=excluded.raw`,
+    [messageId, variantIndex, raw]
+  );
 }
 
-export function updateMessage(
+export async function updateMessage(
   id: string,
   patch: {
     variants?: MessageVariant[];
     activeVariant?: number;
     sceneEvent?: SceneEvent | null;
   }
-): Message | null {
-  const cur = getMessage(id);
+): Promise<Message | null> {
+  const cur = await getMessage(id);
   if (!cur) return null;
   const variants = [...(patch.variants ?? cur.variants)];
   // clamp to a valid index — a negative/fractional value would poison the
-  // '$[n].content' JSON path pageChats builds from this column
+  // variants->content path pageChats reads from this column
   const requested = Number.isInteger(patch.activeVariant) ? (patch.activeVariant as number) : cur.activeVariant;
   const active = Math.max(0, Math.min(requested, Math.max(0, variants.length - 1)));
   // the message-level event is always the ACTIVE variant's: an explicit patch is
@@ -873,32 +787,39 @@ export function updateMessage(
     const v = variants[active];
     sceneEvent = v?.sceneEvent !== undefined ? v.sceneEvent : cur.sceneEvent;
   }
-  getDb()
-    .prepare("UPDATE messages SET variants=?, active_variant=?, scene_event=? WHERE id=?")
-    .run(J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, id);
+  await run("UPDATE messages SET variants=?, active_variant=?, scene_event=? WHERE id=?", [
+    J.str(variants), active, sceneEvent ? J.str(sceneEvent) : null, id,
+  ]);
   return getMessage(id);
 }
 
 /** Add a regenerated alternative to a message — allowed only while it is still the
  *  chat's newest live message. The generate route streams for a long while between
- *  its up-front tail check and this save, so tail-ness is re-verified here, inside
- *  the synchronous call: a message frozen in the meantime (a follow-up landed, or a
- *  concurrent regen finished first) returns null and the variant is discarded rather
- *  than resurrected onto a frozen message. */
-export function addVariant(messageId: string, variant: MessageVariant): Message | null {
-  const cur = getMessage(messageId);
+ *  its up-front tail check and this save, so tail-ness is re-verified here, under
+ *  the chat's timeline lock: a message frozen in the meantime (a follow-up landed,
+ *  or a concurrent regen finished first) returns null and the variant is discarded
+ *  rather than resurrected onto a frozen message. */
+export async function addVariant(messageId: string, variant: MessageVariant): Promise<Message | null> {
+  const cur = await getMessage(messageId);
   if (!cur) return null;
-  const tail = getDb()
-    .prepare("SELECT id FROM messages WHERE chat_id=? AND role<>'marker' ORDER BY position DESC LIMIT 1")
-    .get(cur.chatId) as Row | undefined;
-  if (tail?.id !== messageId) return null;
-  const variants = [...cur.variants, variant];
-  // the message-level sceneEvent re-derives from the new active variant inside updateMessage
-  return updateMessage(messageId, { variants, activeVariant: variants.length - 1 });
+  return inTransaction(async () => {
+    await lockChat(cur.chatId);
+    const tail = await get(
+      "SELECT id FROM messages WHERE chat_id=? AND role<>'marker' ORDER BY position DESC LIMIT 1",
+      [cur.chatId]
+    );
+    if (tail?.id !== messageId) return null;
+    // re-read under the lock — the pre-lock snapshot may be stale
+    const fresh = await getMessage(messageId);
+    if (!fresh) return null;
+    const variants = [...fresh.variants, variant];
+    // the message-level sceneEvent re-derives from the new active variant inside updateMessage
+    return updateMessage(messageId, { variants, activeVariant: variants.length - 1 });
+  });
 }
 
-export function deleteMessage(id: string) {
-  getDb().prepare("DELETE FROM messages WHERE id=?").run(id);
+export async function deleteMessage(id: string): Promise<void> {
+  await run("DELETE FROM messages WHERE id=?", [id]);
 }
 
 /* ---------------- pagination ---------------- */
@@ -947,9 +868,9 @@ const like = (q: string) => `%${escapeLike(q)}%`;
 
 /** One keyset page over a table. Appends the cursor predicate, ORDER BY and LIMIT n+1
  *  to the caller's filters, and mints the next cursor from the last row served.
- *  The expanded predicate (not a row-value tuple) is used so the name sort can carry
- *  COLLATE NOCASE, matching the ORDER BY and the (name COLLATE NOCASE, id) indexes. */
-function pageQuery<T>(cfg: {
+ *  The expanded predicate (not a row-value tuple) is used so the name sort can compare
+ *  LOWER(name), matching the ORDER BY and the (LOWER(name), id) indexes. */
+async function pageQuery<T>(cfg: {
   select: string; // "SELECT t.* FROM characters t" — filters/cursor become the WHERE
   alias?: string; // defaults to "t"
   fromRow: (r: Row) => T;
@@ -958,7 +879,7 @@ function pageQuery<T>(cfg: {
   sort: LibrarySort;
   limit: number;
   cursor: string | null;
-}): Page<T> {
+}): Promise<Page<T>> {
   const t = cfg.alias ?? "t";
   const where = [...cfg.where];
   const args = [...cfg.args];
@@ -968,16 +889,16 @@ function pageQuery<T>(cfg: {
     throw new PageError("invalid cursor");
   if (cur) {
     if (cfg.sort === "name") {
-      where.push(`(${t}.name COLLATE NOCASE > ? OR (${t}.name COLLATE NOCASE = ? AND ${t}.id > ?))`);
+      where.push(`(LOWER(${t}.name) > LOWER(?) OR (LOWER(${t}.name) = LOWER(?) AND ${t}.id > ?))`);
     } else {
       where.push(`(${t}.${col} < ? OR (${t}.${col} = ? AND ${t}.id < ?))`);
     }
     args.push(cur.v, cur.v, cur.id);
   }
   const order =
-    cfg.sort === "name" ? `${t}.name COLLATE NOCASE, ${t}.id` : `${t}.${col} DESC, ${t}.id DESC`;
+    cfg.sort === "name" ? `LOWER(${t}.name), ${t}.id` : `${t}.${col} DESC, ${t}.id DESC`;
   const sql = `${cfg.select}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order} LIMIT ?`;
-  const rows = getDb().prepare(sql).all(...args, cfg.limit + 1) as Row[];
+  const rows = await all(sql, [...args, cfg.limit + 1]);
   const more = rows.length > cfg.limit;
   const page = rows.slice(0, cfg.limit);
   const last = page[page.length - 1];
@@ -988,17 +909,17 @@ function pageQuery<T>(cfg: {
   };
 }
 
-function pageLibrary<T>(table: string, fromRow: (r: Row) => T, opts: PageOpts): Page<T> {
+async function pageLibrary<T>(table: string, fromRow: (r: Row) => T, opts: PageOpts): Promise<Page<T>> {
   const where: string[] = [];
   const args: unknown[] = [];
   const q = opts.q?.trim();
   if (q) {
-    // free-text q may fuzzily hit the raw tags JSON; the exact-match tag filter below uses json_each
-    where.push(`(t.name LIKE ? ESCAPE '\\' OR t.tags LIKE ? ESCAPE '\\')`);
+    // free-text q may fuzzily hit the raw tags JSON; the exact-match tag filter below unnests it
+    where.push(`(t.name ILIKE ? ESCAPE '\\' OR t.tags ILIKE ? ESCAPE '\\')`);
     args.push(like(q), like(q));
   }
   if (opts.tag) {
-    where.push("EXISTS (SELECT 1 FROM json_each(t.tags) jt WHERE jt.value = ?)");
+    where.push("EXISTS (SELECT 1 FROM jsonb_array_elements_text(t.tags::jsonb) jt(value) WHERE jt.value = ?)");
     args.push(opts.tag);
   }
   return pageQuery({
@@ -1030,7 +951,7 @@ export interface ChatListRow extends Chat {
  *  (the message subqueries ride idx_messages_chat) instead of hydrating timelines.
  *  `kind` splits the two surfaces: the Chats page lists casual/immersive only,
  *  the Stories page lists playthroughs. */
-export function pageChats(
+export async function pageChats(
   opts: {
     limit?: number;
     cursor?: string | null;
@@ -1038,7 +959,7 @@ export function pageChats(
     folder?: string;
     kind?: "chats" | "playthroughs";
   } = {}
-): Page<ChatListRow> {
+): Promise<Page<ChatListRow>> {
   const where: string[] = [];
   const args: unknown[] = [];
   if (opts.kind === "playthroughs") where.push("c.mode = 'story'");
@@ -1051,24 +972,24 @@ export function pageChats(
   if (q) {
     const l = like(q);
     // live character names first (renames keep matching); name_snapshots covers deleted ones
-    where.push(`(c.title LIKE ? ESCAPE '\\'
-       OR c.tags LIKE ? ESCAPE '\\'
-       OR c.name_snapshots LIKE ? ESCAPE '\\'
-       OR p.name LIKE ? ESCAPE '\\'
-       OR json_extract(c.story_snapshot, '$.name') LIKE ? ESCAPE '\\'
-       OR EXISTS (SELECT 1 FROM json_each(c.character_ids) je
+    where.push(`(c.title ILIKE ? ESCAPE '\\'
+       OR c.tags ILIKE ? ESCAPE '\\'
+       OR c.name_snapshots ILIKE ? ESCAPE '\\'
+       OR p.name ILIKE ? ESCAPE '\\'
+       OR c.story_snapshot::jsonb ->> 'name' ILIKE ? ESCAPE '\\'
+       OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(c.character_ids::jsonb) je(value)
                   JOIN characters ch ON ch.id = je.value
-                  WHERE ch.name LIKE ? ESCAPE '\\'))`);
+                  WHERE ch.name ILIKE ? ESCAPE '\\'))`);
     args.push(l, l, l, l, l, l);
   }
   const select = `SELECT c.*,
     (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) AS _message_count,
-    (SELECT substr(json_extract(m.variants, '$[' || m.active_variant || '].content'), 1, 120)
+    (SELECT left((m.variants::jsonb -> m.active_variant) ->> 'content', 120)
        FROM messages m WHERE m.chat_id = c.id AND m.role <> 'marker'
        ORDER BY m.position DESC LIMIT 1) AS _last_message,
     EXISTS (SELECT 1 FROM messages m
-       WHERE m.chat_id = c.id AND json_extract(m.scene_event, '$.theEnd')) AS _ended,
-    json_extract(c.story_snapshot, '$.name') AS _story_name
+       WHERE m.chat_id = c.id AND (m.scene_event::jsonb ->> 'theEnd')::boolean) AS _ended,
+    c.story_snapshot::jsonb ->> 'name' AS _story_name
   FROM chats c LEFT JOIN personas p ON p.id = c.persona_id`;
   return pageQuery({
     select,
@@ -1107,16 +1028,16 @@ export interface LibraryNameRef {
 
 /** Name search across the whole library (or one type, or a `types` subset): one merged,
  *  name-ordered stream with a single 3-part cursor {v: name, t: type, id}. */
-export function searchLibraryNames(
+export async function searchLibraryNames(
   opts: { q?: string; type?: LibraryType; types?: LibraryType[]; limit?: number; cursor?: string | null } = {}
-): Page<LibraryNameRef> {
+): Promise<Page<LibraryNameRef>> {
   const types = opts.types ?? (opts.type ? [opts.type] : LIBRARY_TYPE_KEYS);
   const q = opts.q?.trim();
   const limit = clampLimit(opts.limit);
   const parts: string[] = [];
   const args: unknown[] = [];
   for (const ty of types) {
-    parts.push(`SELECT '${ty}' AS type, id, name FROM ${LIBRARY_TABLES[ty]}${q ? ` WHERE name LIKE ? ESCAPE '\\'` : ""}`);
+    parts.push(`SELECT '${ty}' AS type, id, name FROM ${LIBRARY_TABLES[ty]}${q ? ` WHERE name ILIKE ? ESCAPE '\\'` : ""}`);
     if (q) args.push(like(q));
   }
   const cur = decodeCursor(opts.cursor ?? null);
@@ -1125,13 +1046,13 @@ export function searchLibraryNames(
     (!cur || typeof cur.v !== "string" || typeof cur.t !== "string" || typeof cur.id !== "string")
   )
     throw new PageError("invalid cursor");
-  let sql = `SELECT * FROM (${parts.join(" UNION ALL ")})`;
+  let sql = `SELECT * FROM (${parts.join(" UNION ALL ")}) u`;
   if (cur) {
-    sql += ` WHERE (name COLLATE NOCASE > ? OR (name COLLATE NOCASE = ? AND (type > ? OR (type = ? AND id > ?))))`;
+    sql += ` WHERE (LOWER(name) > LOWER(?) OR (LOWER(name) = LOWER(?) AND (type > ? OR (type = ? AND id > ?))))`;
     args.push(cur.v, cur.v, cur.t, cur.t, cur.id);
   }
-  sql += ` ORDER BY name COLLATE NOCASE, type, id LIMIT ?`;
-  const rows = getDb().prepare(sql).all(...args, limit + 1) as Row[];
+  sql += ` ORDER BY LOWER(name), type, id LIMIT ?`;
+  const rows = await all(sql, [...args, limit + 1]);
   const more = rows.length > limit;
   const page = rows.slice(0, limit) as LibraryNameRef[];
   const last = page[page.length - 1];
@@ -1141,43 +1062,41 @@ export function searchLibraryNames(
   };
 }
 
-export function listDistinctTags(type: LibraryType): string[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT DISTINCT jt.value AS tag FROM ${LIBRARY_TABLES[type]} t, json_each(t.tags) jt ORDER BY tag COLLATE NOCASE`
-    )
-    .all() as Row[];
+export async function listDistinctTags(type: LibraryType): Promise<string[]> {
+  const rows = await all(
+    `SELECT jt.value AS tag FROM ${LIBRARY_TABLES[type]} t, jsonb_array_elements_text(t.tags::jsonb) jt(value)
+     GROUP BY jt.value ORDER BY LOWER(jt.value), jt.value`
+  );
   return rows.map((r) => String(r.tag));
 }
 
-export function listChatFolders(): string[] {
-  return (
-    getDb().prepare("SELECT DISTINCT folder FROM chats WHERE folder <> '' ORDER BY folder").all() as Row[]
-  ).map((r) => r.folder);
+export async function listChatFolders(): Promise<string[]> {
+  return (await all("SELECT DISTINCT folder FROM chats WHERE folder <> '' ORDER BY folder")).map(
+    (r) => r.folder
+  );
 }
 
 /* ---------------- memory: summaries, facts, relationships ---------------- */
 
-export function getSummary(chatId: string): { content: string; coveredPosition: number } {
-  const r = getDb().prepare("SELECT * FROM summaries WHERE chat_id=?").get(chatId) as Row | undefined;
+export async function getSummary(chatId: string): Promise<{ content: string; coveredPosition: number }> {
+  const r = await get("SELECT * FROM summaries WHERE chat_id=?", [chatId]);
   return r ? { content: r.content, coveredPosition: r.covered_position } : { content: "", coveredPosition: -1 };
 }
 
-export function putSummary(chatId: string, content: string, coveredPosition: number) {
-  getDb()
-    .prepare(
-      `INSERT INTO summaries (chat_id, content, covered_position, updated_at) VALUES (?,?,?,?)
-       ON CONFLICT(chat_id) DO UPDATE SET content=excluded.content, covered_position=excluded.covered_position, updated_at=excluded.updated_at`
-    )
-    .run(chatId, content, coveredPosition, now());
+export async function putSummary(chatId: string, content: string, coveredPosition: number): Promise<void> {
+  await run(
+    `INSERT INTO summaries (chat_id, content, covered_position, updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(chat_id) DO UPDATE SET content=excluded.content, covered_position=excluded.covered_position, updated_at=excluded.updated_at`,
+    [chatId, content, coveredPosition, now()]
+  );
 }
 
 /** Invalidate summary coverage from a position onward (edit/rewind touching summarized range). */
-export function invalidateSummary(chatId: string, fromPosition: number) {
-  const s = getSummary(chatId);
+export async function invalidateSummary(chatId: string, fromPosition: number): Promise<void> {
+  const s = await getSummary(chatId);
   if (s.coveredPosition >= fromPosition) {
     // Drop the whole summary: chunks are merged, so partial rollback is impossible.
-    getDb().prepare("DELETE FROM summaries WHERE chat_id=?").run(chatId);
+    await run("DELETE FROM summaries WHERE chat_id=?", [chatId]);
   }
 }
 
@@ -1189,24 +1108,22 @@ const factFromRow = (r: Row): Fact => ({
   createdAt: r.created_at,
 });
 
-export function listFacts(characterId: string, limit = 100): Fact[] {
+export async function listFacts(characterId: string, limit = 100): Promise<Fact[]> {
   return (
-    getDb()
-      .prepare("SELECT * FROM facts WHERE character_id=? ORDER BY created_at DESC LIMIT ?")
-      .all(characterId, limit) as Row[]
+    await all("SELECT * FROM facts WHERE character_id=? ORDER BY created_at DESC LIMIT ?", [characterId, limit])
   ).map(factFromRow);
 }
 
-export function addFact(characterId: string, chatId: string | null, content: string): Fact {
+export async function addFact(characterId: string, chatId: string | null, content: string): Promise<Fact> {
   const id = uid();
-  getDb()
-    .prepare("INSERT INTO facts (id, character_id, chat_id, content, created_at) VALUES (?,?,?,?,?)")
-    .run(id, characterId, chatId, content, now());
-  return factFromRow(getDb().prepare("SELECT * FROM facts WHERE id=?").get(id) as Row);
+  await run("INSERT INTO facts (id, character_id, chat_id, content, created_at) VALUES (?,?,?,?,?)", [
+    id, characterId, chatId, content, now(),
+  ]);
+  return factFromRow((await get("SELECT * FROM facts WHERE id=?", [id]))!);
 }
 
-export function deleteFact(id: string) {
-  getDb().prepare("DELETE FROM facts WHERE id=?").run(id);
+export async function deleteFact(id: string): Promise<void> {
+  await run("DELETE FROM facts WHERE id=?", [id]);
 }
 
 const relationshipFromRow = (r: Row): Relationship => ({
@@ -1218,69 +1135,67 @@ const relationshipFromRow = (r: Row): Relationship => ({
   updatedAt: r.updated_at,
 });
 
-export function getRelationship(characterId: string, personaId: string): Relationship | null {
-  const r = getDb()
-    .prepare("SELECT * FROM relationships WHERE character_id=? AND persona_id=?")
-    .get(characterId, personaId) as Row | undefined;
+export async function getRelationship(characterId: string, personaId: string): Promise<Relationship | null> {
+  const r = await get("SELECT * FROM relationships WHERE character_id=? AND persona_id=?", [
+    characterId, personaId,
+  ]);
   return r ? relationshipFromRow(r) : null;
 }
 
-export function listRelationships(characterId: string): Relationship[] {
-  return (
-    getDb().prepare("SELECT * FROM relationships WHERE character_id=?").all(characterId) as Row[]
-  ).map(relationshipFromRow);
+export async function listRelationships(characterId: string): Promise<Relationship[]> {
+  return (await all("SELECT * FROM relationships WHERE character_id=?", [characterId])).map(relationshipFromRow);
 }
 
 /** Reset: forget all relationship data for a character (all personas). */
-export function deleteRelationships(characterId: string) {
-  getDb().prepare("DELETE FROM relationships WHERE character_id=?").run(characterId);
+export async function deleteRelationships(characterId: string): Promise<void> {
+  await run("DELETE FROM relationships WHERE character_id=?", [characterId]);
 }
 
-export function putRelationship(characterId: string, personaId: string, affinity: number, notes: string) {
-  getDb()
-    .prepare(
-      `INSERT INTO relationships (id, character_id, persona_id, affinity, notes, updated_at) VALUES (?,?,?,?,?,?)
-       ON CONFLICT(character_id, persona_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`
-    )
-    .run(uid(), characterId, personaId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now());
+export async function putRelationship(
+  characterId: string,
+  personaId: string,
+  affinity: number,
+  notes: string
+): Promise<void> {
+  await run(
+    `INSERT INTO relationships (id, character_id, persona_id, affinity, notes, updated_at) VALUES (?,?,?,?,?,?)
+     ON CONFLICT(character_id, persona_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`,
+    [uid(), characterId, personaId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now()]
+  );
 }
 
 /* ---- aliveness: per-chat mind states & off-screen life notes ---- */
 
-export function getMindState(characterId: string, chatId: string): MindState | null {
-  const r = getDb()
-    .prepare("SELECT * FROM mind_states WHERE character_id=? AND chat_id=?")
-    .get(characterId, chatId) as Row | undefined;
+export async function getMindState(characterId: string, chatId: string): Promise<MindState | null> {
+  const r = await get("SELECT * FROM mind_states WHERE character_id=? AND chat_id=?", [characterId, chatId]);
   return r
     ? { characterId: r.character_id, chatId: r.chat_id, content: r.content, updatedAt: r.updated_at }
     : null;
 }
 
-export function putMindState(characterId: string, chatId: string, content: string) {
-  getDb()
-    .prepare(
-      `INSERT INTO mind_states (character_id, chat_id, content, updated_at) VALUES (?,?,?,?)
-       ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`
-    )
-    .run(characterId, chatId, content, now());
+export async function putMindState(characterId: string, chatId: string, content: string): Promise<void> {
+  await run(
+    `INSERT INTO mind_states (character_id, chat_id, content, updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`,
+    [characterId, chatId, content, now()]
+  );
 }
 
-export function getOffscreenNote(characterId: string, chatId: string): OffscreenNote | null {
-  const r = getDb()
-    .prepare("SELECT * FROM offscreen_notes WHERE character_id=? AND chat_id=?")
-    .get(characterId, chatId) as Row | undefined;
+export async function getOffscreenNote(characterId: string, chatId: string): Promise<OffscreenNote | null> {
+  const r = await get("SELECT * FROM offscreen_notes WHERE character_id=? AND chat_id=?", [
+    characterId, chatId,
+  ]);
   return r
     ? { characterId: r.character_id, chatId: r.chat_id, content: r.content, createdAt: r.created_at }
     : null;
 }
 
-export function putOffscreenNote(characterId: string, chatId: string, content: string) {
-  getDb()
-    .prepare(
-      `INSERT INTO offscreen_notes (character_id, chat_id, content, created_at) VALUES (?,?,?,?)
-       ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, created_at=excluded.created_at`
-    )
-    .run(characterId, chatId, content, now());
+export async function putOffscreenNote(characterId: string, chatId: string, content: string): Promise<void> {
+  await run(
+    `INSERT INTO offscreen_notes (character_id, chat_id, content, created_at) VALUES (?,?,?,?)
+     ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, created_at=excluded.created_at`,
+    [characterId, chatId, content, now()]
+  );
 }
 
 /* ---- character ↔ character (directed: each side has their own view) ---- */
@@ -1294,39 +1209,41 @@ const charRelationshipFromRow = (r: Row): CharRelationship => ({
   updatedAt: r.updated_at,
 });
 
-export function getCharRelationship(characterId: string, otherId: string): CharRelationship | null {
-  const r = getDb()
-    .prepare("SELECT * FROM char_relationships WHERE character_id=? AND other_id=?")
-    .get(characterId, otherId) as Row | undefined;
+export async function getCharRelationship(characterId: string, otherId: string): Promise<CharRelationship | null> {
+  const r = await get("SELECT * FROM char_relationships WHERE character_id=? AND other_id=?", [
+    characterId, otherId,
+  ]);
   return r ? charRelationshipFromRow(r) : null;
 }
 
-export function listCharRelationships(characterId: string): CharRelationship[] {
-  return (
-    getDb().prepare("SELECT * FROM char_relationships WHERE character_id=?").all(characterId) as Row[]
-  ).map(charRelationshipFromRow);
+export async function listCharRelationships(characterId: string): Promise<CharRelationship[]> {
+  return (await all("SELECT * FROM char_relationships WHERE character_id=?", [characterId])).map(
+    charRelationshipFromRow
+  );
 }
 
 /** Reset: forget a character's views of others AND others' views of them. */
-export function deleteCharRelationships(characterId: string) {
-  getDb()
-    .prepare("DELETE FROM char_relationships WHERE character_id=? OR other_id=?")
-    .run(characterId, characterId);
+export async function deleteCharRelationships(characterId: string): Promise<void> {
+  await run("DELETE FROM char_relationships WHERE character_id=? OR other_id=?", [characterId, characterId]);
 }
 
-export function putCharRelationship(characterId: string, otherId: string, affinity: number, notes: string) {
+export async function putCharRelationship(
+  characterId: string,
+  otherId: string,
+  affinity: number,
+  notes: string
+): Promise<void> {
   if (characterId === otherId) return;
-  getDb()
-    .prepare(
-      `INSERT INTO char_relationships (id, character_id, other_id, affinity, notes, updated_at) VALUES (?,?,?,?,?,?)
-       ON CONFLICT(character_id, other_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`
-    )
-    .run(uid(), characterId, otherId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now());
+  await run(
+    `INSERT INTO char_relationships (id, character_id, other_id, affinity, notes, updated_at) VALUES (?,?,?,?,?,?)
+     ON CONFLICT(character_id, other_id) DO UPDATE SET affinity=excluded.affinity, notes=excluded.notes, updated_at=excluded.updated_at`,
+    [uid(), characterId, otherId, Math.max(-100, Math.min(100, Math.round(affinity))), notes, now()]
+  );
 }
 
 /* ---------------- usage ---------------- */
 
-export function logUsage(u: {
+export async function logUsage(u: {
   provider: string;
   model: string;
   feature: string;
@@ -1337,16 +1254,14 @@ export function logUsage(u: {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   outputTokens: number;
-}) {
-  getDb()
-    .prepare(
-      "INSERT INTO usage_log (ts, provider, model, feature, chat_id, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens) VALUES (?,?,?,?,?,?,?,?,?)"
-    )
-    .run(now(), u.provider, u.model, u.feature, u.chatId ?? null, u.inputTokens, u.cacheReadTokens ?? 0, u.cacheWriteTokens ?? 0, u.outputTokens);
+}): Promise<void> {
+  await run(
+    "INSERT INTO usage_log (ts, provider, model, feature, chat_id, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens) VALUES (?,?,?,?,?,?,?,?,?)",
+    [now(), u.provider, u.model, u.feature, u.chatId ?? null, u.inputTokens, u.cacheReadTokens ?? 0, u.cacheWriteTokens ?? 0, u.outputTokens]
+  );
 }
 
-export function usageReport(sinceTs = 0) {
-  const db = getDb();
+export async function usageReport(sinceTs = 0) {
   // Cost is derived at query time from the current per-model prices (USD per 1M tokens),
   // matched on the provider name + model id strings the log stores — so prices apply
   // retroactively, and rows whose model has no prices (or was deleted) count as unpriced
@@ -1366,52 +1281,53 @@ export function usageReport(sinceTs = 0) {
           + u.cache_write_tokens*COALESCE(pr.cwp,pr.ip,0) + u.output_tokens*COALESCE(pr.op,0))/1e6 END) AS cost`;
   const SUMS = `SUM(u.input_tokens)+SUM(u.cache_write_tokens) AS input, SUM(u.cache_read_tokens) AS cached,
     SUM(u.output_tokens) AS output, COUNT(*) AS calls, ${COST}`;
-  const totals = db
-    .prepare(
-      `SELECT COALESCE(SUM(u.input_tokens)+SUM(u.cache_write_tokens),0) AS input, COALESCE(SUM(u.cache_read_tokens),0) AS cached,
-         COALESCE(SUM(u.output_tokens),0) AS output, COUNT(*) AS calls, ${COST},
-         COALESCE(SUM(CASE WHEN ${UNPRICED} THEN u.input_tokens+u.cache_read_tokens+u.cache_write_tokens+u.output_tokens ELSE 0 END),0) AS unpriced
-       ${FROM}`
-    )
-    .get(sinceTs) as Row;
-  const byFeature = db
-    .prepare(`SELECT u.feature AS feature, ${SUMS} ${FROM} GROUP BY u.feature ORDER BY input+cached+output DESC`)
-    .all(sinceTs) as Row[];
-  const byModel = db
-    .prepare(
-      `SELECT u.provider AS provider, u.model AS model, ${SUMS} ${FROM} GROUP BY u.provider, u.model ORDER BY input+cached+output DESC`
-    )
-    .all(sinceTs) as Row[];
-  const byDay = db
-    .prepare(`SELECT date(u.ts/1000, 'unixepoch', 'localtime') AS day, ${SUMS} ${FROM} GROUP BY day ORDER BY day`)
-    .all(sinceTs) as Row[];
+  // Postgres can't use the output aliases in an ORDER BY expression — repeat the sums
+  const VOLUME = `SUM(u.input_tokens)+SUM(u.cache_write_tokens)+SUM(u.cache_read_tokens)+SUM(u.output_tokens)`;
+  const totals = (await get(
+    `SELECT COALESCE(SUM(u.input_tokens)+SUM(u.cache_write_tokens),0) AS input, COALESCE(SUM(u.cache_read_tokens),0) AS cached,
+       COALESCE(SUM(u.output_tokens),0) AS output, COUNT(*) AS calls, ${COST},
+       COALESCE(SUM(CASE WHEN ${UNPRICED} THEN u.input_tokens+u.cache_read_tokens+u.cache_write_tokens+u.output_tokens ELSE 0 END),0) AS unpriced
+     ${FROM}`,
+    [sinceTs]
+  ))!;
+  const byFeature = await all(
+    `SELECT u.feature AS feature, ${SUMS} ${FROM} GROUP BY u.feature ORDER BY ${VOLUME} DESC`,
+    [sinceTs]
+  );
+  const byModel = await all(
+    `SELECT u.provider AS provider, u.model AS model, ${SUMS} ${FROM} GROUP BY u.provider, u.model ORDER BY ${VOLUME} DESC`,
+    [sinceTs]
+  );
+  // to_char renders in the session timezone (set to the server's at connect)
+  const byDay = await all(
+    `SELECT to_char(to_timestamp(u.ts/1000.0), 'YYYY-MM-DD') AS day, ${SUMS} ${FROM} GROUP BY day ORDER BY day`,
+    [sinceTs]
+  );
   return { totals, byFeature, byModel, byDay };
 }
 
 /* ---------------- assets ---------------- */
 
-export function registerAsset(id: string, filename: string, mime: string, size: number) {
-  getDb()
-    .prepare(
-      "INSERT INTO assets (id, filename, mime, size, created_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING"
-    )
-    .run(id, filename, mime, size, now());
+export async function registerAsset(id: string, filename: string, mime: string, size: number): Promise<void> {
+  await run(
+    "INSERT INTO assets (id, filename, mime, size, created_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+    [id, filename, mime, size, now()]
+  );
 }
 
-export function getAsset(id: string): { id: string; filename: string; mime: string; size: number } | null {
-  const r = getDb().prepare("SELECT * FROM assets WHERE id=?").get(id) as Row | undefined;
+export async function getAsset(
+  id: string
+): Promise<{ id: string; filename: string; mime: string; size: number } | null> {
+  const r = await get("SELECT * FROM assets WHERE id=?", [id]);
   return r ? { id: r.id, filename: r.filename, mime: r.mime, size: r.size } : null;
 }
 
-export function listAssets(): { id: string; size: number; createdAt: number }[] {
-  const rows = getDb().prepare("SELECT id, size, created_at FROM assets").all() as Row[];
+export async function listAssets(): Promise<{ id: string; size: number; createdAt: number }[]> {
+  const rows = await all("SELECT id, size, created_at FROM assets");
   return rows.map((r) => ({ id: r.id, size: r.size, createdAt: r.created_at }));
 }
 
-export function deleteAssets(ids: string[]) {
-  const db = getDb();
-  const stmt = db.prepare("DELETE FROM assets WHERE id=?");
-  db.transaction((list: string[]) => {
-    for (const id of list) stmt.run(id);
-  })(ids);
+export async function deleteAssets(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await run("DELETE FROM assets WHERE id = ANY(?)", [ids]);
 }

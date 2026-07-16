@@ -23,16 +23,16 @@ export const POST = handler(async (req: Request) => {
   }
 
   for (const p of providers) {
-    upsertProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey ?? "" });
+    await upsertProvider({ id: p.id, name: p.name, type: p.type, baseUrl: p.baseUrl, apiKey: p.apiKey ?? "" });
   }
   let skippedModels = 0;
   for (const m of models) {
     // a model is only usable under an existing provider (from this file or already local)
-    if (!getProvider(m.providerId)) {
+    if (!(await getProvider(m.providerId))) {
       skippedModels++;
       continue;
     }
-    upsertModel({
+    await upsertModel({
       id: m.id,
       providerId: m.providerId,
       modelId: m.modelId,
@@ -53,7 +53,7 @@ export const POST = handler(async (req: Request) => {
       if (k in b.settings) patch[k] = (b.settings as Record<string, unknown>)[k];
     }
   }
-  putSettings(patch as Partial<Settings>);
+  await putSettings(patch as Partial<Settings>);
 
   return ok({ providers: providers.length, models: models.length - skippedModels, skippedModels });
 });

@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { extractJson, streamLlm, type ResolvedModel, type StreamEvent } from "./client";
 import type { Model, Provider } from "@/lib/types";
 
+// the real store is async — the mocks must return promises (streamLlm chains
+// .catch on logUsage's result)
 vi.mock("@/lib/store", () => ({
-  getModel: vi.fn(),
-  getProvider: vi.fn(),
-  getSettings: vi.fn(),
-  logUsage: vi.fn(),
+  getModel: vi.fn(async () => null),
+  getProvider: vi.fn(async () => null),
+  getSettings: vi.fn(async () => ({})),
+  logUsage: vi.fn(async () => {}),
 }));
 
 describe("extractJson", () => {
