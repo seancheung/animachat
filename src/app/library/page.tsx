@@ -12,7 +12,7 @@ import {
 import { LIBRARY_CARDS } from "@/components/library/cards";
 import { EmptyState, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
-import { GuideDialog } from "@/components/GuideDialog";
+import { AssistantDialog } from "@/components/AssistantDialog";
 import { ImportDialog } from "@/components/ImportDialog";
 import { LibraryPicker, type LibraryRef } from "@/components/LibraryPicker";
 import Button from "@/components/ui/button";
@@ -56,7 +56,7 @@ export default function LibraryPage() {
   const [exporting, setExporting] = useState(false);
   const [importPreview, setImportPreview] = useState<{ file: File; items: BundlePreviewItem[] } | null>(null);
   const [importing, setImporting] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState("");
@@ -132,8 +132,8 @@ export default function LibraryPage() {
           >
             <Download /> Export
           </Button>
-          <Button variant="secondary" onClick={() => setGuideOpen(true)}>
-            <Sparkles /> Guide
+          <Button variant="secondary" onClick={() => setAssistantOpen(true)}>
+            <Sparkles /> Assistant
           </Button>
           <Button onClick={() => setEditing({})}>
             <Plus /> New
@@ -206,7 +206,7 @@ export default function LibraryPage() {
         />
       </div>
 
-      <GuideDialog open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <AssistantDialog open={assistantOpen} onClose={() => setAssistantOpen(false)} />
 
       <LibraryPicker
         open={exportOpen}

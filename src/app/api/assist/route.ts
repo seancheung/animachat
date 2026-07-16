@@ -59,7 +59,7 @@ FIELD_DOCS.story =
   `"secrets": [{"title": "short handle", "content": "the hidden truth — PRESENT TENSE, already true as play opens", "knownByNames": ["cast", "names", "who", "ALREADY", "know", "at", "open"], "revealHint": "when/how it wants to surface"}] (identified by title, "renameFrom" renames; knownByNames name embedded cast members and may be empty for a truth nobody on stage knows — it lists who already knows as play OPENS, never who the secret concerns: a character meant to learn it mid-story is left out)\n` +
   `"lorebooks": [{${FIELD_DOCS.lorebook}}] (embedded — attached to every playthrough of the story)`;
 
-// multi-item "library guide" mode: one batch of items across the library types
+// multi-item "library assistant" mode: one batch of items across the library types
 // (stories are authored on the story page, not here)
 FIELD_DOCS.library =
   `"items": [{"type": "character" | "persona" | "location" | "scene" | "lorebook", ...fields for that type}]\n` +
@@ -157,7 +157,7 @@ export const POST = handler(async (req: Request) => {
   }
   const settings = getSettings();
   const isLibrary = body.entityType === "library";
-  // whole-batch modes (the Guide, whole-document stories) need room for many items
+  // whole-batch modes (the Assistant, whole-document stories) need room for many items
   const bigBatch = isLibrary || body.entityType === "story";
   const refTexts = (body.references ?? []).map(referenceText).filter(Boolean) as string[];
   const attachTexts = (body.attachments ?? [])

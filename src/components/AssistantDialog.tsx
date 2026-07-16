@@ -16,7 +16,7 @@ import { api } from "@/lib/ui";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type GuideItem = { type: string; name?: string; [key: string]: any };
+type AssistantItem = { type: string; name?: string; [key: string]: any };
 
 const ENDPOINT: Record<string, string> = Object.fromEntries(
   LIBRARY_TYPES.map((t) => [t.type, t.url])
@@ -43,16 +43,16 @@ const TEXT_FIELDS: Record<string, { key: string; label: string; rows: number }[]
 };
 
 // dependencies first: locations before the scenes that name them
-// (stories are authored on the story page, not in the Guide)
+// (stories are authored on the story page, not in the Assistant)
 const SAVE_ORDER = ["location", "scene", "character", "lorebook", "persona"];
 
 /**
- * Library guide: a co-writer session that creates a whole batch of library items
+ * Library assistant: a co-writer session that creates a whole batch of library items
  * (any mix of types) shown as editable forms; Save persists them all, resolving
  * scene→location and story→scene links by name.
  */
-export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [items, setItems] = useState<GuideItem[]>([]);
+export function AssistantDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [items, setItems] = useState<AssistantItem[]>([]);
   const [saving, setSaving] = useState(false);
   const invalidate = useInvalidate();
 
@@ -64,7 +64,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
       const next = [...prev];
       for (const raw of incoming) {
         if (!raw || typeof raw !== "object") continue;
-        const it = raw as GuideItem;
+        const it = raw as AssistantItem;
         const type = String(it.type ?? "");
         const name = String(it.name ?? "").trim();
         if (!TEXT_FIELDS[type] || !name) continue;
@@ -146,7 +146,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Library guide" wide dismissable={false}>
+    <Modal open={open} onClose={onClose} title="Library assistant" wide dismissable={false}>
       {/* minmax(0,1fr) row: keep both columns inside the 70vh box (see EditorShell) */}
       <div className="grid grid-cols-[1fr_320px] grid-rows-[minmax(0,1fr)] gap-4 h-[70vh]">
         <div className="flex flex-col min-h-0">
@@ -204,7 +204,7 @@ export function GuideDialog({ open, onClose }: { open: boolean; onClose: () => v
           entityType="library"
           fields={{ items }}
           onFields={applyFields}
-          onRestore={(f) => setItems(Array.isArray(f.items) ? (f.items as GuideItem[]) : [])}
+          onRestore={(f) => setItems(Array.isArray(f.items) ? (f.items as AssistantItem[]) : [])}
           allowFiles
           emptyHint="Tell me what to build — a single item or a whole cast. Attach a .txt/.md file (file button) to extract characters, places, scenes or lore from it."
         />
@@ -218,7 +218,7 @@ function ItemCard({
   onChange,
   onRemove,
 }: {
-  item: GuideItem;
+  item: AssistantItem;
   onChange: (patch: Record<string, unknown>) => void;
   onRemove: () => void;
 }) {
