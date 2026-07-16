@@ -171,8 +171,12 @@ export default function StoriesPage() {
               </div>
               <div className="p-2.5">
                 <div className="font-medium text-sm truncate">{item.name}</div>
-                <div className="text-xs text-content-300 line-clamp-2 h-8">
-                  {item.castCount} cast, {item.sceneCount} scenes — {(item.description ?? "").slice(0, 70)}
+                {/* sliced far past what two clamped lines can show — line-clamp's
+                    ellipsis still appears, while huge premises stay out of the DOM.
+                    h-[2lh]: a box taller than the clamped 2 lines (h-8 is, with this
+                    theme's --spacing) lets the 3rd line paint below the ellipsis */}
+                <div className="text-xs text-content-300 line-clamp-2 h-[2lh]">
+                  {item.castCount} cast, {item.sceneCount} scenes — {(item.description ?? "").slice(0, 300)}
                 </div>
                 {item.tags?.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">

@@ -59,7 +59,11 @@ function CardShell({
       </div>
       <div className="p-2.5">
         <div className="font-medium text-sm truncate">{item.name}</div>
-        <div className="text-xs text-content-300 line-clamp-2 h-8">{sub}</div>
+        {/* sliced far past what two clamped lines can show — line-clamp's ellipsis
+            still appears, while multi-KB sheets stay out of the DOM. h-[2lh], not a
+            spacing height: a box taller than the clamped 2 lines lets the 3rd line
+            paint below the ellipsis (and this theme's --spacing makes h-8 taller) */}
+        <div className="text-xs text-content-300 line-clamp-2 h-[2lh]">{sub.slice(0, 300)}</div>
         {item.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {item.tags.map((t: string) => (
@@ -183,7 +187,7 @@ export function CharacterCard(props: LibraryCardProps) {
     <CardShell
       {...props}
       coverAspect="square"
-      sub={props.item.description?.slice(0, 90) ?? ""}
+      sub={props.item.description ?? ""}
       extraActions={
         <>
           <Button variant="ghost" size="sm" shape="square" title="Preview sprites" onClick={() => setPreview(true)}>
@@ -214,7 +218,7 @@ export function PersonaCard(props: LibraryCardProps) {
   return (
     <CardShell
       {...props}
-      sub={props.item.description?.slice(0, 90) ?? ""}
+      sub={props.item.description ?? ""}
       cover={<VenetianMask size={32} />}
     />
   );
@@ -225,7 +229,7 @@ export function LocationCard(props: LibraryCardProps) {
   return (
     <CardShell
       {...props}
-      sub={props.item.description?.slice(0, 90) ?? ""}
+      sub={props.item.description ?? ""}
       cover={artwork ? <CoverImage src={artwork} /> : <Mountain size={32} />}
     />
   );
@@ -236,7 +240,7 @@ export function SceneCard(props: LibraryCardProps) {
   return (
     <CardShell
       {...props}
-      sub={props.item.setup?.slice(0, 90) ?? ""}
+      sub={props.item.setup ?? ""}
       cover={artwork ? <CoverImage src={artwork} /> : <Mountain size={32} />}
     />
   );
@@ -247,7 +251,7 @@ export function LorebookCard(props: LibraryCardProps) {
   return (
     <CardShell
       {...props}
-      sub={`${item.entries?.length ?? 0} entries — ${(item.description ?? "").slice(0, 70)}`}
+      sub={`${item.entries?.length ?? 0} entries — ${item.description ?? ""}`}
       cover={<LibraryBig size={32} />}
     />
   );
