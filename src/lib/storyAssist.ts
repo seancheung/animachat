@@ -13,6 +13,68 @@ import type { StoryDocument } from "./types";
 
 const norm = (n: unknown) => String(n ?? "").trim().toLowerCase();
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Enforce the all-literal rule on a story document: everything in a story is
+ * fixed (its cast, places, scenes, name), so placeholder tags never belong in
+ * story content — the co-writer is told so, and this pass makes it true even
+ * when the model slips. Resolvable tags rewrite to the story's own literal
+ * names; [user_name]/[persona_name] have no literal (there is no predetermined
+ * player) and rewrite to a visible "the player" so the slip can be reworded
+ * instead of hiding until playtime. Unresolvable tags are left alone — the
+ * runtime still substitutes them fail-soft, and a wrong guess beats nothing.
+ */
+export function literalizeStoryTags(doc: StoryDocument): StoryDocument {
+  const cast = doc.characters;
+  const namedItems = [...doc.characters, ...doc.locations, ...doc.scenes, ...doc.lorebooks]
+    .map((x: any) => String(x?.name ?? "").trim())
+    .filter(Boolean);
+  const locNameOf = (id: string | null | undefined) =>
+    doc.locations.find((l) => l.id === id)?.name ?? null;
+
+  const subst = (v: string, self?: { charName?: string; sceneName?: string; locName?: string | null }) => {
+    if (!v.includes("[")) return v;
+    let out = v;
+    if (self?.charName) out = out.replace(/\[char_name\]/gi, self.charName);
+    if (self?.sceneName) out = out.replace(/\[scene_name\]/gi, self.sceneName);
+    if (self?.locName) out = out.replace(/\[loc_name\]/gi, self.locName);
+    else if (doc.locations.length === 1)
+      out = out.replace(/\[loc_name\]/gi, doc.locations[0].name);
+    if (doc.name.trim()) out = out.replace(/\[story_name\]/gi, doc.name.trim());
+    out = out.replace(/\[char(\d+)_name\]/gi, (m, n) => cast[Number(n) - 1]?.name ?? m);
+    out = out.replace(/\[(?:user_name|persona_name)\]/gi, "the player");
+    // a literal item name in tag brackets ("[Mira]") is a tag-shaped slip — unwrap it
+    for (const name of namedItems) out = out.replace(new RegExp(`\\[${escapeRe(name)}\\]`, "gi"), name);
+    return out;
+  };
+  const walk = <T,>(v: T, self?: Parameters<typeof subst>[1]): T => {
+    if (typeof v === "string") return subst(v, self) as T;
+    if (Array.isArray(v)) return v.map((x) => walk(x, self)) as T;
+    if (v && typeof v === "object")
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, self)])) as T;
+    return v;
+  };
+
+  return {
+    ...doc,
+    name: doc.name, // never substituted into itself
+    description: subst(doc.description),
+    destination: subst(doc.destination),
+    characters: doc.characters.map((c) => ({ ...walk(c, { charName: c.name }), id: c.id, name: c.name })),
+    // ids/refs inside items are uuids (bracket-free), so the walk can't touch them;
+    // only the name is pinned (never substituted into itself)
+    scenes: doc.scenes.map((e) => ({
+      ...walk(e, { sceneName: e.name, locName: locNameOf(e.locationId) }),
+      id: e.id,
+      name: e.name,
+    })),
+    locations: doc.locations.map((l) => ({ ...walk(l), id: l.id, name: l.name })),
+    lorebooks: doc.lorebooks.map((lb) => ({ ...walk(lb), id: lb.id, name: lb.name })),
+    secrets: doc.secrets.map((s) => ({ ...s, content: subst(s.content), revealHint: subst(s.revealHint) })),
+  };
+}
+
 /** Merge incoming items into `cur` by name: update in place, append new (with a
  *  fresh id), honor renameFrom. Returns a new array; `cur` is untouched. */
 function mergeByName(cur: any[], incoming: unknown): any[] {
@@ -50,8 +112,9 @@ function applyOrder(list: any[], names: unknown): any[] {
 
 /**
  * Apply a co-writer payload to the story document draft. Pure — returns the next
- * draft. The server's saveStory normalization remains the safety net; this keeps
- * the draft coherent enough to edit (ids minted, name links resolved).
+ * draft, run through literalizeStoryTags (story content is all-literal — see
+ * there). The server's saveStory normalization remains the safety net; this
+ * keeps the draft coherent enough to edit (ids minted, name links resolved).
  */
 export function mergeStoryAssist(doc: StoryDocument, partial: any): StoryDocument {
   if (!partial || typeof partial !== "object") return doc;
@@ -138,5 +201,5 @@ export function mergeStoryAssist(doc: StoryDocument, partial: any): StoryDocumen
     out.secrets = next;
   }
 
-  return out as StoryDocument;
+  return literalizeStoryTags(out as StoryDocument);
 }

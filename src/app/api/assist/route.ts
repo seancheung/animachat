@@ -184,10 +184,10 @@ export const POST = handler(async (req: Request) => {
       : "") +
     `FIELDS YOU MAY SET:\n${FIELD_DOCS[body.entityType]}\n\n` +
     (body.entityType === "story"
-      ? `PLACEHOLDER TAGS IN STORY CONTENT: a story is played by its OWN fixed cast — there is no predetermined user (at playthrough time the player takes the seat of any cast member, or of a persona, or just watches). ` +
-        `NEVER write [user_name]/[persona_name] into story content, and never positional tags like [char2_name] (positions shift with whoever is played). ` +
-        `Refer to cast members by their LITERAL NAMES — their relationships are authored between those names and hold regardless of who plays. ` +
-        `[loc_name], [scene_name] and [story_name] still resolve during play and may be used where they fit.\n\n`
+      ? `NO PLACEHOLDER TAGS IN STORY CONTENT: everything in a story is FIXED — its cast, places, scenes and name are its own embedded items, nothing is dynamic. ` +
+        `Write LITERAL NAMES everywhere: never [user_name]/[persona_name] (there is no predetermined user — at playthrough time the player takes the seat of any cast member, or of a persona, or just watches), ` +
+        `never positional tags like [char2_name] (positions shift with whoever is played), and never [char_name]/[loc_name]/[scene_name]/[story_name] either — say "Mira", "the Moonlit Tavern", not a tag. ` +
+        `Relationships are authored between named cast members and hold regardless of who plays.\n\n`
       : `Text fields support placeholder tags replaced with live chat values: [user_name] (the user's persona), ` +
         `[loc_name], [scene_name], [story_name], and — inside a character's own fields — [char_name] for the character themselves. ` +
         `Prefer tags over hardcoded names where they fit, so content stays reusable across chats; referring to OTHER specific characters by their literal name is fine. ` +
@@ -356,14 +356,10 @@ export const POST = handler(async (req: Request) => {
                   ? normalizeSelfTags(item, typeof item.name === "string" ? item.name : null)
                   : it;
               });
-            } else if (body.entityType === "story" && Array.isArray(fields.characters)) {
-              fields.characters = fields.characters.map((it: unknown) => {
-                const c = it as { name?: string };
-                return c && typeof c === "object"
-                  ? normalizeSelfTags(c, typeof c.name === "string" ? c.name : null)
-                  : it;
-              });
             }
+            // story mode gets no normalizeSelfTags: story content is all-literal, and
+            // the client's mergeStoryAssist literalizes any tag slips against the
+            // document's own names (the tag direction would be wrong here)
             send({ type: "fields", fields });
           } else {
             const e = parseErr;

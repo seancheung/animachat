@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeStoryAssist } from "./storyAssist";
+import { literalizeStoryTags, mergeStoryAssist } from "./storyAssist";
 import { normalizeStoryDoc } from "./storyDoc";
 
 /** A small existing draft: one character, one location, two scenes, one secret. */
@@ -82,6 +82,20 @@ describe("mergeStoryAssist", () => {
     expect(out.scenes.map((s) => s.name)).toEqual(["Dawn", "Opening"]);
   });
 
+  it("literalizes placeholder tags the model slips into story content", () => {
+    const out = mergeStoryAssist(baseDoc(), {
+      description: "The debt hangs over [story_name] and [char1_name].",
+      characters: [{ name: "Kael", description: "[char_name] of Varr guards [Mira]'s tavern." }],
+      scenes: [{ name: "Opening", setup: "At [loc_name], [user_name] reads the notice in [scene_name]." }],
+    });
+    expect(out.description).toBe("The debt hangs over The Debt and Mira.");
+    expect(out.characters.find((c) => c.name === "Kael")!.description).toBe(
+      "Kael of Varr guards Mira's tavern."
+    );
+    // the scene's own location and name resolve; user tags surface visibly
+    expect(out.scenes[0].setup).toBe("At Tavern, the player reads the notice in Opening.");
+  });
+
   it("merges secrets by title and resolves knownByNames", () => {
     const out = mergeStoryAssist(baseDoc(), {
       characters: [{ name: "Kael" }],
@@ -94,5 +108,39 @@ describe("mergeStoryAssist", () => {
     expect(out.secrets).toHaveLength(2);
     expect(out.secrets[0]).toMatchObject({ title: "The cellar", content: "Moonmilk below.", knownBy: [kaelId] });
     expect(out.secrets[1]).toMatchObject({ title: "Kael's debt", content: "He owes too.", knownBy: [kaelId] });
+  });
+});
+
+describe("literalizeStoryTags", () => {
+  it("rewrites a library sheet's tags when the item is copied into a story", () => {
+    const doc = normalizeStoryDoc({
+      name: "The Debt",
+      locations: [{ id: "l1", name: "The Moonlit Tavern" }],
+      characters: [
+        {
+          id: "c1",
+          name: "Mira",
+          description: "[char_name] Thistledown, alchemist.",
+          greeting: '*[char_name] eyes [user_name].* "The ale at [loc_name] is bad."',
+        },
+      ],
+    });
+    const out = literalizeStoryTags(doc);
+    expect(out.characters[0].description).toBe("Mira Thistledown, alchemist.");
+    // one location in the story → [loc_name] resolves even outside a scene
+    expect(out.characters[0].greeting).toBe('*Mira eyes the player.* "The ale at The Moonlit Tavern is bad."');
+  });
+
+  it("leaves unresolvable tags for the runtime's fail-soft substitution", () => {
+    const doc = normalizeStoryDoc({
+      name: "",
+      locations: [
+        { id: "l1", name: "Tavern" },
+        { id: "l2", name: "Forest" },
+      ],
+      secrets: [{ title: "x", content: "It waits at [loc_name] in [story_name].", knownBy: [], revealHint: "" }],
+    });
+    // two locations and no story name — neither tag has a single literal referent
+    expect(literalizeStoryTags(doc).secrets[0].content).toBe("It waits at [loc_name] in [story_name].");
   });
 });

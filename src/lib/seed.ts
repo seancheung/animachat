@@ -97,15 +97,32 @@ export function seedPresets() {
   saveStory(
     normalizeStoryDoc({
       name: "The Alchemist's Debt",
-      // story content is player-agnostic: no [user_name] — the seat (a cast member,
-      // a persona, or nobody) is chosen at playthrough time
+      // story content is all-literal: no placeholder tags — everything in a story
+      // is fixed, and the seat (a cast member, a persona, or nobody) is only
+      // chosen at playthrough time
       description:
-        "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice turns into a night of bad decisions, worse alchemy, and the secret sleeping under [loc_name]. Tone: warm low-fantasy adventure with humor and heart.",
+        "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice turns into a night of bad decisions, worse alchemy, and the secret sleeping under the Moonlit Tavern. Tone: warm low-fantasy adventure with humor and heart.",
       destination:
         "Ends at dawn, when the Guild's collectors knock — with Mira's debt settled, dodged, or paid in something worse than coin.",
+      // embedded copies speak in literal names — story content never uses
+      // placeholder tags: everything in a story is fixed, nothing is dynamic
       characters: [
-        { ...miraSheet, id: eMira },
-        { ...kaelSheet, id: eKael },
+        {
+          ...miraSheet,
+          id: eMira,
+          description: miraSheet.description.replace(/\[char_name\]/gi, "Mira"),
+          greeting:
+            '*Mira looks up from a bubbling copper still, eyes narrowing at the newcomer.* "We\'re closed. Unless you\'re here about the notice — in which case, you\'re late, and I only have one rule: don\'t touch anything that glows."',
+          exampleDialogue:
+            '*She wipes her hands on a stained apron, not bothering to look up.* "Burn salve is two silver. Love potion is illegal, immoral, and four silver."\n"Flattery gets you a discount of exactly nothing."\n*Her voice softens, barely.* "…You did well out there. Don\'t make me say it twice."',
+        },
+        {
+          ...kaelSheet,
+          id: eKael,
+          description: kaelSheet.description.replace(/\[char_name\]/gi, "Kael"),
+          greeting:
+            '*A broad-shouldered man in dented plate looks up from his corner table, mug untouched.* "New face, is it? You have the look of someone about to ask for help. Sit. The ale here is bad, but the chairs are honest."',
+        },
       ],
       locations: [{ ...tavernSheet, id: eTavern }],
       lorebooks: [
@@ -126,7 +143,7 @@ export function seedPresets() {
               title: "Moonmilk",
               keywords: ["moonmilk", "glow", "cellar"],
               content:
-                "Moonmilk is a faintly green luminous reagent that only forms where moonlight pools on old temple stone. Priceless, unstable, and strictly forbidden by the Alchemists' Concord. The cellar of [loc_name] sits on the foundation of the old temple.",
+                "Moonmilk is a faintly green luminous reagent that only forms where moonlight pools on old temple stone. Priceless, unstable, and strictly forbidden by the Alchemists' Concord. The cellar of the Moonlit Tavern sits on the foundation of the old temple.",
               scanDepth: 8,
             },
           ],
@@ -154,7 +171,7 @@ export function seedPresets() {
           id: eScene1,
           name: "A Notice on the Door",
           setup:
-            "Evening rain. A hand-written notice on the door of [loc_name] reads: 'HELP WANTED — discretion required, courage appreciated, payment negotiable. Ask for Mira.' Inside, [loc_name] is nearly empty; Mira is arguing with a copper still, and Kael nurses an untouched drink in the corner. The Ashen Guild's collectors are due at dawn.",
+            "Evening rain. A hand-written notice on the door of the Moonlit Tavern reads: 'HELP WANTED — discretion required, courage appreciated, payment negotiable. Ask for Mira.' Inside, the tavern is nearly empty; Mira is arguing with a copper still, and Kael nurses an untouched drink in the corner. The Ashen Guild's collectors are due at dawn.",
           locationId: eTavern,
           cast: [eMira],
           goal: "Get whoever answers the notice entangled in Mira's problem — the job accepted, or refused in a way that won't stick.",
@@ -189,7 +206,7 @@ export function seedPresets() {
           id: eScene3a,
           name: "Dawn: The Collectors' Terms",
           setup:
-            "First light. Grey gloves at the door of [loc_name], polite as ever, ledger open. The debt is still owed — but the night has changed what's on the table, and the Guild always prefers a deal to a loss.",
+            "First light. Grey gloves at the door of the Moonlit Tavern, polite as ever, ledger open. The debt is still owed — but the night has changed what's on the table, and the Guild always prefers a deal to a loss.",
           locationId: eTavern,
           cast: [eMira, eKael],
           goal: "Settle the debt face to face — every secret still standing is leverage, theirs or the Guild's.",
@@ -200,7 +217,7 @@ export function seedPresets() {
           id: eScene3b,
           name: "Dawn: Nothing to Collect",
           setup:
-            "First light. The knock comes as promised — but the ledger no longer holds Mira's name the way it did at midnight. What the collectors find at [loc_name] is not what they came for.",
+            "First light. The knock comes as promised — but the ledger no longer holds Mira's name the way it did at midnight. What the collectors find at the Moonlit Tavern is not what they came for.",
           locationId: eTavern,
           cast: [eMira, eKael],
           goal: "Let the knock land on an empty ledger — and count what the night's escape actually cost.",

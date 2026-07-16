@@ -215,14 +215,14 @@ function AudioVisualFields({ form, setForm }: { form: any; setForm: (f: any) => 
 }
 
 /** The location sheet fields, shell-free — shared by the library editor dialog and
- *  the story page (a story's embedded locations). */
-export function LocationFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
+ *  the story page (a story's embedded locations, which use literal names, no tags). */
+export function LocationFields({ form, setForm, embedded = false }: { form: any; setForm: (f: any) => void; embedded?: boolean }) {
   return (
     <>
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
-      <Field label="Description" hint="placeholders like [char_name], [user_name] work here">
+      <Field label="Description" hint={embedded ? "write literal names — story content doesn't use placeholder tags (everything in a story is fixed)" : "placeholders like [char_name], [user_name] work here"}>
         <Textarea className="w-full h-32" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <AudioVisualFields form={form} setForm={setForm} />
@@ -247,17 +247,19 @@ export function SceneFields({
   form,
   setForm,
   locationField,
+  embedded = false,
 }: {
   form: any;
   setForm: (f: any) => void;
   locationField?: React.ReactNode;
+  embedded?: boolean;
 }) {
   return (
     <>
       <Field label="Name">
         <Input className="w-full" value={form.name ?? ""} onChange={(v) => setForm({ ...form, name: v })} />
       </Field>
-      <Field label="Setup" hint="the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here">
+      <Field label="Setup" hint={embedded ? `the situation: what's happening, the stakes, how it opens — write literal names — story content doesn't use placeholder tags (everything in a story is fixed)` : "the situation: what's happening, the stakes, how it opens — placeholders like [char_name], [user_name] work here"}>
         <Textarea className="w-full h-32" value={form.setup ?? ""} onChange={(v) => setForm({ ...form, setup: v })} />
       </Field>
       {locationField}
@@ -303,7 +305,7 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
 
 /** The lorebook fields, shell-free — shared by the library editor dialog and the
  *  story page (a story's embedded lorebooks). */
-export function LorebookFields({ form, setForm }: { form: any; setForm: (f: any) => void }) {
+export function LorebookFields({ form, setForm, embedded = false }: { form: any; setForm: (f: any) => void; embedded?: boolean }) {
   const entries: LorebookEntry[] = form.entries ?? [];
   const setEntry = (i: number, patch: Partial<LorebookEntry>) => {
     const next = [...entries];
@@ -318,7 +320,7 @@ export function LorebookFields({ form, setForm }: { form: any; setForm: (f: any)
       <Field label="Description">
         <Input className="w-full" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
-      <Field label="Entries" hint="injected into the prompt when a keyword appears in recent messages; placeholders like [char_name] work in content">
+      <Field label="Entries" hint={embedded ? "injected into the prompt when a keyword appears in recent messages — write literal names — story content doesn't use placeholder tags (everything in a story is fixed)" : "injected into the prompt when a keyword appears in recent messages; placeholders like [char_name] work in content"}>
         <div className="space-y-3">
           {entries.map((en, i) => (
             <div key={en.id ?? i} className="panel p-3 space-y-2">

@@ -109,7 +109,7 @@ export function CharacterFields({
           </Field>
         </div>
       </div>
-      <Field label="Description" hint={`personality, background, mannerisms, anything else — ${PLACEHOLDER_HINT}`}>
+      <Field label="Description" hint={`personality, background, mannerisms, anything else — ${embedded ? "write literal names — story content doesn't use placeholder tags (everything in a story is fixed)" : PLACEHOLDER_HINT}`}>
         <Textarea className="w-full h-36" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
       </Field>
       <Field label="Example dialogue" hint="a few short lines in their own voice only — one utterance per line, never other speakers' turns">

@@ -25,7 +25,7 @@ import Input from "@/components/ui/input";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { allowedNextScenes } from "@/lib/stage";
-import { mergeStoryAssist } from "@/lib/storyAssist";
+import { literalizeStoryTags, mergeStoryAssist } from "@/lib/storyAssist";
 import { emptyStoryDoc, normalizeCharacter, normalizeLocation, normalizeLorebook, normalizeScene } from "@/lib/storyDoc";
 import { useComboboxSearch, useGet, useInvalidate } from "@/lib/queries";
 import { api, uid } from "@/lib/ui";
@@ -109,6 +109,9 @@ export default function StoryEditorPage() {
   const charName = (cid: string) => chars.find((c) => c.id === cid)?.name ?? "?";
 
   const patch = (p: any) => setForm({ ...form, ...p });
+  // add-from-library goes through the literalizer: library sheets legitimately
+  // carry placeholder tags, story content never does (it's all fixed names)
+  const patchLiteralized = (p: any) => setForm((f: any) => ({ ...f, ...literalizeStoryTags({ ...f, ...p }) }));
   const setAt = (key: string, i: number) => (next: any) =>
     setForm((f: any) => ({ ...f, [key]: f[key].map((x: any, k: number) => (k === i ? next : x)) }));
   const moveAt = (key: string, i: number, d: number) => {
@@ -150,7 +153,7 @@ export default function StoryEditorPage() {
     try {
       const full = await api.get(`/api/characters/${id}`);
       // a copy with a fresh internal id — embedded items never share ids with library rows
-      patch({ characters: [...chars, { ...full, id: uid() }] });
+      patchLiteralized({ characters: [...chars, { ...full, id: uid() }] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -177,7 +180,7 @@ export default function StoryEditorPage() {
   const addLocationFromLibrary = async (id: string) => {
     try {
       const full = await api.get(`/api/locations/${id}`);
-      patch({ locations: [...locations, { ...full, id: uid() }] });
+      patchLiteralized({ locations: [...locations, { ...full, id: uid() }] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -222,7 +225,7 @@ export default function StoryEditorPage() {
         try {
           const loc = await api.get(`/api/locations/${full.locationId}`);
           locationId = uid();
-          patch({
+          patchLiteralized({
             locations: [...locations, { ...loc, id: locationId }],
             scenes: [...scenes, newStoryScene({ ...full, id: uid(), locationId })],
           });
@@ -231,7 +234,7 @@ export default function StoryEditorPage() {
           /* location gone — embed the scene alone */
         }
       }
-      patch({ scenes: [...scenes, newStoryScene({ ...full, id: uid(), locationId })] });
+      patchLiteralized({ scenes: [...scenes, newStoryScene({ ...full, id: uid(), locationId })] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -266,7 +269,7 @@ export default function StoryEditorPage() {
   const addLorebookFromLibrary = async (id: string) => {
     try {
       const full = await api.get(`/api/lorebooks/${id}`);
-      patch({ lorebooks: [...lorebooks, { ...full, id: uid() }] });
+      patchLiteralized({ lorebooks: [...lorebooks, { ...full, id: uid() }] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
@@ -386,7 +389,7 @@ export default function StoryEditorPage() {
                   </>
                 }
               >
-                <LocationFields form={l} setForm={setAt("locations", i)} />
+                <LocationFields form={l} setForm={setAt("locations", i)} embedded />
               </ItemRow>
             ))}
             <div className="flex gap-2">
@@ -431,6 +434,7 @@ export default function StoryEditorPage() {
                 <SceneFields
                   form={entry}
                   setForm={setAt("scenes", i)}
+                  embedded
                   locationField={
                     <Field label="Location" hint="one of the story's locations — its artwork/BGM take precedence in chat">
                       <Combobox
@@ -602,7 +606,7 @@ export default function StoryEditorPage() {
                   </>
                 }
               >
-                <LorebookFields form={lb} setForm={setAt("lorebooks", i)} />
+                <LorebookFields form={lb} setForm={setAt("lorebooks", i)} embedded />
               </ItemRow>
             ))}
             <div className="flex gap-2">
