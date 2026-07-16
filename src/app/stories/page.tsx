@@ -323,6 +323,7 @@ export default function StoriesPage() {
         onChange={setExportSel}
         hidePicker={exportMode === "all"}
         types={["story"]}
+        placeholder="Search stories…"
         footer={
           <>
             <Button variant="secondary" onClick={() => setExportOpen(false)}>

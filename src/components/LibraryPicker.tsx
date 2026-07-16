@@ -54,6 +54,7 @@ export function LibraryPicker({
   footer,
   hidePicker,
   types,
+  placeholder = "Search the library…",
 }: {
   open: boolean;
   onClose: () => void;
@@ -66,6 +67,8 @@ export function LibraryPicker({
   hidePicker?: boolean;
   /** restrict the search to these entity types (default: all) */
   types?: readonly string[];
+  /** search box placeholder — override when the picker isn't over the library (e.g. stories) */
+  placeholder?: string;
 }) {
   const keyOf = (r: { type: string; id: string }) => `${r.type}:${r.id}`;
   const search = useComboboxSearch("/api/library/search", {
@@ -82,7 +85,7 @@ export function LibraryPicker({
         {!hidePicker && (
           <MultiCombobox
             className="w-full"
-            placeholder="Search the library…"
+            placeholder={placeholder}
             hideTags
             value={selection.map(keyOf)}
             options={search.options}

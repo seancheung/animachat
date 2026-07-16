@@ -379,8 +379,8 @@ export default function StoryEditorPage() {
               </ItemRow>
             ))}
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => patch({ characters: [...chars, normalizeCharacter({ name: "" })] })}>
-                <Plus /> New character
+              <Button variant="secondary" shape="square" title="New character" onClick={() => patch({ characters: [...chars, normalizeCharacter({ name: "" })] })}>
+                <Plus />
               </Button>
               <Combobox
                 className="flex-1"
@@ -419,8 +419,8 @@ export default function StoryEditorPage() {
               </ItemRow>
             ))}
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => patch({ locations: [...locations, normalizeLocation({ name: "" })] })}>
-                <Plus /> New location
+              <Button variant="secondary" shape="square" title="New location" onClick={() => patch({ locations: [...locations, normalizeLocation({ name: "" })] })}>
+                <Plus />
               </Button>
               <Combobox
                 className="flex-1"
@@ -560,10 +560,11 @@ export default function StoryEditorPage() {
             <div className="flex gap-2">
               <Button
                 variant="secondary"
-                size="sm"
+                shape="square"
+                title="New scene"
                 onClick={() => patch({ scenes: [...scenes, newStoryScene(normalizeScene({ name: "" }))] })}
               >
-                <Plus /> New scene
+                <Plus />
               </Button>
               <Combobox
                 className="flex-1"
@@ -591,13 +592,16 @@ export default function StoryEditorPage() {
             already knows at the story&apos;s open, never &quot;it concerns them&quot; — someone meant to learn it mid-story
             starts unchecked
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {secrets.map((s, i) => (
-              <div key={s.id} className="bg-base-200 rounded-md px-3 py-2 text-sm space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Input className="flex-1" placeholder="title — the secret's short handle…" value={s.title} onChange={(v) => setSecret(i, { title: v })} />
-                  <Button variant="ghost" size="sm" shape="square" onClick={() => patch({ secrets: secrets.filter((_, k) => k !== i) })}><Trash2 /></Button>
-                </div>
+              <ItemRow
+                key={s.id}
+                title={s.title}
+                actions={
+                  <Button variant="ghost" size="sm" shape="square" title="Remove from the story" onClick={() => patch({ secrets: secrets.filter((_, k) => k !== i) })}><Trash2 /></Button>
+                }
+              >
+                <Input className="w-full" placeholder="title — the secret's short handle…" value={s.title} onChange={(v) => setSecret(i, { title: v })} />
                 <Textarea className="w-full h-16" placeholder="the truth itself — present tense, already true as play opens…" value={s.content} onChange={(v) => setSecret(i, { content: v })} />
                 {chars.length > 0 && (
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -615,14 +619,15 @@ export default function StoryEditorPage() {
                   </div>
                 )}
                 <Input className="w-full" placeholder="wants to surface when… (reveal hint, optional)" value={s.revealHint} onChange={(v) => setSecret(i, { revealHint: v })} />
-              </div>
+              </ItemRow>
             ))}
             <Button
               variant="secondary"
-              size="sm"
+              shape="square"
+              title="Add secret"
               onClick={() => patch({ secrets: [...secrets, { id: uid(), title: "", content: "", knownBy: [], revealHint: "" }] })}
             >
-              <Plus /> Add secret
+              <Plus />
             </Button>
           </div>
 
@@ -648,8 +653,8 @@ export default function StoryEditorPage() {
               </ItemRow>
             ))}
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => patch({ lorebooks: [...lorebooks, normalizeLorebook({ name: "" })] })}>
-                <Plus /> New lorebook
+              <Button variant="secondary" shape="square" title="New lorebook" onClick={() => patch({ lorebooks: [...lorebooks, normalizeLorebook({ name: "" })] })}>
+                <Plus />
               </Button>
               <Combobox
                 className="flex-1"
