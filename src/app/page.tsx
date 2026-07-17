@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
   Captions,
+  ChevronLeft,
+  ChevronRight,
   Clapperboard,
   Coffee,
   Download,
@@ -106,9 +108,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
 
   const [charQ, setCharQ] = useState("");
   const debouncedCharQ = useDebouncedValue(charQ.trim());
+  // small pages: the picker is a single row — a page fills it with a little headroom,
+  // and the strip's sentinel pulls the next one as the user scrolls sideways
   const charList = usePagedList<any>(
     "/api/characters",
-    { q: debouncedCharQ || undefined },
+    { q: debouncedCharQ || undefined, limit: 12 },
     { enabled: open }
   );
   const personaSearch = useComboboxSearch("/api/personas", {
@@ -138,6 +142,22 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     ...form.characterIds.map((id: string) => picked[id]).filter(Boolean),
     ...charList.items.filter((c) => !form.characterIds.includes(c.id)),
   ];
+
+  // the picker is one horizontally-scrolled row; the chevrons page it by a viewport
+  // width and light up only in the direction that actually has content
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [strip, setStrip] = useState({ left: false, right: false });
+  const updateStrip = () => {
+    const el = stripRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 4;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+    setStrip((p) => (p.left === left && p.right === right ? p : { left, right }));
+  };
+  useEffect(updateStrip, [gridItems.length]); // re-measure when items land or picks reorder
+  const pageStrip = (dir: 1 | -1) =>
+    stripRef.current?.scrollBy({ left: dir * stripRef.current.clientWidth, behavior: "smooth" });
+  const stripOverflows = strip.left || strip.right || !!charList.hasNextPage;
 
   const settingValue = form.sceneId
     ? `scene:${form.sceneId}`
@@ -212,52 +232,65 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               value={charQ}
               onChange={setCharQ}
             />
-            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-              {gridItems.map((c) => {
-                const idx = form.characterIds.indexOf(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    className={cn(
-                      "panel overflow-hidden text-left transition-colors relative cursor-pointer",
-                      idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
-                    )}
-                    onClick={() => toggleCharacter(c)}
-                  >
-                    {idx !== -1 && (
-                      <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
-                        {idx + 1}
-                      </span>
-                    )}
-                    {c.avatarAsset || c.sprites?.neutral ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={assetUrl(c.avatarAsset ?? c.sprites?.neutral)!}
-                        alt=""
-                        className={cn("w-full aspect-square object-cover", !c.avatarAsset && "object-top")}
-                      />
-                    ) : (
-                      <div className="w-full aspect-square flex items-center justify-center text-content-300 bg-base-200">
-                        <VenetianMask size={28} />
-                      </div>
-                    )}
-                    <div className="text-xs p-1.5 truncate">{c.name}</div>
-                  </button>
-                );
-              })}
-              {!charList.isLoading && gridItems.length === 0 && (
-                <div className="col-span-full text-sm text-content-300">
-                  {debouncedCharQ
-                    ? `Nothing matches “${debouncedCharQ}”.`
-                    : "No characters yet — create one in the Library first."}
-                </div>
+            <div className="flex items-center gap-1.5">
+              {stripOverflows && (
+                <Button variant="ghost" size="sm" shape="circle" disabled={!strip.left} title="Previous characters" onClick={() => pageStrip(-1)}>
+                  <ChevronLeft />
+                </Button>
+              )}
+              <div ref={stripRef} onScroll={updateStrip} className="flex flex-1 min-w-0 gap-2 overflow-x-auto">
+                {gridItems.map((c) => {
+                  const idx = form.characterIds.indexOf(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      className={cn(
+                        "panel w-24 shrink-0 overflow-hidden text-left transition-colors relative cursor-pointer",
+                        idx !== -1 ? "border-primary-500" : "hover:border-primary-500/50"
+                      )}
+                      onClick={() => toggleCharacter(c)}
+                    >
+                      {idx !== -1 && (
+                        <span className="absolute top-1 left-1 z-10 w-5 h-5 rounded-full bg-primary-500 text-primary-content text-xs flex items-center justify-center font-bold">
+                          {idx + 1}
+                        </span>
+                      )}
+                      {c.avatarAsset || c.sprites?.neutral ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={assetUrl(c.avatarAsset ?? c.sprites?.neutral)!}
+                          alt=""
+                          className={cn("w-full aspect-square object-cover", !c.avatarAsset && "object-top")}
+                        />
+                      ) : (
+                        <div className="w-full aspect-square flex items-center justify-center text-content-300 bg-base-200">
+                          <VenetianMask size={28} />
+                        </div>
+                      )}
+                      <div className="text-xs p-1.5 truncate">{c.name}</div>
+                    </button>
+                  );
+                })}
+                {!charList.isLoading && gridItems.length === 0 && (
+                  <div className="text-sm text-content-300 py-2">
+                    {debouncedCharQ
+                      ? `Nothing matches “${debouncedCharQ}”.`
+                      : "No characters yet — create one in the Library first."}
+                  </div>
+                )}
+                <LoadMoreSentinel
+                  className="w-10 shrink-0 self-center"
+                  hasMore={!!charList.hasNextPage}
+                  isFetching={charList.isFetchingNextPage}
+                  onLoadMore={() => void charList.fetchNextPage()}
+                />
+              </div>
+              {stripOverflows && (
+                <Button variant="ghost" size="sm" shape="circle" disabled={!strip.right && !charList.hasNextPage} title="More characters" onClick={() => pageStrip(1)}>
+                  <ChevronRight />
+                </Button>
               )}
             </div>
-            <LoadMoreSentinel
-              hasMore={!!charList.hasNextPage}
-              isFetching={charList.isFetchingNextPage}
-              onLoadMore={() => void charList.fetchNextPage()}
-            />
           </Field>
 
         <div className="grid md:grid-cols-3 gap-3">
