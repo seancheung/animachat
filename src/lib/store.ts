@@ -1173,6 +1173,23 @@ export async function listFacts(characterId: string, limit = 100): Promise<Fact[
   ).map(factFromRow);
 }
 
+/** Inspection page over a character's facts, newest first, each carrying its source
+ *  chat's title (fail-soft: null when the chat is gone or the fact never had one). */
+export async function pageFacts(
+  characterId: string,
+  opts: { limit?: number; cursor?: string | null } = {}
+): Promise<Page<Fact & { chatTitle: string | null }>> {
+  return pageQuery({
+    select: "SELECT t.*, ch.title AS chat_title FROM facts t LEFT JOIN chats ch ON ch.id = t.chat_id",
+    fromRow: (r) => ({ ...factFromRow(r), chatTitle: r.chat_title ?? null }),
+    where: ["t.character_id=?"],
+    args: [characterId],
+    sort: "created",
+    limit: clampLimit(opts.limit),
+    cursor: opts.cursor ?? null,
+  });
+}
+
 export async function addFact(characterId: string, chatId: string | null, content: string): Promise<Fact> {
   const id = uid();
   await run("INSERT INTO facts (id, character_id, chat_id, content, created_at) VALUES (?,?,?,?,?)", [

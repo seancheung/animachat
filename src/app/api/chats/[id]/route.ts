@@ -1,15 +1,6 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
 import { buildContext, resolveStageAssets } from "@/lib/ai/prompts";
-import {
-  deleteChat,
-  getChat,
-  getCharacter,
-  getCharRelationship,
-  getRelationship,
-  getScene,
-  listCharRelationships,
-  saveChat,
-} from "@/lib/store";
+import { deleteChat, getChat, getScene, saveChat } from "@/lib/store";
 
 export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
@@ -23,25 +14,6 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
   for (const sid of [...new Set(ctx.messages.flatMap((m) => (m.sceneEvent?.sceneId ? [m.sceneEvent.sceneId] : [])))]) {
     const name = ctx.snapshot?.scenes.find((s) => s.id === sid)?.name ?? (await getScene(sid))?.name;
     if (name) sceneNameEntries.push([sid, name]);
-  }
-  // the user side: persona↔character, or the played character's char↔char pairs
-  const relationshipEntries: (readonly [string, unknown])[] = [];
-  for (const cid of chat.characterIds) {
-    const r = chat.personaCharacterId
-      ? await getCharRelationship(cid, chat.personaCharacterId)
-      : chat.personaId
-        ? await getRelationship(cid, chat.personaId)
-        : null;
-    if (r) relationshipEntries.push([cid, r] as const);
-  }
-  // each chat character's view of the other chat characters
-  const charRelationshipEntries: (readonly [string, unknown[]])[] = [];
-  for (const cid of chat.characterIds) {
-    const rels = (await listCharRelationships(cid)).filter((r) => chat.characterIds.includes(r.otherId));
-    const mapped = [];
-    for (const r of rels)
-      mapped.push({ ...r, otherName: (await getCharacter(r.otherId))?.name ?? chat.nameSnapshots[r.otherId] ?? "?" });
-    charRelationshipEntries.push([cid, mapped] as const);
   }
   return ok({
     chat,
@@ -67,8 +39,6 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     storyScenes: ctx.snapshot?.scenes ?? [],
     sceneNames: Object.fromEntries(sceneNameEntries),
     ended: ctx.ended,
-    relationships: Object.fromEntries(relationshipEntries),
-    charRelationships: Object.fromEntries(charRelationshipEntries),
   });
 });
 

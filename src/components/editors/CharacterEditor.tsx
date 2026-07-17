@@ -11,7 +11,7 @@ import Progress from "@/components/ui/progress";
 import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import Textarea from "@/components/ui/textarea";
-import { useGet } from "@/lib/queries";
+import { useGet, usePagedList } from "@/lib/queries";
 import { api } from "@/lib/ui";
 import {
   alivenessOf,
@@ -61,6 +61,39 @@ function RelationshipsCard({ characterId }: { characterId: string }) {
       >
         <Trash2 /> Reset relationships
       </Button>
+    </div>
+  );
+}
+
+/** Read-only view of the character's extracted facts (cross-chat memory) — the
+ *  memory pass maintains them; inspection only, no editing. */
+function FactsCard({ characterId }: { characterId: string }) {
+  const facts = usePagedList<{ id: string; content: string; createdAt: number; chatTitle: string | null }>(
+    `/api/characters/${characterId}/facts`
+  );
+  if (!facts.items.length)
+    return <div className="text-xs text-content-400">no remembered facts yet</div>;
+  return (
+    <div className="space-y-2">
+      {facts.items.map((f) => (
+        <div key={f.id} className="panel p-2.5 space-y-0.5">
+          <div className="text-xs text-content-200">{f.content}</div>
+          <div className="text-xs text-content-400">
+            {new Date(f.createdAt).toLocaleDateString()}
+            {f.chatTitle ? ` — in “${f.chatTitle}”` : ""}
+          </div>
+        </div>
+      ))}
+      {facts.hasNextPage && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={facts.isFetchingNextPage}
+          onClick={() => void facts.fetchNextPage()}
+        >
+          Load more
+        </Button>
+      )}
     </div>
   );
 }
@@ -204,6 +237,11 @@ export function CharacterFields({
       {!embedded && form.id && (form.trackRelationship ?? true) && (
         <Field label="Relationships">
           <RelationshipsCard characterId={form.id} />
+        </Field>
+      )}
+      {!embedded && form.id && (
+        <Field label="Remembered facts" hint="what the memory pass has recorded about them across chats — read-only">
+          <FactsCard characterId={form.id} />
         </Field>
       )}
 

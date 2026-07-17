@@ -12,10 +12,12 @@ import { all } from "./db";
 import { normalizeStoryDoc } from "./storyDoc";
 import {
   PageError,
+  addFact,
   addVariant,
   appendMessage,
   assetStats,
   decodeCursor,
+  deleteChat,
   deleteCharacter,
   deleteStory,
   encodeCursor,
@@ -25,6 +27,7 @@ import {
   listReferencedAssetIds,
   pageCharacters,
   pageChats,
+  pageFacts,
   pageMessages,
   saveChat,
   saveCharacter,
@@ -458,5 +461,36 @@ describe("asset refs", () => {
     expect(after.bytes).toBe(before.bytes);
     expect(after.unused.count).toBe(before.unused.count - 1);
     expect(after.unused.bytes).toBe(before.unused.bytes - 40);
+  });
+});
+
+describe("pageFacts", () => {
+  it("pages one character's facts with fail-soft source-chat titles", async () => {
+    const c = await saveCharacter({ name: "Facty" });
+    const other = await saveCharacter({ name: "Bystander" });
+    const chat = await saveChat({ title: "source chat" });
+    const inChat = await addFact(c.id, chat.id, "learned the password");
+    const noChat = await addFact(c.id, null, "hates thunderstorms");
+    await addFact(other.id, chat.id, "someone else's memory");
+
+    // paged in two, cursor-linked, no leak from the other character
+    const p1 = await pageFacts(c.id, { limit: 1 });
+    expect(p1.items).toHaveLength(1);
+    expect(p1.nextCursor).not.toBeNull();
+    const p2 = await pageFacts(c.id, { limit: 1, cursor: p1.nextCursor });
+    expect(p2.nextCursor).toBeNull();
+    const ids = [...p1.items, ...p2.items].map((f) => f.id).sort();
+    expect(ids).toEqual([inChat.id, noChat.id].sort());
+
+    const titleOf = (id: string) =>
+      [...p1.items, ...p2.items].find((f) => f.id === id)?.chatTitle ?? null;
+    expect(titleOf(inChat.id)).toBe("source chat");
+    expect(titleOf(noChat.id)).toBeNull();
+
+    // the source chat's deletion degrades the title, never the fact
+    await deleteChat(chat.id);
+    const after = await pageFacts(c.id, {});
+    expect(after.items.map((f) => f.id).sort()).toEqual(ids);
+    expect(after.items.find((f) => f.id === inChat.id)?.chatTitle).toBeNull();
   });
 });

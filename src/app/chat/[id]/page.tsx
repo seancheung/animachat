@@ -44,6 +44,7 @@ import Progress from "@/components/ui/progress";
 import SegmentedControl from "@/components/ui/segmented-control";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
+import Toggle, { ToggleGroup } from "@/components/ui/toggle";
 import { computeStage, resolveStageAssets } from "@/lib/stage";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { useGet, usePagedList } from "@/lib/queries";
@@ -1554,20 +1555,30 @@ function ChatDrawer({
   const [folder, setFolder] = useState(chat.folder);
   const [tags, setTags] = useState(chat.tags.join(", "));
   const [novelOpen, setNovelOpen] = useState(false);
+  const [tab, setTab] = useState<"settings" | "memory">("settings");
 
   return (
     <div className="space-y-4">
+      <SegmentedControl
+        className="w-full"
+        size="sm"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: "settings", label: "Settings" },
+          { value: "memory", label: "Memory" },
+        ]}
+      />
+      {tab === "memory" && <DrawerMemory data={data} />}
+      <div className={cn("space-y-4", tab !== "settings" && "hidden")}>
       <Field label="Chat layout" hint="side panel chat log, or a VN dialogue box over the stage — the corner button switches it too">
-        <SegmentedControl
-          className="w-full"
-          size="sm"
+        <ToggleGroup<"panel" | "dialogue">
           value={chat.overrides?.layout === "dialogue" ? "dialogue" : "panel"}
-          onChange={(v) => onPatch({ overrides: { ...chat.overrides, layout: v } })}
-          items={[
-            { value: "panel", label: (<span className="inline-flex items-center gap-1.5"><PanelRight size={13} /> Side panel</span>) },
-            { value: "dialogue", label: (<span className="inline-flex items-center gap-1.5"><Captions size={13} /> Dialogue box</span>) },
-          ]}
-        />
+          onChange={(v) => v && onPatch({ overrides: { ...chat.overrides, layout: v } })}
+        >
+          <Toggle value="panel" size="sm"><PanelRight size={13} /> Side panel</Toggle>
+          <Toggle value="dialogue" size="sm"><Captions size={13} /> Dialogue box</Toggle>
+        </ToggleGroup>
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Panel opacity" hint="chat panel & VN dialogue box — a global setting">
@@ -1647,40 +1658,6 @@ function ChatDrawer({
           />
         </Field>
       )}
-      {(Object.keys(data.relationships ?? {}).length > 0 ||
-        Object.values(data.charRelationships ?? {}).some((l: any) => l.length)) && (
-        <Field label="Relationships">
-          <div className="space-y-2">
-            {data.characters.map((c: Character) => {
-              const r = data.relationships?.[c.id];
-              const toChars: any[] = data.charRelationships?.[c.id] ?? [];
-              if (!r && !toChars.length) return null;
-              return (
-                <div key={c.id} className="panel p-2.5 space-y-1.5">
-                  {r && (
-                    <>
-                      <div className="flex justify-between text-sm">
-                        <span>{c.name}</span>
-                        <span className="text-content-300">affinity {r.affinity}</span>
-                      </div>
-                      <Progress value={(r.affinity + 100) / 2} />
-                      {r.notes && <div className="text-xs text-content-300">{r.notes}</div>}
-                    </>
-                  )}
-                  {!r && <div className="text-sm">{c.name}</div>}
-                  {toChars.map((cr) => (
-                    <div key={cr.otherId} className="text-xs text-content-300">
-                      → {cr.otherName}: {cr.affinity}
-                      {cr.notes ? ` — ${cr.notes}` : ""}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </Field>
-      )}
-
       {chat.mode === "story" && data.storyName && (
         <Field
           label={`Playthrough — ${data.storyName}`}
@@ -1774,6 +1751,109 @@ function ChatDrawer({
           <Download /> Archive (.zip)
         </Button>
       </Field>
+      </div>
+    </div>
+  );
+}
+
+/** The drawer's Memory tab: read-only inspection of what the memory pass maintains
+ *  for this chat — rolling summary, relationship states, states of mind, off-screen
+ *  notes. Fetched lazily on first open; nothing here is editable. */
+function DrawerMemory({ data }: { data: any }) {
+  const chat = data.chat;
+  const memory = useGet<{
+    summary: string;
+    relationships: Record<string, any>;
+    charRelationships: Record<string, any[]>;
+    mindStates: { characterId: string; content: string; updatedAt: number }[];
+    offscreenNotes: { characterId: string; content: string; createdAt: number }[];
+  }>(`/api/chats/${chat.id}/memory`);
+  const m = memory.data;
+  if (!m)
+    return (
+      <div className="text-xs text-content-400">
+        {memory.isError ? "couldn't load memory" : "loading memory…"}
+      </div>
+    );
+  const nameOf = (cid: string) =>
+    data.characters.find((c: Character) => c.id === cid)?.name ?? chat.nameSnapshots?.[cid] ?? "?";
+  const hasRels =
+    Object.keys(m.relationships ?? {}).length > 0 ||
+    Object.values(m.charRelationships ?? {}).some((l) => l.length);
+  if (!m.summary && !hasRels && !m.mindStates.length && !m.offscreenNotes.length)
+    return (
+      <div className="text-xs text-content-400">
+        nothing recorded yet — memory builds up in the background as the chat grows
+      </div>
+    );
+  return (
+    <div className="space-y-4">
+      <div className="text-xs text-content-400">
+        read-only — maintained by the background memory pass
+      </div>
+      {m.summary && (
+        <Field label="Rolling summary" hint="covers the history that has scrolled out of the recent verbatim window">
+          <div className="panel p-2.5 text-xs text-content-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
+            {m.summary}
+          </div>
+        </Field>
+      )}
+      {hasRels && (
+        <Field label="Relationships">
+          <div className="space-y-2">
+            {data.characters.map((c: Character) => {
+              const r = m.relationships?.[c.id];
+              const toChars: any[] = m.charRelationships?.[c.id] ?? [];
+              if (!r && !toChars.length) return null;
+              return (
+                <div key={c.id} className="panel p-2.5 space-y-1.5">
+                  {r && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span>{c.name}</span>
+                        <span className="text-content-300">affinity {r.affinity}</span>
+                      </div>
+                      <Progress value={(r.affinity + 100) / 2} />
+                      {r.notes && <div className="text-xs text-content-300">{r.notes}</div>}
+                    </>
+                  )}
+                  {!r && <div className="text-sm">{c.name}</div>}
+                  {toChars.map((cr) => (
+                    <div key={cr.otherId} className="text-xs text-content-300">
+                      → {cr.otherName}: {cr.affinity}
+                      {cr.notes ? ` — ${cr.notes}` : ""}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+      {m.mindStates.length > 0 && (
+        <Field label="State of mind" hint="their current inner state — replaced on every memory pass">
+          <div className="space-y-2">
+            {m.mindStates.map((s) => (
+              <div key={s.characterId} className="panel p-2.5 space-y-0.5">
+                <div className="text-sm">{nameOf(s.characterId)}</div>
+                <div className="text-xs text-content-300 whitespace-pre-wrap">{s.content}</div>
+              </div>
+            ))}
+          </div>
+        </Field>
+      )}
+      {m.offscreenNotes.length > 0 && (
+        <Field label="Off-screen life" hint="what they've been up to since the last visit">
+          <div className="space-y-2">
+            {m.offscreenNotes.map((s) => (
+              <div key={s.characterId} className="panel p-2.5 space-y-0.5">
+                <div className="text-sm">{nameOf(s.characterId)}</div>
+                <div className="text-xs text-content-300 whitespace-pre-wrap">{s.content}</div>
+              </div>
+            ))}
+          </div>
+        </Field>
+      )}
     </div>
   );
 }
