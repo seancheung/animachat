@@ -141,7 +141,7 @@ export function Row({ children, className }: { children: ReactNode; className?: 
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="text-center text-content-300 py-16 text-sm border border-dashed border-base-400 rounded-lg">
+    <div className="text-center text-content-300 px-6 py-16 text-sm border border-dashed border-base-400 rounded-lg">
       {children}
     </div>
   );
