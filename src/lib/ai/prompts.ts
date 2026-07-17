@@ -843,13 +843,49 @@ export async function buildImpersonateRequest(ctx: ChatContext, model: ResolvedM
 
 export async function buildTitleRequest(ctx: ChatContext): Promise<BuiltRequest> {
   const lines: string[] = [];
-  for (const m of ctx.messages.slice(0, 6)) {
+  // 10, not the exchange's usual 2-4: a multi-reply first turn (@all, mention
+  // chains) or a retried title can leave more opening messages worth reading
+  for (const m of ctx.messages.slice(0, 10)) {
     const line = await renderMessageLine(ctx, m);
     if (line) lines.push(line);
   }
   const transcript = lines.join("\n");
-  return {
-    system: `Generate a short evocative title (max 6 words) for this roleplay chat, in ${ctx.language}. Respond with the title only — no quotes, no punctuation around it.`,
-    messages: [{ role: "user", content: transcript || "An empty chat." }],
+  // the title fires after the FIRST exchange — the transcript is often just a
+  // hello and a reply, so the cast and setting carry the flavor it lacks
+  const excerpt = (s: string) => {
+    const t = ctx.sub(s).replace(/\s+/g, " ").trim();
+    return t.length > 140 ? `${t.slice(0, 140)}…` : t;
   };
+  const context: string[] = [];
+  for (const c of ctx.characters)
+    context.push(`${c.name}${c.description ? ` — ${excerpt(c.description)}` : ""}`);
+  if (ctx.persona) context.push(`The user plays ${ctx.persona.name}.`);
+  if (ctx.scene) context.push(`Scene: ${ctx.scene.name}`);
+  if (ctx.location) context.push(`Location: ${ctx.location.name}`);
+  return {
+    system: `Generate a short evocative title (max 6 words) for this roleplay chat, in ${ctx.language}. Respond with the title only — plain text: no surrounding quotes, no asterisks or other markdown.`,
+    messages: [
+      {
+        role: "user",
+        content:
+          (context.length ? `Characters & setting:\n${context.join("\n")}\n\nOpening transcript:\n` : "") +
+          (transcript || "An empty chat."),
+      },
+    ],
+  };
+}
+
+/** Clean a model-written chat title down to plain text (the prompt asks, this enforces):
+ *  the transcript it reads is full of *actions* and "dialogue", so models mimic the
+ *  convention onto the title. Asterisks, double/smart quotes and backticks are never
+ *  title content; wrapping single quotes and heading markers go too — inner apostrophes
+ *  stay ("The Alchemist's Debt"). */
+export function cleanTitle(raw: string): string {
+  return raw
+    .trim()
+    .split("\n")[0]
+    .replace(/[*"“”`]/g, "")
+    .replace(/^['‘’#\s]+|['‘’\s]+$/g, "")
+    .slice(0, 80)
+    .trim();
 }

@@ -15,6 +15,7 @@ import {
   buildNarratorRequest,
   buildOrchestratorRequest,
   buildTitleRequest,
+  cleanTitle,
   computeStage,
   resolveStageAssets,
   type ChatContext,
@@ -209,8 +210,11 @@ async function maybeGenerateTitle(chatId: string) {
       chatId,
     })
       .then(async (t) => {
-        const title = t.trim().split("\n")[0].replace(/^["'#\s]+|["'\s]+$/g, "").slice(0, 80);
-        if (title) await saveChat({ id: chatId, title });
+        const title = cleanTitle(t);
+        // re-check right before saving: the model call takes seconds, and a user
+        // rename in that window (likely — the chat is new) must not be overwritten
+        if (title && (await getChat(chatId))?.title === "New chat")
+          await saveChat({ id: chatId, title });
       })
       .catch(() => {});
   } catch {

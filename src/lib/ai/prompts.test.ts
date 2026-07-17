@@ -4,6 +4,8 @@ import {
   buildDirectorRequest,
   buildImpersonateRequest,
   buildNarratorRequest,
+  buildTitleRequest,
+  cleanTitle,
   computeStage,
   resolveStageAssets,
   type ChatContext,
@@ -750,5 +752,47 @@ describe("aliveness prompt gates", () => {
     const req = await buildCharacterRequest(ctx, dbChar, modelRef);
     expect(req.system).toContain("affinity 70/100 (close and at ease)");
     expect(req.system).toContain("let the affinity color tone and openness");
+  });
+});
+
+describe("cleanTitle (model output → plain-text chat title)", () => {
+  it("strips the roleplay convention models mimic from the transcript", () => {
+    expect(cleanTitle('*A Night at the Tavern*')).toBe("A Night at the Tavern");
+    expect(cleanTitle('"The Alchemist\'s Debt"')).toBe("The Alchemist's Debt");
+    expect(cleanTitle("“Smart-quoted” `code`")).toBe("Smart-quoted code");
+    expect(cleanTitle("**Bold Title**")).toBe("Bold Title");
+  });
+
+  it("keeps inner apostrophes while removing wrapping single quotes", () => {
+    expect(cleanTitle("'The Alchemist's Debt'")).toBe("The Alchemist's Debt");
+  });
+
+  it("takes the first line, drops heading markers, caps the length", () => {
+    expect(cleanTitle("# Title\nexplanation")).toBe("Title");
+    expect(cleanTitle("x".repeat(100)).length).toBe(80);
+  });
+
+  it("returns empty for punctuation-only output (caller keeps the old title)", () => {
+    expect(cleanTitle('"*"')).toBe("");
+  });
+});
+
+describe("buildTitleRequest (title context)", () => {
+  it("grounds a thin opening transcript with the cast and setting", async () => {
+    const ctx = makeCtx(
+      makeMessages([{ role: "user" }, { role: "character", characterId: "c1" }]),
+      [makeCharacter("c1", "Mira")]
+    );
+    const req = await buildTitleRequest(ctx);
+    const content = req.messages[0].content;
+    expect(content).toContain("Characters & setting:");
+    expect(content).toContain("Mira — Keeper of the moonlit tavern.");
+    expect(content).toContain("Opening transcript:");
+    expect(content).toContain("Mira: message 1");
+  });
+
+  it("falls back to the bare empty-chat line when there is nothing at all", async () => {
+    const req = await buildTitleRequest(makeCtx([], []));
+    expect(req.messages[0].content).toBe("An empty chat.");
   });
 });
