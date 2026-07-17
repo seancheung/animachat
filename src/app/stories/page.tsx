@@ -242,7 +242,10 @@ export default function StoriesPage() {
                     <span className="shrink-0 size-6 rounded-full bg-base-300 flex items-center justify-center text-content-300">
                       <ScrollText size={14} />
                     </span>
-                    <span className="min-w-0 truncate text-content-300">{c.characterNames.join(", ")}</span>
+                    <span className="min-w-0 truncate text-content-300">
+                      {c.characterNames.join(", ")}
+                      {c.personaName && <span className="text-content-400"> · as {c.personaName}</span>}
+                    </span>
                   </div>
                   {c.lastMessage && (
                     <div className="mt-0.5 text-xs text-content-400 truncate">{c.lastMessage}</div>

@@ -602,6 +602,11 @@ export default function HomePage() {
                   <span className="min-w-0 truncate flex items-center gap-1 text-content-300">
                     {c.characterNames.join(", ")}
                     {c.narratorEnabled && <ScrollText size={11} className="shrink-0" />}
+                    {(c.personaName || c.playAsNarrator) && (
+                      <span className="text-content-400">
+                        · as {c.playAsNarrator ? "Narrator" : c.personaName}
+                      </span>
+                    )}
                   </span>
                   {c.tags?.map((t: string) => (
                     <Badge key={t} variant="secondary" size="sm" rounded className="shrink-0">
