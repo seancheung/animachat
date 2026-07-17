@@ -161,6 +161,19 @@ describe("literalizeStoryTags", () => {
     expect(out.characters[0].greeting).toBe('*Mira eyes the player.* "The ale at The Moonlit Tavern is bad."');
   });
 
+  it("tolerates stray spaces inside tag brackets", () => {
+    const doc = normalizeStoryDoc({
+      name: "The Debt",
+      locations: [{ id: "l1", name: "The Moonlit Tavern" }],
+      characters: [
+        { id: "c1", name: "Mira", description: "[ char_name ] waits for [ user_name ] at [ loc_name ]." },
+      ],
+    });
+    expect(literalizeStoryTags(doc).characters[0].description).toBe(
+      "Mira waits for the player at The Moonlit Tavern."
+    );
+  });
+
   it("leaves unresolvable tags for the runtime's fail-soft substitution", () => {
     const doc = normalizeStoryDoc({
       name: "",

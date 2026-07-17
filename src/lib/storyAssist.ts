@@ -36,16 +36,17 @@ export function literalizeStoryTags(doc: StoryDocument): StoryDocument {
   const subst = (v: string, self?: { charName?: string; sceneName?: string; locName?: string | null }) => {
     if (!v.includes("[")) return v;
     let out = v;
-    if (self?.charName) out = out.replace(/\[char_name\]/gi, self.charName);
-    if (self?.sceneName) out = out.replace(/\[scene_name\]/gi, self.sceneName);
-    if (self?.locName) out = out.replace(/\[loc_name\]/gi, self.locName);
+    // \s* inside the brackets throughout: models also write spaced tags ("[ user_name ]")
+    if (self?.charName) out = out.replace(/\[\s*char_name\s*\]/gi, self.charName);
+    if (self?.sceneName) out = out.replace(/\[\s*scene_name\s*\]/gi, self.sceneName);
+    if (self?.locName) out = out.replace(/\[\s*loc_name\s*\]/gi, self.locName);
     else if (doc.locations.length === 1)
-      out = out.replace(/\[loc_name\]/gi, doc.locations[0].name);
-    if (doc.name.trim()) out = out.replace(/\[story_name\]/gi, doc.name.trim());
-    out = out.replace(/\[char(\d+)_name\]/gi, (m, n) => cast[Number(n) - 1]?.name ?? m);
-    out = out.replace(/\[(?:user_name|persona_name)\]/gi, "the player");
+      out = out.replace(/\[\s*loc_name\s*\]/gi, doc.locations[0].name);
+    if (doc.name.trim()) out = out.replace(/\[\s*story_name\s*\]/gi, doc.name.trim());
+    out = out.replace(/\[\s*char(\d+)_name\s*\]/gi, (m, n) => cast[Number(n) - 1]?.name ?? m);
+    out = out.replace(/\[\s*(?:user_name|persona_name)\s*\]/gi, "the player");
     // a literal item name in tag brackets ("[Mira]") is a tag-shaped slip — unwrap it
-    for (const name of namedItems) out = out.replace(new RegExp(`\\[${escapeRe(name)}\\]`, "gi"), name);
+    for (const name of namedItems) out = out.replace(new RegExp(`\\[\\s*${escapeRe(name)}\\s*\\]`, "gi"), name);
     return out;
   };
   const walk = <T,>(v: T, self?: Parameters<typeof subst>[1]): T => {

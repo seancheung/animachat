@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSelfTags, substitutePlaceholders } from "./placeholders";
+import { normalizeAssistStrings, normalizeSelfTags, substitutePlaceholders } from "./placeholders";
 
 const values = {
   characterNames: ["Mira", "Kael"],
@@ -56,6 +56,10 @@ describe("substitutePlaceholders", () => {
   it("returns text without brackets untouched", () => {
     expect(substitutePlaceholders("no tags here", values)).toBe("no tags here");
   });
+
+  it("tolerates stray spaces inside the brackets (runtime backstop for saved content)", () => {
+    expect(substitutePlaceholders("[ user_name ] meets [char1_name ]", values)).toBe("Traveler meets Mira");
+  });
 });
 
 describe("normalizeSelfTags", () => {
@@ -89,5 +93,39 @@ describe("normalizeSelfTags", () => {
   it("escapes regex metacharacters in the name and no-ops without a name", () => {
     expect(normalizeSelfTags("[Dr. X (prime)] speaks", "Dr. X (prime)")).toBe("[char_name] speaks");
     expect(normalizeSelfTags("[Tom] stays", null)).toBe("[Tom] stays");
+  });
+});
+
+describe("normalizeAssistStrings", () => {
+  it("collapses double-escaped newlines that survived JSON.parse into real ones", () => {
+    expect(normalizeAssistStrings("First line.\\n\\nSecond.")).toBe("First line.\n\nSecond.");
+    expect(normalizeAssistStrings("windows\\r\\nstyle")).toBe("windows\nstyle");
+    // already-real newlines stay untouched
+    expect(normalizeAssistStrings("real\n\nnewlines")).toBe("real\n\nnewlines");
+  });
+
+  it("de-spaces known placeholder tags, keeping their case for the substituter", () => {
+    expect(normalizeAssistStrings("[ user_name ] at [ loc_name]")).toBe("[user_name] at [loc_name]");
+    expect(normalizeAssistStrings("[ Char2_Name ]")).toBe("[Char2_Name]");
+  });
+
+  it("leaves unknown bracketed prose exactly as written", () => {
+    expect(normalizeAssistStrings("[ a note to self ] and [something_else]")).toBe(
+      "[ a note to self ] and [something_else]"
+    );
+  });
+
+  it("recurses into nested field structures", () => {
+    expect(
+      normalizeAssistStrings({
+        description: "line1\\n\\nline2 for [ user_name ]",
+        entries: [{ content: "deep\\ntoo" }],
+        n: 1,
+      })
+    ).toEqual({
+      description: "line1\n\nline2 for [user_name]",
+      entries: [{ content: "deep\ntoo" }],
+      n: 1,
+    });
   });
 });

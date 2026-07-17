@@ -1,7 +1,7 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
-import { normalizeSelfTags } from "@/lib/ai/placeholders";
+import { normalizeAssistStrings, normalizeSelfTags } from "@/lib/ai/placeholders";
 import {
   getCharacter,
   getLocation,
@@ -223,10 +223,13 @@ export const POST = handler(async (req: Request) => {
         `When a rename changes a name other items refer to (a story's castNames/scenes, a scene's locationName, lorebookNames), re-emit those fields with the new name too. ` +
         `Give new items complete fields. Never re-emit unchanged items.\n`
       : `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n`) +
-    `The JSON must be valid. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
+    `The JSON must be valid. Escape newlines in JSON strings exactly once ("\\n") — never a double-escaped "\\\\n", which would put a literal backslash-n in the text. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
 
   // shared by the final block and the streaming partials
-  const normalizeFields = (fields: Record<string, unknown>): Record<string, unknown> => {
+  const normalizeFields = (rawFields: Record<string, unknown>): Record<string, unknown> => {
+    // every entity type: undo double-escaped newlines (a literal backslash-n that
+    // survived JSON.parse) and de-space placeholder tags ("[ user_name ]")
+    const fields = normalizeAssistStrings(rawFields);
     if (body.entityType === "character") {
       // models sometimes fill the name into the tag brackets ("[Tom]") — undo that
       const selfName =
