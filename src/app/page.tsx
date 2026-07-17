@@ -16,7 +16,6 @@ import {
   Search,
   Trash2,
   Upload,
-  UserRound,
   VenetianMask,
 } from "lucide-react";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -183,25 +182,22 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     <Modal open={open} onClose={onClose} title="New chat" wide>
       <div className="space-y-4">
         <Field label="Chat mode">
-          <ToggleGroup
-            className="gap-1.5"
+          <SegmentedControl<ChatMode>
             value={form.mode}
-            onChange={(v) =>
-              v &&
-              setForm({ ...form, mode: v, sceneId: null, locationId: null })
-            }
-          >
-            {MODES.map((m) => (
-              // span target: Toggle spreads props onto its sr-only checkbox, which can't anchor a tooltip
-              <Tooltip key={m.key} content={m.hint}>
-                <span className="inline-flex">
-                  <Toggle value={m.key}>
+            className="w-full"
+            onChange={(v) => setForm({ ...form, mode: v, sceneId: null, locationId: null })}
+            items={MODES.map((m) => ({
+              value: m.key,
+              // the tooltip previews a mode before it's picked; the line below explains the picked one
+              label: (
+                <Tooltip content={m.hint}>
+                  <span className="inline-flex items-center gap-1.5">
                     {m.icon} {m.label}
-                  </Toggle>
-                </span>
-              </Tooltip>
-            ))}
-          </ToggleGroup>
+                  </span>
+                </Tooltip>
+              ),
+            }))}
+          />
           <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
         </Field>
 
@@ -360,16 +356,13 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             )}
           </Field>
           <Field label="Chat layout" hint="presentation only — switchable anytime in chat settings">
-            <SegmentedControl
-              className="w-full"
-              size="sm"
+            <ToggleGroup<"panel" | "dialogue">
               value={form.layout}
-              onChange={(v) => setForm({ ...form, layout: v })}
-              items={[
-                { value: "panel", label: (<span className="inline-flex items-center gap-1.5"><PanelRight size={13} /> Side panel</span>) },
-                { value: "dialogue", label: (<span className="inline-flex items-center gap-1.5"><Captions size={13} /> Dialogue box</span>) },
-              ]}
-            />
+              onChange={(v) => v && setForm({ ...form, layout: v })}
+            >
+              <Toggle value="panel"><PanelRight size={13} /> Side panel</Toggle>
+              <Toggle value="dialogue"><Captions size={13} /> Dialogue box</Toggle>
+            </ToggleGroup>
           </Field>
           <Field
             label="Narrator"
