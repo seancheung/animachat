@@ -515,6 +515,11 @@ export default function ChatPage() {
       // still streaming is incomplete — the server discards it, and the flushed text
       // clears with the streaming view
       abort.signal.addEventListener("abort", () => typewriter.flush());
+      // the between-speakers gate exists only BETWEEN this turn's replies — the turn's
+      // first speaker must not park on the previous turn's leftover buffer (the user's
+      // own action already stepped past it, and with `streaming` still null no click
+      // routes to typewriter.advance(), so the ack could never arrive: the turn hangs)
+      let followUp = false;
       try {
         await streamSse(
           `/api/chats/${id}/generate`,
@@ -527,7 +532,8 @@ export default function ChatPage() {
               // next reply keeps streaming into the buffer behind the parked page. Waiting
               // here rather than on "done" keeps the read loop free to see the stream
               // close, so streamDone below flips while the last reveal is still parked.
-              await typewriter.finish({ ack: true });
+              await typewriter.finish({ ack: followUp });
+              followUp = true;
               // pick up the just-appended user message — only then drop the pending bubble,
               // or it vanishes for the whole refetch
               void mutate().then(() => setPendingUser(null));

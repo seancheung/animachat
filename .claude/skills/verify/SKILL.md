@@ -7,12 +7,30 @@ description: Build, launch and drive AnimaChat end-to-end in an isolated instanc
 
 ## Launch an isolated instance (never touch the user's dev server / data)
 
+Isolation = a throwaway Postgres schema + a throwaway MinIO bucket (the compose
+services must be up: `docker compose up -d`). The app runs no DDL — create the
+schema and apply ALL migrations (seed included) yourself, and create the bucket
+via the SDK (the `animachat` MinIO user may create buckets):
+
 ```bash
 npm run build                       # npm start serves the BUILT app — rebuild after every source edit
-SP=<scratch dir>; mkdir -p $SP/data
-ANIMACHAT_DATA_DIR=$SP/data PORT=3123 npm start &
-# starter cast (Mira, Kael, …) seeds automatically on the empty data dir
+docker compose exec -T postgres psql -U animachat -d animachat -c 'CREATE SCHEMA IF NOT EXISTS vfy'
+for f in migrations/*.sql; do docker compose exec -T -e PGOPTIONS='-c search_path=vfy' \
+  postgres psql -U animachat -d animachat -q -f - < $f; done   # filename order; 100_seed.sql = starter cast (Mira, Kael, …)
+node -e "const{S3Client,CreateBucketCommand}=require('@aws-sdk/client-s3');
+new S3Client({endpoint:'http://localhost:9000',region:'us-east-1',forcePathStyle:true,
+credentials:{accessKeyId:'animachat',secretAccessKey:'animachat'}})
+.send(new CreateBucketCommand({Bucket:'vfy'})).then(()=>console.log('ok'))"
+ANIMACHAT_PG_SCHEMA=vfy S3_BUCKET=vfy PORT=3123 npm start &
 ```
+
+Cleanup afterwards: `DROP SCHEMA vfy CASCADE` and delete the bucket (empty it
+first if any uploads happened).
+
+**Proxy gotcha:** the shell env's `http_proxy`/`https_proxy`/`all_proxy`
+intercept even localhost — `unset` them (or `curl --noproxy '*'`) before curl
+or node scripts that hit the instance. The app's own outbound calls (Node
+fetch) ignore these vars, so app → mock LLM works untouched.
 
 ## Mock LLM for generation flows (no API key)
 
@@ -28,6 +46,13 @@ await put("/api/settings", { defaultModelId: m.id });   // settings is PUT, not 
 
 Include an `<emo>name</emo>` prefix and a blank line between paragraphs in the mock
 reply to exercise the tag parser and VN pagination.
+
+Mock-server gotchas:
+- Key per-speaker replies off the system prompt's `You are <Name>,` marker; the
+  history's user lines arrive prefixed `User: ` (mind exact-match assertions).
+- Clear the SSE drip timer on **`res.on("close")`**, not `req.on("close")` — in
+  modern Node the request stream closes as soon as its body is consumed, so a
+  req-close handler kills the timer before the first chunk is ever written.
 
 ## Drive with Playwright
 
