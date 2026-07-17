@@ -320,7 +320,11 @@ function UsagePanel() {
 export default function SettingsPage() {
   const { data: pm, refetch: mutate } = useProviders();
   const { data: settings, refetch: mutateSettings } = useGet<Settings>("/api/settings");
-  const { data: storage, refetch: mutateStorage } = useGet<{ count: number; bytes: number }>("/api/assets");
+  const { data: storage, refetch: mutateStorage } = useGet<{
+    count: number;
+    bytes: number;
+    unused: { count: number; bytes: number };
+  }>("/api/assets");
   const [addingProvider, setAddingProvider] = useState<any | null>(null);
   const importSettingsRef = useRef<HTMLInputElement>(null);
 
@@ -476,6 +480,14 @@ export default function SettingsPage() {
               <b className="text-content-100">{storage?.count ?? "…"}</b> file
               {storage?.count === 1 ? "" : "s"} ·{" "}
               <b className="text-content-100">{storage ? fmtBytes(storage.bytes) : "…"}</b>
+              {/* only surfaced when a prune would actually remove something */}
+              {storage && storage.unused.count > 0 && (
+                <>
+                  {" "}
+                  · <b className="text-content-100">{storage.unused.count}</b> unused (
+                  {fmtBytes(storage.unused.bytes)})
+                </>
+              )}
             </div>
             <span className="flex-1" />
             <Button

@@ -1,13 +1,8 @@
 import { handler, ok } from "@/lib/api";
-import { listAssetObjects } from "@/lib/assets";
+import { assetStats } from "@/lib/store";
 
-/** Bucket stats: uploaded-asset count and total bytes (settings storage panel). */
-export const GET = handler(async () => {
-  let count = 0;
-  let bytes = 0;
-  for (const o of await listAssetObjects()) {
-    count++;
-    bytes += o.size;
-  }
-  return ok({ count, bytes });
-});
+/** Storage-panel stats — pure SQL (assets ⟕ asset_refs), no bucket call: totals
+ *  over finalized uploads plus the unreferenced share a prune would remove.
+ *  Bucket-only strays (uploads never finalized) don't show here; the prune
+ *  endpoint still sweeps the bucket for them. */
+export const GET = handler(async () => ok(await assetStats()));

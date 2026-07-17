@@ -1386,6 +1386,31 @@ export async function listAssets(): Promise<{ id: string; size: number; createdA
   return rows.map((r) => ({ id: r.id, size: r.size, createdAt: r.created_at }));
 }
 
+/** Storage-panel stats, straight from SQL: totals over finalized uploads, and the
+ *  unreferenced share (no asset_refs row = orphan — refs are the materialized truth,
+ *  there is no stored counter to drift). Bucket-only strays (uploads never finalized)
+ *  are invisible here by design; the prune endpoint's bucket sweep catches those. */
+export async function assetStats(): Promise<{
+  count: number;
+  bytes: number;
+  unused: { count: number; bytes: number };
+}> {
+  // SUM(BIGINT) yields numeric, which the driver returns as a string — cast back to int8
+  const r = await get(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(size), 0)::int8 AS bytes,
+            COUNT(*) FILTER (WHERE orphan) AS unused_count,
+            COALESCE(SUM(size) FILTER (WHERE orphan), 0)::int8 AS unused_bytes
+     FROM (SELECT size, NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) AS orphan
+           FROM assets a) x`
+  );
+  if (!r) return { count: 0, bytes: 0, unused: { count: 0, bytes: 0 } }; // aggregates always return a row; typing's sake
+  return {
+    count: r.count,
+    bytes: r.bytes,
+    unused: { count: r.unused_count, bytes: r.unused_bytes },
+  };
+}
+
 export async function deleteAssets(ids: string[]): Promise<void> {
   if (!ids.length) return;
   await run("DELETE FROM assets WHERE id = ANY(?)", [ids]);

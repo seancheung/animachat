@@ -14,6 +14,7 @@ import {
   PageError,
   addVariant,
   appendMessage,
+  assetStats,
   decodeCursor,
   deleteCharacter,
   deleteStory,
@@ -27,6 +28,7 @@ import {
   pageMessages,
   saveChat,
   saveCharacter,
+  registerAsset,
   savePersona,
   saveScene,
   saveStory,
@@ -436,5 +438,25 @@ describe("asset refs", () => {
     const kept = await listReferencedAssetIds();
     for (const x of ["1", "2", "3"]) expect(kept.has(aid(x))).toBe(true);
     expect(kept.has(aid("a"))).toBe(false); // the deleted character's assets are gone
+  });
+
+  it("assetStats splits totals into referenced and unused, in SQL", async () => {
+    await registerAsset(aid("s"), "used.png", "image/png", 100);
+    await registerAsset(aid("t"), "orphan.png", "image/png", 40);
+    await registerAsset(aid("u"), "orphan2.wav", "audio/wav", 5);
+    const c = await saveCharacter({ name: "Statsy", avatarAsset: aid("s") });
+
+    const before = await assetStats();
+    // ≥: other tests' rows share the schema — the deltas below are what's exact
+    expect(before.count).toBeGreaterThanOrEqual(3);
+    expect(before.unused.count).toBeGreaterThanOrEqual(2);
+
+    // referencing an orphan moves it out of unused without changing the totals
+    await saveCharacter({ id: c.id, avatarAsset: aid("s"), typingSfxAsset: aid("t") });
+    const after = await assetStats();
+    expect(after.count).toBe(before.count);
+    expect(after.bytes).toBe(before.bytes);
+    expect(after.unused.count).toBe(before.unused.count - 1);
+    expect(after.unused.bytes).toBe(before.unused.bytes - 40);
   });
 });

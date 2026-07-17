@@ -1,26 +1,7 @@
 import { handler, ok } from "@/lib/api";
-import { deleteAssetObjects, listAssetObjects } from "@/lib/assets";
-import { deleteAssets, listAssets, listReferencedAssetIds } from "@/lib/store";
-
-/* Orphans: asset rows and stray bucket objects that no owner references.
- * References live in asset_refs, rewritten transactionally by every store
- * save/delete — no document parsing here. No grace period either: prune is a
- * manual operator action, so an upload sitting in an unsaved editor counts as
- * unused and WILL be removed. */
-async function collectOrphans(): Promise<{ ids: string[]; bytes: number }> {
-  const refs = await listReferencedAssetIds();
-  const rows = await listAssets();
-  const known = new Set(rows.map((r) => r.id));
-  const orphans = new Map<string, number>();
-  for (const r of rows) if (!refs.has(r.id)) orphans.set(r.id, r.size);
-  for (const o of await listAssetObjects()) {
-    // object without a DB row (e.g. a direct upload that was never finalized)
-    if (!known.has(o.id) && !refs.has(o.id)) orphans.set(o.id, o.size);
-  }
-  let bytes = 0;
-  for (const size of orphans.values()) bytes += size;
-  return { ids: [...orphans.keys()], bytes };
-}
+import { deleteAssetObjects } from "@/lib/assets";
+import { collectOrphans } from "@/lib/assetUsage";
+import { deleteAssets } from "@/lib/store";
 
 /** Dry run: what a prune would remove. */
 export const GET = handler(async () => {
