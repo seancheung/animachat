@@ -73,7 +73,9 @@ FIELD_DOCS.library =
 interface AssistBody {
   entityType: keyof typeof FIELD_DOCS;
   fields: Record<string, unknown>;
-  messages: { role: "user" | "assistant"; content: string }[];
+  /** applied: this assistant reply wrote a fields block into the form — the client
+   *  stores replies with the block stripped, so the flag is what's left of it */
+  messages: { role: "user" | "assistant"; content: string; applied?: boolean }[];
   /** library items attached by the user as background context */
   references?: { type: string; id: string }[];
   /** text files attached by the user as source material */
@@ -143,6 +145,13 @@ async function referenceText(ref: { type: string; id: string }): Promise<string 
 
 const OPEN = "<fields>";
 const CLOSE = "</fields>";
+
+/** Stands in for an applied fields block in the history sent to the model. The client
+ *  keeps replies with the block stripped, which used to teach the model by example
+ *  that prose alone updates the form — it would eventually claim updates without
+ *  emitting any block. The marker keeps the convention visible: replies that changed
+ *  the form ended with a block. */
+const ELIDED_BLOCK = `${OPEN}(elided — this block was applied; the CURRENT FORM STATE reflects it)${CLOSE}`;
 
 export const POST = handler(async (req: Request) => {
   const body = (await req.json()) as AssistBody;
@@ -223,7 +232,17 @@ export const POST = handler(async (req: Request) => {
         `When a rename changes a name other items refer to (a story's castNames/scenes, a scene's locationName, lorebookNames), re-emit those fields with the new name too. ` +
         `Give new items complete fields. Never re-emit unchanged items.\n`
       : `${OPEN}{ ...only the fields you are changing... }${CLOSE}\n`) +
-    `The JSON must be valid. Escape newlines in JSON strings exactly once ("\\n") — never a double-escaped "\\\\n", which would put a literal backslash-n in the text. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.`;
+    `The JSON must be valid. Escape newlines in JSON strings exactly once ("\\n") — never a double-escaped "\\\\n", which would put a literal backslash-n in the text. Update fields incrementally as the conversation progresses — don't wait for everything to be decided. Keep the prose part of your reply short; the content goes in the fields.\n` +
+    `A reply without a ${OPEN} block changes NOTHING: never say you updated, applied or wrote anything into the form unless THIS reply ends with the block. ` +
+    `In the conversation history your earlier blocks appear elided as "${ELIDED_BLOCK}" — that marker only records that a block was applied there; never write the marker yourself, always emit full valid JSON.`;
+
+  // restore the block convention in the history the model sees (the client strips
+  // applied blocks from stored replies); also maps to clean {role, content} — the
+  // client's bookkeeping props must not leak into provider payloads
+  const llmMessages = body.messages.map((m) => ({
+    role: m.role,
+    content: m.role === "assistant" && m.applied ? `${m.content}\n\n${ELIDED_BLOCK}` : m.content,
+  }));
 
   // shared by the final block and the streaming partials
   const normalizeFields = (rawFields: Record<string, unknown>): Record<string, unknown> => {
@@ -341,7 +360,7 @@ export const POST = handler(async (req: Request) => {
         for await (const ev of streamLlm({
           modelRef,
           system,
-          messages: body.messages,
+          messages: llmMessages,
           maxTokens: bigBatch ? 32000 : 2000, // item batches (e.g. novel extraction) need room
           feature: "assist",
           signal: abort.signal,
@@ -385,7 +404,7 @@ export const POST = handler(async (req: Request) => {
                   modelRef,
                   system,
                   messages: [
-                    ...body.messages,
+                    ...llmMessages,
                     { role: "assistant", content: lastReply },
                     {
                       role: "user",
