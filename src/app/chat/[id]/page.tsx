@@ -27,6 +27,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { MIX, useBlip, useChatAudio, useEmotionSfx } from "@/components/chat/audio";
+import { useBubblePacer } from "@/components/chat/bubblePacer";
 import { useTypewriter } from "@/components/chat/typewriter";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
@@ -45,6 +46,8 @@ import SegmentedControl from "@/components/ui/segmented-control";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
 import Toggle, { ToggleGroup } from "@/components/ui/toggle";
+import { realTimeApplies } from "@/lib/ai/aliveness";
+import { toPureChat } from "@/lib/ai/pureChat";
 import { computeStage, resolveStageAssets } from "@/lib/stage";
 import { stagePanelBackground, stageStyleVars } from "@/lib/stageStyle";
 import { useGet, usePagedList } from "@/lib/queries";
@@ -176,6 +179,10 @@ export default function ChatPage() {
   const queryClient = useQueryClient();
 
   const [streaming, setStreaming] = useState<Streaming | null>(null);
+  // the id the server just saved for the streaming reply (SSE "done"): the moment the
+  // refetched timeline contains it, the streaming row yields to the real row in the
+  // SAME commit (no duplicate frame), and that row mounts without the fade-in replay
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   // a turn is in flight from the very click: Continue/Narrate carry no user text and the
   // first reply only starts streaming once the orchestrator has picked a speaker
   const [generating, setGenerating] = useState(false);
@@ -243,6 +250,9 @@ export default function ChatPage() {
   const blip = useBlip();
 
   const chat = data?.chat;
+  // pure chat (casual): the messenger view replaces the whole VN stage apparatus —
+  // no sprites, layouts, corner controls, picture mode, audio, or typewriter
+  const pure = chat?.mode === "casual";
   // presentation layout — persisted per chat in overrides; the corner button and the settings drawer both write it
   const layout: ChatLayout = chat?.overrides?.layout === "dialogue" ? "dialogue" : "panel";
   const characters: Character[] = useMemo(() => data?.characters ?? [], [data]);
@@ -361,6 +371,18 @@ export default function ChatPage() {
     },
   });
 
+  // pure chat: the messenger's counterpart to the typewriter — a real text arrives
+  // WHOLE once the sender "typed" it, so the pacer holds each paragraph back until
+  // fully streamed and pops it after a typing-time delay (typing speed setting;
+  // 0 = off). `pending` keeps the typing indicator up between bubbles. The revealed
+  // text goes through the same pure-chat transform the server applies before saving,
+  // so the saved message lands pixel-identical to what streamed — no end-of-turn jump.
+  const bubblePacer = useBubblePacer({
+    speed: settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed,
+    onReveal: ({ text, pending }) =>
+      setStreaming((s) => (s ? { ...s, text: toPureChat(text), hasMore: pending } : s)),
+  });
+
   /* ---- panel scrolling: pinned to the newest message unless the user reads back ---- */
   // the opening jump is instant and must happen again whenever the panel remounts
   const landedRef = useRef(false);
@@ -401,10 +423,18 @@ export default function ChatPage() {
       return;
     }
     // afterwards only follow the tail if the user hasn't scrolled back to read. While
-    // streaming the follow is instant: chunks landing mid-smooth-scroll grow the gap
-    // past the pin threshold, and the scroll handler would unpin the tail mid-reply
-    if (pinnedRef.current) el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
-  }, [messages.length, streaming?.text, isStreaming, pendingUser, layout, pictureMode]);
+    // a turn is in flight (pending user message or streaming reply) the follow is
+    // INSTANT: a smooth animation is cancellable — a commit landing mid-glide (the
+    // refetch, the typing indicator) freezes it short of the bottom, and its
+    // intermediate scroll events unpin the tail — and both stall the view until the
+    // next reveal. Instant jumps produce one settled scroll event, which stays pinned.
+    if (pinnedRef.current)
+      el.scrollTo({ top: el.scrollHeight, behavior: isStreaming || pendingUser !== null ? "auto" : "smooth" });
+    // `data` is a dep because the scroll container only MOUNTS once the chat GET lands:
+    // when the messages page resolves first (its length change fires against the loading
+    // screen, scrollRef null), the commit that finally mounts the container changes no
+    // other dep — without `data` the opening jump would never run
+  }, [messages.length, streaming?.text, isStreaming, pendingUser, layout, pictureMode, data]);
 
   /* ---- older pages load as the reader scrolls up (panel layout) ---- */
   // a sentinel above the oldest loaded message; the observer fires on mount too, so a
@@ -502,6 +532,10 @@ export default function ChatPage() {
       setStreamDone(false);
       if (body.userText) {
         setPendingUser(body.userText);
+        // sending always shows your own message: re-pin the tail even if the reader
+        // had scrolled back (the follow effect then jumps to it — messenger manners)
+        pinnedRef.current = true;
+        setPinned(true);
         // the dialogue box shows the user's line straight away, and keeps it for at least
         // MIN_ECHO_MS so an instant reply can't flash it past them
         setUserEcho(body.userText);
@@ -515,7 +549,10 @@ export default function ChatPage() {
       // Stop on a fully-arrived reply reveals the rest at once, VN skip-style; a reply
       // still streaming is incomplete — the server discards it, and the flushed text
       // clears with the streaming view
-      abort.signal.addEventListener("abort", () => typewriter.flush());
+      abort.signal.addEventListener("abort", () => {
+        typewriter.flush();
+        bubblePacer.flush();
+      });
       // the between-speakers gate exists only BETWEEN this turn's replies — the turn's
       // first speaker must not park on the previous turn's leftover buffer (the user's
       // own action already stepped past it, and with `streaming` still null no click
@@ -533,7 +570,8 @@ export default function ChatPage() {
               // next reply keeps streaming into the buffer behind the parked page. Waiting
               // here rather than on "done" keeps the read loop free to see the stream
               // close, so streamDone below flips while the last reveal is still parked.
-              await typewriter.finish({ ack: followUp });
+              if (pure) await bubblePacer.finish();
+              else await typewriter.finish({ ack: followUp });
               followUp = true;
               // pick up the just-appended user message — only then drop the pending bubble,
               // or it vanishes for the whole refetch
@@ -541,7 +579,9 @@ export default function ChatPage() {
               const speaker = characters.find((c) => c.id === ev.speaker.characterId);
               blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
               typewriter.reset();
+              bubblePacer.reset();
               revealedRef.current = 0;
+              setLastSavedId(null); // a fresh reply — the previous save must not hide its row
               setStreaming({
                 role: ev.speaker.role,
                 characterId: ev.speaker.characterId,
@@ -552,12 +592,15 @@ export default function ChatPage() {
                 forMessageId: body.regenerateMessageId ?? null,
               });
             } else if (ev.type === "text") {
-              typewriter.push(ev.text);
+              if (pure) bubblePacer.push(ev.text);
+              else typewriter.push(ev.text);
             } else if (ev.type === "emotion") {
               // one emotion per message — the FIRST tag wins, as the server stores it.
               // Honouring a stray later tag would swap the sprite mid-message and then
               // snap it back the moment the saved message (tagged with the first) lands.
               setStreaming((s) => (s ? { ...s, emotion: s.emotion ?? ev.name } : s));
+            } else if (ev.type === "done") {
+              if (ev.message) setLastSavedId(ev.message.id);
             } else if (ev.type === "error") {
               setError(ev.message);
             }
@@ -566,9 +609,11 @@ export default function ChatPage() {
         );
         // every reply has arrived and is saved; only the reveal remains to be read
         setStreamDone(true);
-        await typewriter.finish();
+        if (pure) await bubblePacer.finish();
+        else await typewriter.finish();
       } catch (e) {
         typewriter.flush();
+        bubblePacer.flush();
         if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
       } finally {
         abortRef.current = null;
@@ -582,13 +627,18 @@ export default function ChatPage() {
         setGenerating(false);
       }
     },
-    [locked, id, characters, mutate, typewriter, dropEcho]
+    [locked, id, characters, mutate, typewriter, bubblePacer, pure, dropEcho]
   );
 
   function send(textOverride?: string) {
     const text = (textOverride ?? input).trim();
     if (!text || locked) return; // never clear the box for a send that can't happen
     setInput("");
+    // the composer keeps focus through a send (a button-click send parks focus on the
+    // button — hand it straight back so typing never pauses). Messenger & side panel
+    // only: the dialogue box disables its input for the reveal, and gets focus back
+    // when the turn ends instead (see DialogueLayout).
+    if (pure || layout === "panel") inputRef.current?.focus();
     void generate({ mode: "auto", userText: text });
   }
 
@@ -667,13 +717,13 @@ export default function ChatPage() {
     void generate({ mode: "narrator" });
   }, [data, counts, busy, generate]);
 
-  // returning to a casual chat after a real gap: have the server refresh the
-  // opted-in characters' off-screen lives, and let one of them text first.
-  // The gap check here only saves a pointless request — the server re-validates,
+  // returning to a casual (or setting-less immersive) chat after a real gap: have the
+  // server refresh the opted-in characters' off-screen lives, and let one of them text
+  // first. The gap check here only saves a pointless request — the server re-validates,
   // and an empty SSE response (someone else's turn already landed) is a no-op.
   useEffect(() => {
     if (returnedRef.current || !chat || busy) return;
-    if (chat.mode !== "casual" || chat.playAsNarrator || messages.length === 0) return;
+    if (!realTimeApplies(chat) || chat.playAsNarrator || messages.length === 0) return;
     const last = messages[messages.length - 1];
     if (Date.now() - last.createdAt < OFFSCREEN_GAP_MS) return;
     if (!characters.some((c) => alivenessOf(c).offscreenLife !== "off")) return;
@@ -761,29 +811,41 @@ export default function ChatPage() {
         mentionNames={stageCharacters.length > 1 ? stageCharacters.map((c) => c.name) : []}
         textareaRef={inputRef}
         placeholder={
-          playAsNarrator
+          pure
             ? characters.length > 1
-              ? "Narrate — describe events, the scene, the world… (@ to address a character)"
-              : "Narrate — describe events, the scene, the world…"
-            : characters.length > 1
-              ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
-              : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
+              ? "Message… (@ to address someone)"
+              : `Message ${characters[0]?.name ?? ""}…`
+            : playAsNarrator
+              ? characters.length > 1
+                ? "Narrate — describe events, the scene, the world… (@ to address a character)"
+                : "Narrate — describe events, the scene, the world…"
+              : characters.length > 1
+                ? `Speak as ${personaName}… (plain text = speech, *asterisks* = actions, @ to address)`
+                : `Speak as ${personaName}… (plain text = speech, *asterisks* = actions)`
         }
         value={input}
-        disabled={locked}
+        // this composer (messenger & side panel) never locks for generation — a disabled
+        // textarea drops focus, and a real chat lets you type your next message while
+        // the other side replies (send() still refuses until the turn ends). It only
+        // locks while impersonate is drafting INTO it — the box is the draft's output
+        // slot then. The dialogue box below is different: its reveal needs the keyboard.
+        disabled={drafting}
         onChange={setInput}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             send();
           }
-          if (e.key === "*" && e.ctrlKey) {
+          if (e.key === "*" && e.ctrlKey && !pure) {
             e.preventDefault();
             wrapAction();
           }
         }}
       >
-        <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
+        {/* the action-wrap helper belongs to the roleplay convention — pure chat has none */}
+        {!pure && (
+          <Button variant="ghost" size="sm" shape="square" disabled={locked} title="Wrap selection in *action* (Ctrl+*)" onClick={wrapAction}><Asterisk /></Button>
+        )}
         <ImpersonateButton
           drafting={drafting}
           disabled={locked}
@@ -809,8 +871,10 @@ export default function ChatPage() {
     </div>
   );
 
-  // a regeneration reveals IN PLACE on the row it replaces — no phantom row at the tail
-  const streamingRow = streaming && !streaming.forMessageId && (
+  // a regeneration reveals IN PLACE on the row it replaces — no phantom row at the tail.
+  // Once the refetched timeline contains the saved reply (lastSavedId), the streaming
+  // row steps aside in the same commit — never a duplicate frame at the end of a turn.
+  const streamingRow = streaming && !streaming.forMessageId && lastNonMarker?.id !== lastSavedId && (
     <div className="flex gap-3 fade-in">
       <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
         {streaming.role === "narrator" ? <ScrollText size={15} /> : (
@@ -828,6 +892,171 @@ export default function ChatPage() {
       </div>
     </div>
   );
+
+  /* -------- messenger view (casual = pure chat) --------
+   * Like every chat page the app chrome is hidden (AppNav skips /chat/*): the slim
+   * messenger header below — back button, title & cast, chat settings — is the only
+   * chrome, and the whole surface is the message list. None of the stage apparatus
+   * further down exists here. */
+  if (pure) {
+    const streamChar = streaming ? characters.find((c) => c.id === streaming.characterId) : null;
+    // the typing indicator holds the reply's place before the first bubble (routing,
+    // model latency, the first bubble's typing time) and BETWEEN paced bubbles —
+    // hasMore is the pacer saying more of the reply is still unrevealed
+    const showTyping = generating && !streaming?.forMessageId && (!streaming?.text || !!streaming?.hasMore);
+    return (
+      <div className="h-full relative flex flex-col">
+        <div className="flex items-center gap-2 px-4 h-14 py-2 border-b border-base-400 bg-base-100 shrink-0">
+          <Button variant="ghost" size="sm" shape="circle" title="Back to chats" onClick={() => router.push("/")}>
+            <ArrowLeft />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium truncate leading-tight">{chat.title}</div>
+            <div className="text-xs text-content-400 truncate">
+              {characters.map((c) => c.name).join(", ")}
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" shape="circle" title="Chat settings" onClick={() => setDrawer(true)}>
+            <Settings2 />
+          </Button>
+        </div>
+
+        <div ref={scrollRef} onScroll={onPanelScroll} className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+            {hasOlder && <div ref={topSentinelRef} aria-hidden className="h-px -mb-4" />}
+            {fetchingOlder && (
+              <div className="text-center text-xs text-content-300 py-1">Loading older messages…</div>
+            )}
+            {messages.map((m) => (
+              <MessageRow
+                key={m.id}
+                message={m}
+                characters={characters}
+                nameSnapshots={chat.nameSnapshots}
+                personaName={personaName}
+                isLast={m.id === lastNonMarker?.id}
+                busy={locked}
+                pureChat
+                // the reply that just streamed is already on screen — no entrance blink
+                fadeIn={m.id !== lastSavedId}
+                streaming={streaming?.forMessageId === m.id ? { text: streaming.text, emotion: null } : null}
+                onEdit={(patch) => patchMessage(m, patch)}
+                onSwipe={(index) => patchMessage(m, { activeVariant: index })}
+                onRegen={() => generate({ regenerateMessageId: m.id })}
+                onDelete={async () => {
+                  await api.del(`/api/messages/${m.id}`);
+                  await mutate();
+                }}
+                onFork={async () => {
+                  if (!(await confirmDialog({
+                    title: "Fork chat",
+                    message: "Start a new chat from this point? Everything up to this message is copied — this chat stays untouched.",
+                    confirmLabel: "Fork",
+                  }))) return;
+                  const res = await api.post(`/api/chats/${id}/fork`, { messageId: m.id });
+                  router.push(`/chat/${res.chatId}`);
+                }}
+                onPickOption={(text) => send(text)}
+              />
+            ))}
+            {pendingUser && (
+              <div className="flex gap-3 fade-in opacity-70 flex-row-reverse">
+                <div className="chip-initial w-9 h-9 rounded-full shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1 font-semibold">
+                  {personaName.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="max-w-[78%] rounded-lg px-3.5 py-2.5 text-[0.925rem] bg-primary-500/15">
+                  <MessageText text={pendingUser} />
+                </div>
+              </div>
+            )}
+            {/* a new reply streams in as texting bubbles (paragraph breaks split it live);
+                the row yields to the saved message the moment the refetch carries it */}
+            {streaming && !streaming.forMessageId && streaming.text && lastNonMarker?.id !== lastSavedId && (
+              <div className="flex gap-3 fade-in">
+                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
+                  {streamChar?.avatarAsset ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetUrl(streamChar.avatarAsset)!} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="chip-initial font-semibold">{streamChar?.name.slice(0, 1).toUpperCase() ?? "?"}</span>
+                  )}
+                </div>
+                <div className="max-w-[78%] min-w-0">
+                  <div className="text-xs text-content-300 mb-0.5">{streamChar?.name}</div>
+                  <div className="flex flex-col gap-1 items-start">
+                    {streaming.text
+                      .split(/\n{2,}/)
+                      .map((p) => p.trim())
+                      .filter(Boolean)
+                      .map((bubble, i, arr) => (
+                        <div key={i} className="msg-bubble rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed max-w-full">
+                          {/* caret only while more is coming — by swap time (saved row takes
+                              over) it is gone, so the handoff is pixel-identical */}
+                          <MessageText text={bubble} streaming={i === arr.length - 1 && !!streaming.hasMore} />
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {showTyping && (
+              <div className="flex gap-3 fade-in">
+                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
+                  {streamChar?.avatarAsset ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetUrl(streamChar.avatarAsset)!} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="chip-initial font-semibold">{streamChar?.name.slice(0, 1).toUpperCase() ?? "…"}</span>
+                  )}
+                </div>
+                <div>
+                  {streamChar && <div className="text-xs text-content-300 mb-0.5">{streamChar.name}</div>}
+                  <div className="msg-bubble rounded-lg px-3.5 py-3 inline-flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce" />
+                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:120ms]" />
+                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:240ms]" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!pinned && (
+          <Button
+            variant="secondary"
+            size="sm"
+            shape="circle"
+            className={cn("absolute bottom-24 left-1/2 -translate-x-1/2 z-20 shadow-lg fade-in", busy && "animate-pulse")}
+            title={busy ? "Jump to latest (still writing…)" : "Jump to latest"}
+            onClick={jumpToLatest}
+          >
+            <ChevronDown />
+          </Button>
+        )}
+
+        <div className="border-t border-base-400 shrink-0">
+          <div className="max-w-3xl mx-auto px-4 py-3">{inputBar}</div>
+        </div>
+
+        <Drawer open={drawer} onOpenChange={setDrawer} title="Chat settings" side="left" size="lg">
+          <ChatDrawer
+            data={data}
+            muted={muted}
+            bgmVolume={bgmVolume}
+            sfxVolume={sfxVolume}
+            panelOpacity={chatOpacity}
+            panelBlur={panelBlur}
+            onSettings={patchSettings}
+            onPatch={async (patch: any) => {
+              await api.patch(`/api/chats/${id}`, patch);
+              await mutate();
+            }}
+          />
+        </Drawer>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full relative" style={chatOpacityVar}>
@@ -906,6 +1135,8 @@ export default function ChatPage() {
             // locked, not busy: memoized rows keep their handler closures until a
             // compared prop changes, so drafting must disable them through this prop
             busy={locked}
+            // the reply that just streamed is already on screen — no entrance blink
+            fadeIn={m.id !== lastSavedId}
             streaming={streaming?.forMessageId === m.id ? { text: streaming.text, emotion: streaming.emotion } : null}
             sceneName={sceneNameFor(m)}
             onEdit={(patch) => patchMessage(m, patch)}
@@ -1251,6 +1482,27 @@ function DialogueLayout({
     return () => window.removeEventListener("keydown", onEsc, true);
   }, [hidden]);
 
+  // the input is disabled through the turn (a VN reveal wants the keyboard free for
+  // skip/paging, and the box hides between pages) — so when the turn ends, hand focus
+  // back so the next line can be typed straight away, like a real chat app. Never
+  // steals: only when focus is idling on the body (not a drawer, dialog, or button).
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (busy) {
+      wasBusy.current = true;
+      return;
+    }
+    if (!wasBusy.current) return;
+    wasBusy.current = false;
+    requestAnimationFrame(() => {
+      const el = inputRef?.current;
+      if (!el || el.disabled || hidden) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      el.focus();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+
   // wheel on the stage navigates (VN backlog gesture); wheel over the dialogue
   // box keeps scrolling the box's own overflowing content natively.
   // One step per gesture: a trackpad flick keeps delivering momentum events for a
@@ -1551,6 +1803,9 @@ function ChatDrawer({
   onPatch,
 }: any) {
   const chat = data.chat;
+  // pure chat (casual): no stage — the layout/opacity/blur/audio knobs and the
+  // POV/narrator rows are stage furniture and don't exist here
+  const pure = chat.mode === "casual";
   const [title, setTitle] = useState(chat.title);
   const [folder, setFolder] = useState(chat.folder);
   const [tags, setTags] = useState(chat.tags.join(", "));
@@ -1571,44 +1826,48 @@ function ChatDrawer({
       />
       {tab === "memory" && <DrawerMemory data={data} />}
       <div className={cn("space-y-4", tab !== "settings" && "hidden")}>
-      <Field label="Chat layout" hint="side panel chat log, or a VN dialogue box over the stage — the corner button switches it too">
-        <ToggleGroup<"panel" | "dialogue">
-          value={chat.overrides?.layout === "dialogue" ? "dialogue" : "panel"}
-          onChange={(v) => v && onPatch({ overrides: { ...chat.overrides, layout: v } })}
-        >
-          <Toggle value="panel" size="sm"><PanelRight size={13} /> Side panel</Toggle>
-          <Toggle value="dialogue" size="sm"><Captions size={13} /> Dialogue box</Toggle>
-        </ToggleGroup>
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Panel opacity" hint="chat panel & VN dialogue box — a global setting">
-          <OpacitySlider value={panelOpacity} onCommit={(v) => onSettings({ chatPanelOpacity: v })} />
-        </Field>
-        <Field label="Panel blur" hint="backdrop blur behind the panel & dialogue box — a global setting">
-          <Switch
-            className="h-8"
-            value={panelBlur}
-            onChange={(v: boolean) => onSettings({ chatPanelBlur: v })}
-            label={panelBlur ? "Enabled" : "Disabled"}
-          />
-        </Field>
-      </div>
-      <Field label="Music" hint="the scene/location BGM">
-        <ChannelSlider
-          muted={muted}
-          value={bgmVolume}
-          onMute={() => onSettings({ audioMuted: !muted })}
-          onChange={(v: number) => onSettings({ bgmVolume: v })}
-        />
-      </Field>
-      <Field label="Sound effects" hint="ambient loops and typing blips">
-        <ChannelSlider
-          muted={muted}
-          value={sfxVolume}
-          onMute={() => onSettings({ audioMuted: !muted })}
-          onChange={(v: number) => onSettings({ sfxVolume: v })}
-        />
-      </Field>
+      {!pure && (
+        <>
+          <Field label="Chat layout" hint="side panel chat log, or a VN dialogue box over the stage — the corner button switches it too">
+            <ToggleGroup<"panel" | "dialogue">
+              value={chat.overrides?.layout === "dialogue" ? "dialogue" : "panel"}
+              onChange={(v) => v && onPatch({ overrides: { ...chat.overrides, layout: v } })}
+            >
+              <Toggle value="panel" size="sm"><PanelRight size={13} /> Side panel</Toggle>
+              <Toggle value="dialogue" size="sm"><Captions size={13} /> Dialogue box</Toggle>
+            </ToggleGroup>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Panel opacity" hint="chat panel & VN dialogue box — a global setting">
+              <OpacitySlider value={panelOpacity} onCommit={(v) => onSettings({ chatPanelOpacity: v })} />
+            </Field>
+            <Field label="Panel blur" hint="backdrop blur behind the panel & dialogue box — a global setting">
+              <Switch
+                className="h-8"
+                value={panelBlur}
+                onChange={(v: boolean) => onSettings({ chatPanelBlur: v })}
+                label={panelBlur ? "Enabled" : "Disabled"}
+              />
+            </Field>
+          </div>
+          <Field label="Music" hint="the scene/location BGM">
+            <ChannelSlider
+              muted={muted}
+              value={bgmVolume}
+              onMute={() => onSettings({ audioMuted: !muted })}
+              onChange={(v: number) => onSettings({ bgmVolume: v })}
+            />
+          </Field>
+          <Field label="Sound effects" hint="ambient loops and typing blips">
+            <ChannelSlider
+              muted={muted}
+              value={sfxVolume}
+              onMute={() => onSettings({ audioMuted: !muted })}
+              onChange={(v: number) => onSettings({ sfxVolume: v })}
+            />
+          </Field>
+        </>
+      )}
       <Field label="Title">
         <Input className="w-full" value={title} onChange={setTitle} onBlur={() => onPatch({ title })} />
       </Field>
@@ -1634,18 +1893,23 @@ function ChatDrawer({
             {chat.language || "(global default)"}
           </div>
         </Field>
-        <Field label="POV">
-          <div className="text-sm text-content-200 h-8 flex items-center">
-            {POV_LABELS[chat.pov as Pov] ?? "(global default)"}
+        {/* casual chats have no POV or narrator — pure chat */}
+        {!pure && (
+          <Field label="POV">
+            <div className="text-sm text-content-200 h-8 flex items-center">
+              {POV_LABELS[chat.pov as Pov] ?? "(global default)"}
+            </div>
+          </Field>
+        )}
+      </div>
+      {!pure && (
+        <Field label="Narrator" hint="fixed at creation">
+          <div className="text-sm text-content-200 h-8 flex items-center gap-1.5">
+            <ScrollText size={14} />{" "}
+            {chat.playAsNarrator ? "You — you write the narration" : chat.narratorEnabled ? "Enabled" : "Disabled"}
           </div>
         </Field>
-      </div>
-      <Field label="Narrator" hint="fixed at creation">
-        <div className="text-sm text-content-200 h-8 flex items-center gap-1.5">
-          <ScrollText size={14} />{" "}
-          {chat.playAsNarrator ? "You — you write the narration" : chat.narratorEnabled ? "Enabled" : "Disabled"}
-        </div>
-      </Field>
+      )}
       {data.characters.length > 1 && (
         <Field
           label="Infinite mentions"

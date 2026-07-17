@@ -94,7 +94,7 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
   // state of mind: casual/immersive only (playthroughs pace themselves), per character opt-in
   const mindChars = ctx.snapshot ? [] : ctx.characters.filter((c) => alivenessOf(c).mindState);
   const system =
-    `You maintain the long-term memory of a roleplay chat. You will receive the existing rolling summary ` +
+    `You maintain the long-term memory of ${ctx.chat.mode === "casual" ? "an ongoing text conversation" : "a roleplay chat"}. You will receive the existing rolling summary ` +
     `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
     `{"summary": "updated rolling summary, chronological, <= 400 words, keep every plot-critical fact",\n` +
     ` "facts": [{"character": "name", "fact": "a durable fact this character learned/experienced, worth remembering across sessions"}],\n` +

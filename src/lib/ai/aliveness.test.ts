@@ -90,7 +90,7 @@ describe("affinityTone", () => {
 
 describe("returnEligibility", () => {
   const now = 200 * DAY;
-  const casual = { mode: "casual" as const, playAsNarrator: false };
+  const casual = { mode: "casual" as const, playAsNarrator: false, sceneId: null, locationId: null };
   const old = [msg(now - OFFSCREEN_GAP_MS - HOUR)];
   const noNotes = () => null;
 
@@ -105,15 +105,29 @@ describe("returnEligibility", () => {
     expect(r.texter?.id).toBe("a");
   });
 
-  it("stays silent below the gap, in other modes, and when playing the narrator", () => {
+  it("stays silent below the gap, where a setting pins fiction time, and when playing the narrator", () => {
     const chars = [char("a", { offscreenLife: "texts" })];
     expect(returnEligibility(casual, chars, [msg(now - HOUR)], noNotes, now).texter).toBeNull();
+    // immersive with a fixed scene/location: real time isn't fiction time
     expect(
-      returnEligibility({ mode: "immersive", playAsNarrator: false }, chars, old, noNotes, now).generateFor
+      returnEligibility(
+        { mode: "immersive", playAsNarrator: false, sceneId: "s1", locationId: null },
+        chars, old, noNotes, now
+      ).generateFor
     ).toEqual([]);
     expect(
-      returnEligibility({ mode: "casual", playAsNarrator: true }, chars, old, noNotes, now).generateFor
+      returnEligibility({ ...casual, playAsNarrator: true }, chars, old, noNotes, now).generateFor
     ).toEqual([]);
+  });
+
+  it("runs in a setting-less immersive chat — real time can be fiction time there", () => {
+    const chars = [char("a", { offscreenLife: "texts" })];
+    const r = returnEligibility(
+      { mode: "immersive", playAsNarrator: false, sceneId: null, locationId: null },
+      chars, old, noNotes, now
+    );
+    expect(r.generateFor.map((c) => c.id)).toEqual(["a"]);
+    expect(r.texter?.id).toBe("a");
   });
 
   it("ignores characters with the trait off, and empty chats", () => {

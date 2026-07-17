@@ -45,6 +45,8 @@ export const MessageRow = memo(function MessageRow({
   busy,
   streaming,
   sceneName,
+  pureChat,
+  fadeIn = true,
   onEdit,
   onSwipe,
   onRegen,
@@ -66,6 +68,13 @@ export const MessageRow = memo(function MessageRow({
   streaming?: { text: string; emotion: string | null } | null;
   /** stage direction derived from the message's events ("Scene: X · Enter Y · The End") */
   sceneName?: string | null;
+  /** pure chat (casual): paragraph breaks render as separate texting bubbles
+   *  (display-only — the stored message stays whole, edits work on the raw text),
+   *  and there is no emotion to edit */
+  pureChat?: boolean;
+  /** false = mount without the fade-in entrance — a saved reply replacing its own
+   *  streaming row is already on screen and must not blink into place */
+  fadeIn?: boolean;
   onEdit: (patch: { content?: string; emotion?: string | null }) => Promise<void>;
   onSwipe: (index: number) => Promise<void>;
   onRegen: () => void;
@@ -106,7 +115,7 @@ export const MessageRow = memo(function MessageRow({
   ];
 
   return (
-    <div className={cn("group flex gap-3 fade-in", message.role === "user" && "flex-row-reverse")}>
+    <div className={cn("group flex gap-3", fadeIn && "fade-in", message.role === "user" && "flex-row-reverse")}>
       <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
         {message.role === "narrator" ? (
           <ScrollText size={15} className="text-content-300" />
@@ -126,6 +135,27 @@ export const MessageRow = memo(function MessageRow({
           )}
         </div>
 
+        {pureChat && !editing ? (
+          // texting bubbles: paragraph breaks split the message into separate texts —
+          // purely display, like the dialogue box's pagination (the raw text is edited whole)
+          <div className={cn("flex flex-col gap-1", message.role === "user" ? "items-end" : "items-start")}>
+            {(streaming ? streaming.text : v.content)
+              .split(/\n{2,}/)
+              .map((p) => p.trim())
+              .filter(Boolean)
+              .map((bubble, i, arr) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed text-left max-w-full",
+                    message.role === "user" ? "bg-primary-500/15" : "msg-bubble"
+                  )}
+                >
+                  <MessageText text={bubble} streaming={!!streaming && i === arr.length - 1} />
+                </div>
+              ))}
+          </div>
+        ) : (
         <div
           className={cn(
             "rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed text-left",
@@ -139,7 +169,7 @@ export const MessageRow = memo(function MessageRow({
           {editing ? (
             <div className="space-y-2 min-w-[280px]">
               <Textarea className="w-full h-32 text-sm" value={draft} onChange={setDraft} />
-              {message.role === "character" && (
+              {message.role === "character" && !pureChat && (
                 <Select
                   value={draftEmotion}
                   onChange={setDraftEmotion}
@@ -150,7 +180,7 @@ export const MessageRow = memo(function MessageRow({
                 <Button
                   size="sm"
                   onClick={async () => {
-                    await onEdit({ content: draft, ...(message.role === "character" ? { emotion: draftEmotion || null } : {}) });
+                    await onEdit({ content: draft, ...(message.role === "character" && !pureChat ? { emotion: draftEmotion || null } : {}) });
                     setEditing(false);
                   }}
                 >
@@ -165,6 +195,7 @@ export const MessageRow = memo(function MessageRow({
             <MessageText text={v.content} />
           )}
         </div>
+        )}
 
         {/* stage direction carried by a narrator message (scene advance, enter/leave, the end) */}
         {!editing && message.role === "narrator" && sceneName && (
@@ -261,4 +292,6 @@ export const MessageRow = memo(function MessageRow({
   prev.isLast === next.isLast &&
   prev.busy === next.busy &&
   prev.streaming === next.streaming &&
-  prev.sceneName === next.sceneName);
+  prev.sceneName === next.sceneName &&
+  prev.pureChat === next.pureChat &&
+  prev.fadeIn === next.fadeIn);

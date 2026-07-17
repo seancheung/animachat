@@ -415,7 +415,7 @@ export default function SettingsPage() {
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
-            <Field label="Typing speed" hint="characters per second the reply types out at, in the dialogue-box layout; off = it appears as it streams in. The side panel always shows text as it arrives">
+            <Field label="Typing speed" hint="characters per second the reply types out at, in the dialogue-box layout, and the rate casual chats' texting bubbles arrive at; off = everything appears as it streams in. The side panel always shows text as it arrives">
               <TypingSpeedSlider
                 value={settings.typingSpeed}
                 onCommit={(v) => patchSettings({ typingSpeed: v })}

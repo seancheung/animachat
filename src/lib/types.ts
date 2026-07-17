@@ -484,7 +484,9 @@ export interface Settings {
   outputReserve: number;
   typingSfxEnabled: boolean;
   /** VN typewriter reveal, in characters per second (dialogue-box layout only — the side
-   *  panel always shows text as it arrives); 0 = off (text appears as it streams in) */
+   *  panel always shows text as it arrives); 0 = off (text appears as it streams in).
+   *  Doubles as the casual messenger's pacing rate: each texting bubble arrives whole
+   *  after its length at this speed (clamped to a moment–3s), 0 = no pacing. */
   typingSpeed: number;
   /** music channel: the active scene/location BGM, 0..1 */
   bgmVolume: number;

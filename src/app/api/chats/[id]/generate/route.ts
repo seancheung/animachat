@@ -21,6 +21,7 @@ import {
   type ChatContext,
 } from "@/lib/ai/prompts";
 import { returnTurnEligible } from "@/lib/ai/offscreen";
+import { PureChatStreamFilter, toPureChat } from "@/lib/ai/pureChat";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
@@ -365,6 +366,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
                 returning: speaker.returning,
               });
 
+        // pure chat (casual): the convention is enforced mechanically — a streaming
+        // filter keeps *action* spans from flashing on screen, and toPureChat on the
+        // full text before save stays authoritative (raw keeps the verbatim output)
+        const pure = turnCtx.chat.mode === "casual";
+        const pureFilter = pure ? new PureChatStreamFilter() : null;
+
         let content = "";
         let raw = ""; // the model's output verbatim, before tag parsing — kept for debugging
         let emotion: string | null = null;
@@ -380,9 +387,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         const handleEvents = (events: TagEvent[]) => {
           for (const ev of events) {
             if (ev.type === "text") {
-              content += ev.text;
-              send({ type: "text", text: ev.text });
+              const text = pureFilter ? pureFilter.feed(ev.text) : ev.text;
+              if (!text) continue;
+              content += text;
+              send({ type: "text", text });
             } else if (ev.type === "emotion") {
+              if (pure) continue; // pure chat carries no emotion — a stray tag is dropped whole
               // one emotion per message — the first wins; a stray later tag is
               // stripped from the text and must not flip the live sprite either
               if (!emotion) {
@@ -436,7 +446,21 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           }
           failed = true;
         }
+        // an unclosed `*` at stream end was literal — flush what the filter held
+        if (pureFilter) {
+          const rest = pureFilter.end();
+          if (rest) {
+            content += rest;
+            if (!failed) send({ type: "text", text: rest });
+          }
+        }
 
+        // the authoritative pure-chat pass (quote unwrapping, whitespace, stray tags) —
+        // the stored message is the clean form, so resent history teaches the convention
+        if (pure) {
+          content = toPureChat(content);
+          options = null;
+        }
         content = content.trim();
         // an interrupted reply (Stop, closed page, provider error) is incomplete —
         // discard it rather than save a half-written message to the timeline

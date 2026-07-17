@@ -47,13 +47,13 @@ const MODES: { key: ChatMode; label: string; icon: React.ReactNode; hint: string
     key: "casual",
     label: "Casual",
     icon: <Coffee size={14} />,
-    hint: "free-form chat, no setting — characters optional when the narrator runs the show",
+    hint: "pure chat — text the characters like real people online, no roleplay conventions",
   },
   {
     key: "immersive",
     label: "Immersive",
     icon: <MapPin size={14} />,
-    hint: "one fixed scene or location",
+    hint: "roleplay on the VN stage — optional scene or location, narrator, POV",
   },
 ];
 // playthroughs are started from the Stories page — the wizard offers casual/immersive only
@@ -190,13 +190,15 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     };
   const settingOption = typedOption({ scene: <Clapperboard size={13} />, location: <MapPin size={13} /> });
 
-  const narrator = form.playAsNarrator ? false : form.narratorEnabled;
-  const modeValid =
-    (form.mode === "casual" || form.sceneId || form.locationId) &&
-    (form.characterIds.length > 0 || narrator);
-  // greetings fit exactly one shape: a casual 1:1 with the narrator off
+  // casual is pure chat: no narrator (nobody to carry a chat but the characters),
+  // no narrator seat, no POV, no setting, no chat layout — the messenger view is the mode
+  const pure = form.mode === "casual";
+  const playAsNarrator = !pure && form.playAsNarrator;
+  const narrator = pure || playAsNarrator ? false : form.narratorEnabled;
+  const modeValid = pure ? form.characterIds.length > 0 : form.characterIds.length > 0 || narrator;
+  // greetings fit the single-character shapes: a casual 1:1, or an immersive 1:1 without narrator
   const greetingsAvailable =
-    form.mode === "casual" && form.characterIds.length === 1 && !narrator && !form.playAsNarrator;
+    form.characterIds.length === 1 && (pure || (!narrator && !playAsNarrator));
 
   return (
     <Modal open={open} onClose={onClose} title="New chat" wide>
@@ -222,7 +224,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
         </Field>
 
         <Field
-            label={form.mode === "casual" ? "Characters" : "Characters (required)"}
+            label={pure || !narrator ? "Characters (required)" : "Characters"}
             hint="pick in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
           >
             <Input
@@ -295,7 +297,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
 
         <div className="grid md:grid-cols-3 gap-3">
           {form.mode === "immersive" && (
-            <Field label="Setting (required)" hint="fixed for the whole chat">
+            <Field label="Setting" hint="optional, fixed for the whole chat — empty keeps the default backdrop">
               <Combobox
                 className="w-full"
                 value={settingValue}
@@ -318,14 +320,17 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                   locSearch.onSearch(q);
                 }}
                 renderOption={settingOption}
-                placeholder="choose a scene or location…"
+                placeholder="(none)"
+                clearable
+                onClear={() => setForm({ ...form, sceneId: null, locationId: null })}
               />
             </Field>
           )}
-          <Field label="Play as narrator" hint="you write the narration; characters respond — replaces the AI narrator and your persona">
+          {!pure && (
+            <Field label="Play as narrator" hint="you write the narration; characters respond — replaces the AI narrator and your persona">
               <Switch
                 className="h-8"
-                value={form.playAsNarrator}
+                value={playAsNarrator}
                 onChange={(v) =>
                   setForm({
                     ...form,
@@ -333,10 +338,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
                     ...(v ? { personaId: null, narratorEnabled: false, greetings: false } : {}),
                   })
                 }
-                label={form.playAsNarrator ? "You are the narrator" : "Off"}
+                label={playAsNarrator ? "You are the narrator" : "Off"}
               />
             </Field>
-          {!form.playAsNarrator && (
+          )}
+          {!playAsNarrator && (
             <Field label="Your persona">
               <Combobox
                 className="w-full"
@@ -371,55 +377,64 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               onChange={(v) => setForm({ ...form, language: v })}
             />
           </Field>
-          <Field label="POV override">
-            {form.playAsNarrator ? (
-              <div className="h-8 flex items-center text-sm text-content-300">
-                Third person — narration has no &quot;you&quot;
-              </div>
-            ) : (
-              <Select
-                className="w-full"
-                value={form.pov || null}
-                onChange={(v) => setForm({ ...form, pov: v })}
-                options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
-                placeholder="(global default)"
-                clearable
-                onClear={() => setForm({ ...form, pov: "" })}
-              />
-            )}
-          </Field>
-          <Field label="Chat layout" hint="presentation only — switchable anytime in chat settings">
-            <ToggleGroup<"panel" | "dialogue">
-              value={form.layout}
-              onChange={(v) => v && setForm({ ...form, layout: v })}
+          {!pure && (
+            <Field label="POV override">
+              {playAsNarrator ? (
+                <div className="h-8 flex items-center text-sm text-content-300">
+                  Third person — narration has no &quot;you&quot;
+                </div>
+              ) : (
+                <Select
+                  className="w-full"
+                  value={form.pov || null}
+                  onChange={(v) => setForm({ ...form, pov: v })}
+                  options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+                  placeholder="(global default)"
+                  clearable
+                  onClear={() => setForm({ ...form, pov: "" })}
+                />
+              )}
+            </Field>
+          )}
+          {!pure && (
+            <Field label="Chat layout" hint="presentation only — switchable anytime in chat settings">
+              <ToggleGroup<"panel" | "dialogue">
+                value={form.layout}
+                onChange={(v) => v && setForm({ ...form, layout: v })}
+              >
+                <Toggle value="panel"><PanelRight size={13} /> Side panel</Toggle>
+                <Toggle value="dialogue"><Captions size={13} /> Dialogue box</Toggle>
+              </ToggleGroup>
+            </Field>
+          )}
+          {!pure && (
+            <Field
+              label="Narrator"
+              hint={
+                playAsNarrator
+                  ? "that's you — the AI narrator is off"
+                  : "narration, suggested actions — speaks first"
+              }
             >
-              <Toggle value="panel"><PanelRight size={13} /> Side panel</Toggle>
-              <Toggle value="dialogue"><Captions size={13} /> Dialogue box</Toggle>
-            </ToggleGroup>
-          </Field>
-          <Field
-            label="Narrator"
-            hint={
-              form.playAsNarrator
-                ? "that's you — the AI narrator is off"
-                : "narration, suggested actions — speaks first"
-            }
-          >
-            {form.playAsNarrator ? (
-              <div className="h-8 flex items-center text-sm text-content-300">
-                <ScrollText size={14} className="mr-1.5" /> You
-              </div>
-            ) : (
-              <Switch
-                value={form.narratorEnabled}
-                onChange={(v) => setForm({ ...form, narratorEnabled: v })}
-                label={form.narratorEnabled ? "Enabled" : "Disabled"}
-                className="h-8"
-              />
-            )}
-          </Field>
+              {playAsNarrator ? (
+                <div className="h-8 flex items-center text-sm text-content-300">
+                  <ScrollText size={14} className="mr-1.5" /> You
+                </div>
+              ) : (
+                <Switch
+                  value={form.narratorEnabled}
+                  onChange={(v) => setForm({ ...form, narratorEnabled: v })}
+                  label={form.narratorEnabled ? "Enabled" : "Disabled"}
+                  className="h-8"
+                />
+              )}
+            </Field>
+          )}
           {greetingsAvailable && (
-            <Field label="Greeting" hint="the character opens with their greeting message">
+            <Field
+              label="Greeting"
+              hint={pure ? "their greeting opens the chat as their first text" : "the character opens with their greeting message"}
+            >
               <Switch
                 value={form.greetings}
                 onChange={(v) => setForm({ ...form, greetings: v })}
@@ -457,10 +472,12 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
               const chat = await api.post("/api/chats", {
                 ...form,
                 narratorEnabled: narrator,
-                // narration has no "you" — narrator-play pins the third-person convention
-                pov: form.playAsNarrator ? "third" : form.pov,
+                playAsNarrator,
+                // casual has no POV (pure chat); narrator-play pins third person (narration has no "you")
+                pov: pure ? "" : playAsNarrator ? "third" : form.pov,
                 greetings: greetingsAvailable && form.greetings,
-                overrides: form.layout === "dialogue" ? { layout: "dialogue" } : {},
+                // the messenger view has no chat layouts — the layout pick is stage-only
+                overrides: !pure && form.layout === "dialogue" ? { layout: "dialogue" } : {},
               });
               void invalidate("/api/chats", "/api/chats/folders");
               router.push(`/chat/${chat.id}`);

@@ -8,6 +8,16 @@ import { alivenessOf, OFFSCREEN_GAP_MS } from "@/lib/types";
 /** A conversation gap smaller than this is just conversation, not "time passing". */
 export const GAP_NOTE_MIN_MS = 3 * 60 * 60 * 1000;
 
+/**
+ * Where the real-time aliveness traits (time awareness, off-screen life) apply:
+ * casual chats (texting someone real — wall-clock time IS the fiction's time) and
+ * setting-less immersive chats. A fixed scene or location pins the fiction to its
+ * own moment, and playthrough time belongs to the story's director and narrator.
+ */
+export function realTimeApplies(chat: Pick<Chat, "mode" | "sceneId" | "locationId">): boolean {
+  return chat.mode === "casual" || (chat.mode === "immersive" && !chat.sceneId && !chat.locationId);
+}
+
 /** A tail message younger than this means the user is here right now — the gap
  *  that matters is then the one the tail message itself closed. */
 const TAIL_IS_LIVE_MS = 10 * 60 * 1000;
@@ -71,23 +81,23 @@ export interface ReturnEligibility {
 
 /**
  * What a return to this chat should trigger. Pure — the caller supplies the
- * clock and the stored-note lookup. Casual chats only (immersive shares the
- * fictional-time problem, playthroughs belong to the director/narrator), and
- * never when the user plays the narrator (the opening move is theirs by spec).
+ * clock and the stored-note lookup. Runs where real time can be fiction time
+ * (see realTimeApplies: casual + setting-less immersive), and never when the
+ * user plays the narrator (the opening move is theirs by spec).
  *
  * A note newer than the tail message means this return was already handled
  * (another tab, or a Stop-discarded texts-first turn) — nothing regenerates
  * and nobody texts again.
  */
 export function returnEligibility(
-  chat: Pick<Chat, "mode" | "playAsNarrator">,
+  chat: Pick<Chat, "mode" | "playAsNarrator" | "sceneId" | "locationId">,
   characters: Character[],
   messages: MsgLite[],
   noteCreatedAt: (characterId: string) => number | null,
   now: number
 ): ReturnEligibility {
   const none: ReturnEligibility = { generateFor: [], texter: null };
-  if (chat.mode !== "casual" || chat.playAsNarrator) return none;
+  if (!realTimeApplies(chat) || chat.playAsNarrator) return none;
   const live = messages.filter((m) => m.role !== "marker");
   const last = live[live.length - 1];
   if (!last || now - last.createdAt < OFFSCREEN_GAP_MS) return none;

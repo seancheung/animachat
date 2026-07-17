@@ -11,7 +11,8 @@ import {
   type StageAssets,
   type StageState,
 } from "@/lib/stage";
-import { affinityTone, GAP_NOTE_MIN_MS, humanDuration, resumeGapMs, timeAgo } from "./aliveness";
+import { affinityTone, GAP_NOTE_MIN_MS, humanDuration, realTimeApplies, resumeGapMs, timeAgo } from "./aliveness";
+import { toPureChat } from "./pureChat";
 import {
   getChat,
   getCharacter,
@@ -368,6 +369,18 @@ function personaBlock(ctx: ChatContext): string {
 }
 
 function formatRules(ctx: ChatContext, selfName: string | null): string {
+  // casual = pure chat: a real online conversation — no roleplay conventions at all.
+  // The rule is also ENFORCED at the boundary (toPureChat on every reply before
+  // storage); this prompt is the explanation, not the guarantee.
+  if (ctx.chat.mode === "casual") {
+    const self = selfName ?? "you";
+    return [
+      `Write in ${ctx.language}.`,
+      `This is a real online text conversation — a messaging app, not a roleplay transcript. Write ONLY what ${self} would actually type and send: typed words, nothing else.`,
+      `Never write actions, gestures, expressions or narration — no *asterisk actions*, no stage directions, no third-person prose about yourself. Doing something? Say so in words, the way people do over text ("hang on, making coffee").`,
+      `Don't wrap your messages in quotation marks — typed text is just text (quoting someone else is fine).`,
+    ].join("\n");
+  }
   // the user as narrator: their lines are narration, there is no user character in the
   // scene, and the POV setting is moot — everything runs in plain third person
   if (ctx.chat.playAsNarrator) {
@@ -390,6 +403,13 @@ function formatRules(ctx: ChatContext, selfName: string | null): string {
  *  either side; the "user types loosely" note is about READING user text and is dropped —
  *  a draft should use the convention properly. */
 function userFormatRules(ctx: ChatContext): string {
+  // pure chat reads the same from either seat: type what you'd send
+  if (ctx.chat.mode === "casual") {
+    return [
+      `Write in ${ctx.language}.`,
+      `This is a real online text conversation. Write exactly what ${ctx.persona?.name ?? "the user"} would type into the messenger: plain typed text — no *asterisk actions*, no narration, no quotation marks around the message.`,
+    ].join("\n");
+  }
   if (ctx.chat.playAsNarrator) return formatRules(ctx, null);
   return [
     `Write in ${ctx.language}.`,
@@ -425,7 +445,10 @@ export async function historyAsMessages(
     }
   }
   if (out.length === 0 || out[0].role === "assistant") {
-    out.unshift({ role: "user", content: "[The roleplay begins.]" });
+    out.unshift({
+      role: "user",
+      content: ctx.chat.mode === "casual" ? "[The conversation begins.]" : "[The roleplay begins.]",
+    });
   }
   if (out[out.length - 1].role === "assistant") {
     out.push({ role: "user", content: "[Continue.]" });
@@ -452,11 +475,16 @@ export async function buildCharacterRequest(
   const window = verbatimWindow(ctx, model);
   const lore = triggeredLore(ctx, window);
   const personaName = ctx.persona?.name ?? "the user";
+  // pure chat (casual): no roleplay apparatus — no emotion tags, no prose convention
+  const pure = ctx.chat.mode === "casual";
   // aliveness traits apply in casual/immersive chats only — in a playthrough the
   // director and narrator own pacing, and real time isn't story time
   const alive = ctx.snapshot
     ? { initiative: false, timeAware: false, mindState: false, offscreenLife: "off" as const }
     : alivenessOf(character);
+  // the real-time traits additionally need real time to BE fiction time: casual chats
+  // and setting-less immersive chats only (a fixed scene pins its own moment)
+  const timeAware = alive.timeAware && realTimeApplies(ctx.chat);
   // example dialogue seeds the voice early on; once the character has real replies
   // in the window those anchor the style, and the static example only invites copying
   const ownReplies = window.filter(
@@ -491,13 +519,13 @@ export async function buildCharacterRequest(
     ? `WHAT'S ON ${character.name.toUpperCase()}'S MIND RIGHT NOW (private inner state — let it color the reply without announcing it; it may shift through play):\n${mind.content}`
     : "";
   const offscreen =
-    alive.offscreenLife !== "off" && ctx.chat.mode === "casual"
+    alive.offscreenLife !== "off" && realTimeApplies(ctx.chat)
       ? await getOffscreenNote(character.id, ctx.chat.id)
       : null;
   const offscreenBlock = offscreen?.content
     ? `WHAT ${character.name.toUpperCase()} HAS BEEN UP TO SINCE THE LAST CONVERSATION (their off-screen life — bring it up only as it naturally would come up):\n${offscreen.content}`
     : "";
-  const gap = alive.timeAware ? resumeGapMs(ctx.messages, Date.now()) : 0;
+  const gap = timeAware ? resumeGapMs(ctx.messages, Date.now()) : 0;
   const timeBlock =
     gap >= GAP_NOTE_MIN_MS
       ? `TIME: about ${humanDuration(gap)} of real time passed since the previous exchange in this conversation. Let that register the way it would for ${character.name} — a greeting after absence, wondering how things went, life having moved on — without making a ceremony of it.`
@@ -519,10 +547,16 @@ export async function buildCharacterRequest(
     : "";
 
   const system = [
-    `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
+    pure
+      ? `You are ${character.name}, chatting with ${personaName} over an online messenger. Stay in character at all times.`
+      : `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
     `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description, character.name)}`,
     character.exampleDialogue && ownReplies < EXAMPLE_DIALOGUE_FADE
-      ? `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue, character.name)}`
+      ? pure
+        ? // example dialogue is written in the RP convention — inject it in this
+          // mode's clean form, or one *action* teaches the model to emote forever
+          `EXAMPLE OF HOW ${character.name} TEXTS:\n${toPureChat(ctx.sub(character.exampleDialogue, character.name))}`
+        : `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue, character.name)}`
       : "",
     others.length
       ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`
@@ -547,7 +581,7 @@ export async function buildCharacterRequest(
     revealedTruthsBlock(ctx),
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts
-          .map((f) => `- ${f.content}${alive.timeAware ? factWhen(ctx, f) : ""}`)
+          .map((f) => `- ${f.content}${timeAware ? factWhen(ctx, f) : ""}`)
           .join("\n")}`
       : "",
     mindBlock,
@@ -557,22 +591,29 @@ export async function buildCharacterRequest(
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, character.name)}\n` +
-      (ctx.chat.playAsNarrator
-        ? `THE USER IS THE NARRATOR of this roleplay: their messages are narration directing the scene — treat what they establish as true and react to it as ${character.name}.\n` +
-          `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write narration or another character's words: plot developments, outside events and their consequences belong to the narrator. End your reply where the narration can pick the scene back up.\n`
-        : `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write ${personaName}'s actions, dialogue or decisions, nor what happens to them.\n` +
-          (ctx.chat.narratorEnabled
-            ? `Don't advance events beyond ${character.name}'s own doing — plot developments, outside events and their consequences belong to the narrator. End your reply where ${personaName} can react.\n`
-            : `End your reply where ${personaName} can react — don't resolve a whole situation in one message.\n`)) +
+      (pure
+        ? `Write ONLY ${character.name}'s own messages — never ${personaName}'s, and never decide anything for them.\n` +
+          `Text like a real person: length follows the moment — a word, a line, occasionally a few. You may send several messages in one turn by separating them with a blank line; each arrives as its own text.\n`
+        : ctx.chat.playAsNarrator
+          ? `THE USER IS THE NARRATOR of this roleplay: their messages are narration directing the scene — treat what they establish as true and react to it as ${character.name}.\n` +
+            `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write narration or another character's words: plot developments, outside events and their consequences belong to the narrator. End your reply where the narration can pick the scene back up.\n`
+          : `Speak and act ONLY as ${character.name} — your own words, actions and perceptions in the current moment. Never write ${personaName}'s actions, dialogue or decisions, nor what happens to them.\n` +
+            (ctx.chat.narratorEnabled
+              ? `Don't advance events beyond ${character.name}'s own doing — plot developments, outside events and their consequences belong to the narrator. End your reply where ${personaName} can react.\n`
+              : `End your reply where ${personaName} can react — don't resolve a whole situation in one message.\n`)) +
       `Your character sheet is private background knowledge, not content: never quote, paraphrase or re-announce your own traits, backstory or appearance — reveal them through how you act and speak, and only when the scene calls for them. Don't reuse distinctive phrases from your earlier messages.\n` +
       (others.length
-        ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Name</mention> (exact name) in your reply — they will respond next. Do it only when the scene calls for it; a plain name without the tag does not pass the turn.\n`
+        ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Name</mention> (exact name) in your reply — they will respond next. Do it only when the ${pure ? "conversation" : "scene"} calls for it; a plain name without the tag does not pass the turn.\n`
         : "") +
       (opts?.returning
         ? `${personaName} has just come back after time away, and YOU are re-opening the conversation: reach out in ${character.name}'s own way — what's been happening for them, anything left unresolved, or simply wanting ${personaName} back. Don't recap the earlier conversation; pick life up where it is now, and leave ${personaName} room to answer.\n`
         : "") +
-      `Begin your reply with an emotion tag <emo>name</emo> — pick the emotion that best matches the message from: ${emotions}. ` +
-      `The tag is descriptive metadata about your message, NOT a constraint: write whatever emotion the moment truly calls for, then label it. After the tag, write only prose.`,
+      // pure chat has NO tag vocabulary (mentions above excepted) — the emotion
+      // marker belongs to the VN stage, which this mode doesn't have
+      (pure
+        ? `Output plain typed text only — no tags, no markers, no name prefix.`
+        : `Begin your reply with an emotion tag <emo>name</emo> — pick the emotion that best matches the message from: ${emotions}. ` +
+          `The tag is descriptive metadata about your message, NOT a constraint: write whatever emotion the moment truly calls for, then label it. After the tag, write only prose.`),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -750,12 +791,15 @@ export async function buildOrchestratorRequest(ctx: ChatContext, model: Resolved
   }
   const transcript = lines.join("\n");
   const candidates = ctx.present.map((c) => `"${c.id}" = ${c.name}`);
+  // casual chats have no narrator by construction (narratorEnabled is forced false)
   if (ctx.chat.narratorEnabled) candidates.push(`"narrator" = the scene narrator`);
   const system =
-    `You direct a roleplay chat. Given the recent transcript, decide who should respond next.\n` +
+    `You direct a ${ctx.chat.mode === "casual" ? "group text conversation" : "roleplay chat"}. Given the recent transcript, decide who should respond next.\n` +
     `Candidates:\n${candidates.join("\n")}\n` +
     `Rules: prefer a character who was directly addressed or has the most natural reaction. ` +
-    `Pick "narrator" only when narration would genuinely help (scene-setting, a lull, a transition).` +
+    (ctx.chat.narratorEnabled
+      ? `Pick "narrator" only when narration would genuinely help (scene-setting, a lull, a transition).`
+      : ``) +
     ` Respond with ONLY a JSON object: {"next": "<candidate id>"}`;
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho responds next?` }] };
 }
@@ -823,14 +867,18 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
 export async function buildImpersonateRequest(ctx: ChatContext, model: ResolvedModel): Promise<BuiltRequest> {
   const window = verbatimWindow(ctx, model);
   const system = [
-    `You write the next message ON BEHALF OF THE USER in a roleplay chat.`,
+    ctx.chat.mode === "casual"
+      ? `You write the next message ON BEHALF OF THE USER in an online text chat.`
+      : `You write the next message ON BEHALF OF THE USER in a roleplay chat.`,
     personaBlock(ctx),
     worldBlock(ctx),
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     `RULES:\n${userFormatRules(ctx)}\n` +
-      (ctx.chat.playAsNarrator
-        ? `Write 1-3 sentences of NARRATION on the user's behalf — the world's voice: scene movement, outside events, sensory detail. Never write the characters' dialogue. Plain prose only: no emotion tags, no options, no name prefix.`
-        : `Write 1-3 sentences as ${ctx.persona?.name ?? "the user"} — their voice, their perspective. Plain prose only: no emotion tags, no options, no name prefix.`),
+      (ctx.chat.mode === "casual"
+        ? `Write the short text ${ctx.persona?.name ?? "the user"} would send next — their voice, the way they type. No tags, no name prefix.`
+        : ctx.chat.playAsNarrator
+          ? `Write 1-3 sentences of NARRATION on the user's behalf — the world's voice: scene movement, outside events, sensory detail. Never write the characters' dialogue. Plain prose only: no emotion tags, no options, no name prefix.`
+          : `Write 1-3 sentences as ${ctx.persona?.name ?? "the user"} — their voice, their perspective. Plain prose only: no emotion tags, no options, no name prefix.`),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -863,7 +911,7 @@ export async function buildTitleRequest(ctx: ChatContext): Promise<BuiltRequest>
   if (ctx.scene) context.push(`Scene: ${ctx.scene.name}`);
   if (ctx.location) context.push(`Location: ${ctx.location.name}`);
   return {
-    system: `Generate a short evocative title (max 6 words) for this roleplay chat, in ${ctx.language}. Respond with the title only — plain text: no surrounding quotes, no asterisks or other markdown.`,
+    system: `Generate a short evocative title (max 6 words) for this ${ctx.chat.mode === "casual" ? "conversation" : "roleplay chat"}, in ${ctx.language}. Respond with the title only — plain text: no surrounding quotes, no asterisks or other markdown.`,
     messages: [
       {
         role: "user",

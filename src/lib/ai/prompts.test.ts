@@ -4,6 +4,7 @@ import {
   buildDirectorRequest,
   buildImpersonateRequest,
   buildNarratorRequest,
+  buildOrchestratorRequest,
   buildTitleRequest,
   cleanTitle,
   computeStage,
@@ -59,10 +60,12 @@ function makeCharacter(id: string, name: string): Character {
   };
 }
 
+// setting-less immersive — the roleplay baseline (casual is pure chat now; the RP
+// conventions these tests exercise all live in immersive/story mode)
 const chat: Chat = {
   id: "chat1",
   title: "Test",
-  mode: "casual",
+  mode: "immersive",
   folder: "",
   tags: [],
   storyId: null,
@@ -794,5 +797,80 @@ describe("buildTitleRequest (title context)", () => {
   it("falls back to the bare empty-chat line when there is nothing at all", async () => {
     const req = await buildTitleRequest(makeCtx([], []));
     expect(req.messages[0].content).toBe("An empty chat.");
+  });
+});
+
+describe("pure chat (casual mode)", () => {
+  const mira = makeCharacter("c1", "Mira");
+  mira.exampleDialogue = `*wipes her hands on a stained apron* "Burn salve is two silver."`;
+  const pureCtx = (characters: Character[] = [mira], turns = 1): ChatContext => ({
+    ...makeCtx(makeMessages(exchange("c1", turns)), characters),
+    chat: { ...chat, mode: "casual" },
+  });
+
+  it("frames the character prompt as a messenger, with no tag vocabulary", async () => {
+    const req = await buildCharacterRequest(pureCtx(), mira, modelRef);
+    expect(req.system).toContain("over an online messenger");
+    expect(req.system).toContain("no *asterisk actions*");
+    expect(req.system).not.toContain("<emo>");
+    // the roleplay message-format convention is replaced, not appended to
+    expect(req.system).not.toContain('spoken dialogue in "double quotes"');
+  });
+
+  it("injects example dialogue through the pure-chat transform", async () => {
+    const req = await buildCharacterRequest(pureCtx(), mira, modelRef);
+    expect(req.system).toContain("EXAMPLE OF HOW Mira TEXTS");
+    expect(req.system).toContain("Burn salve is two silver.");
+    expect(req.system).not.toContain("*wipes her hands");
+    expect(req.system).not.toContain(`"Burn salve`);
+  });
+
+  it("keeps the mention hand-off convention in group chats", async () => {
+    const kael = makeCharacter("c2", "Kael");
+    const req = await buildCharacterRequest(pureCtx([mira, kael]), mira, modelRef);
+    expect(req.system).toContain("<mention>Their Name</mention>");
+  });
+
+  it("impersonate drafts a plain text message", async () => {
+    const req = await buildImpersonateRequest(pureCtx(), modelRef);
+    expect(req.system).toContain("online text chat");
+    expect(req.system).not.toContain("*asterisks* = actions");
+  });
+
+  it("orchestrates a text conversation with no narrator candidate", async () => {
+    const kael = makeCharacter("c2", "Kael");
+    const req = await buildOrchestratorRequest(pureCtx([mira, kael]), modelRef);
+    expect(req.system).toContain("group text conversation");
+    expect(req.system).not.toContain("narrator");
+  });
+
+  it("opens an empty history with the conversation line, not the roleplay line", async () => {
+    const ctx: ChatContext = { ...makeCtx([], [mira]), chat: { ...chat, mode: "casual" } };
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
+    expect(req.messages[0].content).toBe("[The conversation begins.]");
+  });
+});
+
+describe("real-time aliveness gating (time awareness across modes)", () => {
+  const aware = (): Character => ({
+    ...makeCharacter("c1", "Mira"),
+    aliveness: { ...DEFAULT_ALIVENESS, timeAware: true },
+  });
+  // fixture messages are created at t=0, so "now" is always a huge resume gap
+  const withChat = (patch: Partial<Chat>, c: Character): ChatContext => ({
+    ...makeCtx(makeMessages(exchange("c1", 1)), [c]),
+    chat: { ...chat, ...patch },
+  });
+
+  it("reaches the prompt in casual and setting-less immersive chats", async () => {
+    const c = aware();
+    expect((await buildCharacterRequest(withChat({ mode: "casual" }, c), c, modelRef)).system).toContain("TIME:");
+    expect((await buildCharacterRequest(withChat({ mode: "immersive" }, c), c, modelRef)).system).toContain("TIME:");
+  });
+
+  it("stays out where a fixed setting pins fiction time", async () => {
+    const c = aware();
+    const req = await buildCharacterRequest(withChat({ mode: "immersive", sceneId: "s1" }, c), c, modelRef);
+    expect(req.system).not.toContain("TIME:");
   });
 });

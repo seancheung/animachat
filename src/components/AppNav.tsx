@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { NavTabs } from "@/components/NavTabs";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-/** Top navigation bar — hidden on chat pages, which are full-bleed VN stages
- *  with their own floating back button. */
+/** Top navigation bar — hidden on chat pages: the VN stage is full-bleed with its
+ *  floating back button, and the casual messenger brings its own page header. */
 export function AppNav() {
   const pathname = usePathname();
   if (pathname.startsWith("/chat/")) return null;

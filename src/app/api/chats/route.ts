@@ -1,5 +1,6 @@
 import { bad, handler, ok } from "@/lib/api";
 import { substitutePlaceholders } from "@/lib/ai/placeholders";
+import { toPureChat } from "@/lib/ai/pureChat";
 import { entranceSceneId } from "@/lib/stage";
 import {
   appendMessage,
@@ -60,8 +61,9 @@ export const POST = handler(async (req: Request) => {
   let narratorEnabled = !!b.narratorEnabled;
   let storySnapshot: StorySnapshot | null = null;
   let defaultTitle = "New chat";
-  // casual/immersive only: the user takes the narrator's seat — no AI narrator, no persona
-  const playAsNarrator = mode !== "story" && !!b.playAsNarrator;
+  // immersive only: the user takes the narrator's seat — no AI narrator, no persona
+  // (casual is pure chat and has no narrator seat; story mode's narrator directs)
+  const playAsNarrator = mode === "immersive" && !!b.playAsNarrator;
   if (playAsNarrator) {
     if (!characterIds.length) return bad("Playing as the narrator needs at least one character to narrate to");
     narratorEnabled = false;
@@ -69,13 +71,20 @@ export const POST = handler(async (req: Request) => {
   }
 
   if (mode === "casual") {
-    // characters optional when the narrator carries the chat (solo / text-adventure)
-    if (!characterIds.length && !narratorEnabled)
-      return bad("A casual chat needs at least one character, or the narrator enabled");
+    // pure chat: texting the characters like real people — no narrator, no POV, no
+    // setting, no roleplay conventions (enforced here, not just absent from the wizard)
+    narratorEnabled = false;
+    if (!characterIds.length)
+      return bad("A casual chat needs at least one character — there is no narrator to carry it");
   } else if (mode === "immersive") {
-    if (b.sceneId && (await getScene(b.sceneId))) sceneId = b.sceneId;
-    else if (b.locationId && (await getLocation(b.locationId))) locationId = b.locationId;
-    else return bad("An immersive chat requires a scene or a location");
+    // setting optional (no setting = the default backdrop); when given, it must resolve
+    if (b.sceneId) {
+      if (!(await getScene(b.sceneId))) return bad("Scene not found");
+      sceneId = b.sceneId;
+    } else if (b.locationId) {
+      if (!(await getLocation(b.locationId))) return bad("Location not found");
+      locationId = b.locationId;
+    }
     if (!characterIds.length && !narratorEnabled)
       return bad("An immersive chat needs at least one character, or the narrator enabled");
   } else {
@@ -157,7 +166,8 @@ export const POST = handler(async (req: Request) => {
     narratorEnabled,
     playAsNarrator,
     language: b.language ?? "",
-    pov: b.pov ?? "",
+    // casual chats have no POV — every line is literally its sender's own typed words
+    pov: mode === "casual" ? "" : (b.pov ?? ""),
     modelId: b.modelId ?? null,
     charModels: b.charModels ?? {},
     folder: b.folder ?? "",
@@ -165,23 +175,25 @@ export const POST = handler(async (req: Request) => {
     overrides: b.overrides ?? {},
   });
 
-  // greeting: opt-in, and only for the one shape it suits — a casual 1:1 without narrator
-  // (everywhere else the narrator opens the chat, triggered by the client — and when the
-  // USER is the narrator, the opening move is theirs)
-  if (mode === "casual" && !narratorEnabled && !playAsNarrator && characterIds.length === 1 && b.greetings === true) {
+  // greeting: opt-in, single-character shapes only — a casual 1:1 (the greeting passes
+  // through the pure-chat transform like everything else injected in that mode) or an
+  // immersive 1:1 without narrator (everywhere else the narrator opens the chat,
+  // triggered by the client — and when the USER is the narrator, the move is theirs)
+  if (mode !== "story" && !narratorEnabled && !playAsNarrator && characterIds.length === 1 && b.greetings === true) {
     const c = await getCharacter(characterIds[0]);
     if (c?.greeting) {
       const persona = personaId ? await getPersona(personaId) : null;
+      const greeting = substitutePlaceholders(c.greeting, {
+        characterNames: [c.name],
+        selfName: c.name,
+        userName: persona?.name,
+      });
       await appendMessage({
         chatId: chat.id,
         role: "character",
         characterId: c.id,
-        content: substitutePlaceholders(c.greeting, {
-          characterNames: [c.name],
-          selfName: c.name,
-          userName: persona?.name,
-        }),
-        emotion: "neutral",
+        content: mode === "casual" ? toPureChat(greeting) : greeting,
+        emotion: mode === "casual" ? null : "neutral",
       });
     }
   }
