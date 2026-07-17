@@ -8,7 +8,7 @@ import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { streamSse } from "@/lib/ui";
-import { MessageText } from "./MessageText";
+import { Markdown } from "./Markdown";
 
 interface Msg {
   role: "user" | "assistant";
@@ -199,7 +199,13 @@ export function AssistPanel({
                 : "text-sm px-1"
             }
           >
-            <MessageText text={m.content} streaming={busy && i === messages.length - 1 && m.role === "assistant"} />
+            {/* co-writers speak generic markdown, not the chat's VN prose convention;
+                the user's own lines stay plain text — no renderer second-guesses them */}
+            {m.role === "assistant" ? (
+              <Markdown text={m.content} streaming={busy && i === messages.length - 1} />
+            ) : (
+              <span className="whitespace-pre-wrap">{m.content}</span>
+            )}
             {m.applied && (
               <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-primary-400/90">
                 <CheckIcon /> Applied to the form
