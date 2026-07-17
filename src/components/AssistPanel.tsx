@@ -271,7 +271,9 @@ export function AssistPanel({
         disabled={busy}
         onChange={setInput}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
+          // isComposing: Enter that commits an IME composition must not send (same
+          // guard as the chat page's input)
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             send();
           }
