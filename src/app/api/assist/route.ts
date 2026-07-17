@@ -30,7 +30,9 @@ const FIELD_DOCS: Record<string, string> = {
     `"exampleDialogue": string (a few short sample lines showing their voice — ONLY the character's own utterances, one per line, *actions* in asterisks, "dialogue" in quotes; NEVER a labeled multi-speaker transcript — no "Name: ..." turn labels, no other speakers' lines); ` +
     `"imagePrompt": string (text-to-image prompt for their neutral sprite — see IMAGE PROMPT RULES; cover, in order: physical appearance (body, face, hair), outfit, a neutral standing pose, the framing/view distance (e.g. "full-body shot"), and end with a solid flat single-color background); ` +
     `"customExpressions": [{"name": "kebab-case", "description": "when to use it"}]`,
-  persona: `"name": string; "description": string (who the user is in the roleplay)`,
+  persona:
+    `"name": string; "description": string (who the user is in the roleplay — a THIRD-person character sheet ("[user_name] is …", or their name), ` +
+    `NEVER second person: the text is injected into the AI characters' prompts as background about their interlocutor, where "you are …" would read as describing THEM)`,
   location:
     `"name": string; "description": string (the place, its atmosphere, sensory details); ` +
     `"imagePrompt": string (text-to-image prompt for the background artwork of this place — see IMAGE PROMPT RULES); ` +

@@ -49,6 +49,7 @@ Library entities (characters, personas, locations, scenes, lorebooks) are reusab
 
 ### Persona
 - Multiple user personas (name + description); chosen per chat. Characters respond according to the active persona.
+- **The description is a third-person sheet** (`[user_name] is …`, or the name — never second-person "you are …"): it is injected into the AI characters' prompts as background about their interlocutor, where "you" would read as describing the character receiving the prompt. The co-writer is instructed to write it this way.
 - **Create from character:** a button on a character's library card copies its name + description into a new persona (a snapshot — later character edits don't propagate; self-referential `[char_name]` tags are converted to `[user_name]`).
 
 ### Location
