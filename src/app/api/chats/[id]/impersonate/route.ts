@@ -2,6 +2,7 @@ import { bad, handler, type IdParams } from "@/lib/api";
 import { AiConfigError, resolveModel, streamLlm } from "@/lib/ai/client";
 import { buildContext, buildImpersonateRequest } from "@/lib/ai/prompts";
 import { getChat } from "@/lib/store";
+import { taskMaxTokens } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
           modelRef,
           system: built.system,
           messages: built.messages,
-          maxTokens: 400,
+          maxTokens: taskMaxTokens(ctx.settings, "impersonate"),
           feature: "impersonate",
           chatId: id,
           signal: abort.signal,

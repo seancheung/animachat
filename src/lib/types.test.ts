@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ATTACHMENT_CHAR_CAP, attachmentAllowances } from "@/lib/types";
+import {
+  ATTACHMENT_CHAR_CAP,
+  attachmentAllowances,
+  DEFAULT_SETTINGS,
+  TASK_MAX_TOKENS_DEFAULTS,
+  taskMaxTokens,
+  type Settings,
+} from "@/lib/types";
 
 const file = (len: number) => ({ text: "x".repeat(len) });
 
@@ -29,5 +36,25 @@ describe("attachmentAllowances", () => {
       half,
       half,
     ]);
+  });
+});
+
+describe("taskMaxTokens", () => {
+  const withOverrides = (m: Settings["taskMaxTokens"]): Settings => ({
+    ...DEFAULT_SETTINGS,
+    taskMaxTokens: m,
+  });
+
+  it("falls back to the built-in default when unset", () => {
+    expect(taskMaxTokens(DEFAULT_SETTINGS, "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
+    expect(taskMaxTokens(withOverrides({ narrator: 2500 }), "chat")).toBe(
+      TASK_MAX_TOKENS_DEFAULTS.chat
+    );
+  });
+
+  it("uses the override when set, ignoring non-positive garbage", () => {
+    expect(taskMaxTokens(withOverrides({ chat: 2500 }), "chat")).toBe(2500);
+    expect(taskMaxTokens(withOverrides({ chat: 0 }), "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
+    expect(taskMaxTokens(withOverrides({ chat: -5 }), "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
   });
 });

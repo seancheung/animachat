@@ -11,7 +11,7 @@ import {
   getSettings,
   getStory,
 } from "@/lib/store";
-import { attachmentAllowances } from "@/lib/types";
+import { attachmentAllowances, taskMaxTokens } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -363,7 +363,9 @@ export const POST = handler(async (req: Request) => {
           modelRef,
           system,
           messages: llmMessages,
-          maxTokens: bigBatch ? 32000 : 2000, // item batches (e.g. novel extraction) need room
+          // item batches (e.g. novel extraction) need room; the single-entity
+          // panel keeps a small fixed cap — one form never needs more
+          maxTokens: bigBatch ? taskMaxTokens(settings, "assist") : 2000,
           feature: "assist",
           signal: abort.signal,
         })) {
@@ -416,7 +418,7 @@ export const POST = handler(async (req: Request) => {
                         `Re-emit the ENTIRE block corrected: reply with only ${OPEN}...${CLOSE} — same content, valid JSON, no prose.`,
                     },
                   ],
-                  maxTokens: bigBatch ? 32000 : 2000,
+                  maxTokens: bigBatch ? taskMaxTokens(settings, "assist") : 2000,
                   feature: "assist",
                   signal: abort.signal,
                 })) {

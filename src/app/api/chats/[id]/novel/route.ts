@@ -13,13 +13,12 @@ import {
   type NovelVoice,
 } from "@/lib/novel";
 import { getChat, listMessages } from "@/lib/store";
+import { taskMaxTokens } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 /** ~tokens of transcript per rewrite call; chapters larger than this go in parts */
 const CHUNK_TOKENS = 3500;
-/** rewritten prose is roughly transcript-sized; generous headroom on top */
-const REWRITE_MAX_TOKENS = 6000;
 /** rewritten tail resent with the next chunk for continuity */
 const TAIL_CHARS = 600;
 
@@ -115,7 +114,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
                 messages: [
                   { role: "user", content: novelizeUserMessage(tail, await transcriptForModel(chat, parts[p])) },
                 ],
-                maxTokens: REWRITE_MAX_TOKENS,
+                // rewritten prose is roughly transcript-sized; the default cap
+                // leaves generous headroom on top (user-overridable per task)
+                maxTokens: taskMaxTokens(ctx.settings, "novelize"),
                 feature: "novelize",
                 chatId: id,
                 signal: abort.signal,

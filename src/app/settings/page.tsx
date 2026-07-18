@@ -18,7 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { useGet } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { AI_TASKS, POV_LABELS, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
+import { AI_TASKS, POV_LABELS, TASK_MAX_TOKENS_DEFAULTS, type CappedTask, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -524,6 +524,45 @@ export default function SettingsPage() {
             <Field label="Co-writer JSON fixups" hint="retries feeding a field-data parse error back to the assistant; 0 = off">
               <InputNumber className="w-full" integer value={settings.assistFixupRetries} onChange={(v) => patchSettings({ assistFixupRetries: Math.max(0, v ?? 1) })} />
             </Field>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Advanced: reply length caps</h2>
+          {/* only the prose-sized tasks — the plumbing caps (orchestrator, director,
+              title, memory, off-screen) are protocol-sized and stay fixed */}
+          <div className="panel p-4 grid md:grid-cols-4 gap-3">
+            {(Object.keys(TASK_MAX_TOKENS_DEFAULTS) as CappedTask[]).map((t) => (
+              <Field
+                key={t}
+                label={TASK_LABELS[t]}
+                hint={
+                  t === "assist"
+                    ? "max response tokens for the batch modes (library Assistant, story co-writer)"
+                    : "max response tokens; empty = default"
+                }
+              >
+                <InputNumber
+                  className="w-full"
+                  integer
+                  min={1}
+                  placeholder={`${TASK_MAX_TOKENS_DEFAULTS[t]} (default)`}
+                  value={settings.taskMaxTokens[t] ?? null}
+                  clearable
+                  onClear={() => {
+                    const next = { ...settings.taskMaxTokens };
+                    delete next[t];
+                    patchSettings({ taskMaxTokens: next });
+                  }}
+                  onChange={(v) => {
+                    const next = { ...settings.taskMaxTokens };
+                    if (v && v > 0) next[t] = Math.round(v);
+                    else delete next[t];
+                    patchSettings({ taskMaxTokens: next });
+                  }}
+                />
+              </Field>
+            ))}
           </div>
         </section>
 

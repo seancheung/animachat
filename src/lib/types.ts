@@ -495,6 +495,28 @@ export const AI_TASKS: AiTask[] = [
   "novelize",
 ];
 
+/** Built-in response-token caps for the prose-sized tasks — the only ones a user
+ *  may override (settings.taskMaxTokens). The plumbing tasks (orchestrator,
+ *  director, title, memory, offscreen) keep fixed caps: theirs are protocol-sized —
+ *  raising them buys nothing and lowering them truncates their JSON. For "assist"
+ *  this is the big-batch cap (library Assistant, story co-writer); the
+ *  single-entity panel keeps its small fixed cap. */
+export const TASK_MAX_TOKENS_DEFAULTS = {
+  chat: 1400,
+  narrator: 1000,
+  impersonate: 400,
+  assist: 32000,
+  novelize: 6000,
+} as const;
+
+export type CappedTask = keyof typeof TASK_MAX_TOKENS_DEFAULTS;
+
+/** A task's response-token cap: the user's override when set, else the built-in. */
+export function taskMaxTokens(settings: Settings, task: CappedTask): number {
+  const v = settings.taskMaxTokens[task];
+  return typeof v === "number" && v > 0 ? v : TASK_MAX_TOKENS_DEFAULTS[task];
+}
+
 export interface Settings {
   defaultModelId: string | null;
   taskModels: Partial<Record<AiTask, string | null>>;
@@ -533,6 +555,9 @@ export interface Settings {
   charRelationshipsEnabled: boolean;
   /** co-writer JSON repair: how many times to feed a fields-block parse error back to the model for a fixup; 0 = off */
   assistFixupRetries: number;
+  /** response-token cap overrides for the prose-sized tasks (sparse — an absent
+   *  key means the TASK_MAX_TOKENS_DEFAULTS value; resolve via taskMaxTokens) */
+  taskMaxTokens: Partial<Record<CappedTask, number>>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -557,6 +582,7 @@ export const DEFAULT_SETTINGS: Settings = {
   userRelationshipsEnabled: true,
   charRelationshipsEnabled: true,
   assistFixupRetries: 1,
+  taskMaxTokens: {},
 };
 
 export const EMOTIONS = [

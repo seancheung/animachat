@@ -26,7 +26,7 @@ import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
 import { addVariant, appendMessage, getChat, getMessage, saveChat, setRawOutput } from "@/lib/store";
-import type { Character, Message, SceneEvent } from "@/lib/types";
+import { taskMaxTokens, type Character, type Message, type SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -428,7 +428,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             modelRef,
             system: built.system,
             messages: built.messages,
-            maxTokens: speaker.role === "narrator" ? 1000 : 1400,
+            maxTokens: taskMaxTokens(turnCtx.settings, speaker.role === "narrator" ? "narrator" : "chat"),
             feature: speaker.role === "narrator" ? "narrator" : "chat",
             chatId,
             signal: abort.signal,
