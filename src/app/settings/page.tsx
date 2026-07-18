@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Eraser, Plus, Upload, X } from "lucide-react";
+import { Download, Eraser, Plus, Upload, Volume2, VolumeX, X } from "lucide-react";
 import { Field, Modal, Row } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import { ModelPicker, useProviders } from "@/components/ModelPicker";
@@ -17,6 +17,7 @@ import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { useGet } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
+import { cn } from "@/utils/cn";
 import { AI_TASKS, POV_LABELS, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,6 +30,33 @@ function OpacitySlider({ value, onCommit }: { value: number; onCommit: (v: numbe
     <div className="flex items-center gap-2 h-8">
       <div className="flex-1 flex items-center">
         <Slider min={0.1} max={1} step={0.05} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
+      </div>
+      <span className="text-sm text-content-300 w-9 text-right">{Math.round(v * 100)}%</span>
+    </div>
+  );
+}
+
+/** Audio channel volume with the master mute button — mirrors the chat drawer's ChannelSlider. */
+function VolumeSlider({
+  value,
+  muted,
+  onCommit,
+  onMute,
+}: {
+  value: number;
+  muted: boolean;
+  onCommit: (v: number) => void;
+  onMute: () => void;
+}) {
+  const [v, setV] = useState(value);
+  const commit = () => v !== value && onCommit(v);
+  return (
+    <div className="flex items-center gap-2 h-8">
+      <Button variant="ghost" size="sm" shape="square" title={muted ? "Unmute" : "Mute"} onClick={onMute}>
+        {muted ? <VolumeX /> : <Volume2 />}
+      </Button>
+      <div className={cn("flex-1 flex items-center", muted && "opacity-50")}>
+        <Slider min={0} max={1} step={0.05} value={v} onChange={setV} onPointerUp={commit} onKeyUp={commit} />
       </div>
       <span className="text-sm text-content-300 w-9 text-right">{Math.round(v * 100)}%</span>
     </div>
@@ -407,6 +435,22 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Interface</h2>
           <div className="panel p-4 grid md:grid-cols-2 gap-3">
+            <Field label="Music volume" hint="the scene/location BGM on the VN stage; the mute button silences both channels at once">
+              <VolumeSlider
+                value={settings.bgmVolume}
+                muted={settings.audioMuted}
+                onCommit={(v) => patchSettings({ bgmVolume: v })}
+                onMute={() => patchSettings({ audioMuted: !settings.audioMuted })}
+              />
+            </Field>
+            <Field label="Sound effects volume" hint="ambient loops, typing blips, expression sounds and the messenger's notification ding">
+              <VolumeSlider
+                value={settings.sfxVolume}
+                muted={settings.audioMuted}
+                onCommit={(v) => patchSettings({ sfxVolume: v })}
+                onMute={() => patchSettings({ audioMuted: !settings.audioMuted })}
+              />
+            </Field>
             <Field label="Typing sound" hint="VN typing blips while a reply types out, in the dialogue-box layout">
               <Switch
                 className="h-8"
@@ -415,10 +459,26 @@ export default function SettingsPage() {
                 label={settings.typingSfxEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
-            <Field label="Typing speed" hint="characters per second the reply types out at, in the dialogue-box layout, and the rate casual chats' texting bubbles arrive at; off = everything appears as it streams in. The side panel always shows text as it arrives">
+            <Field label="Typing speed" hint="characters per second the reply types out at, in the dialogue-box layout; off = text appears as it streams in. The side panel always shows text as it arrives, and casual chats pace their bubbles on their own fixed rhythm">
               <TypingSpeedSlider
                 value={settings.typingSpeed}
                 onCommit={(v) => patchSettings({ typingSpeed: v })}
+              />
+            </Field>
+            <Field label="Message sound" hint="casual chats: a notification ding as each texting bubble lands (rides the sound-effects volume)">
+              <Switch
+                className="h-8"
+                value={settings.notificationSfxEnabled}
+                onChange={(v) => patchSettings({ notificationSfxEnabled: v })}
+                label={settings.notificationSfxEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Messenger reply delays" hint="casual chats: replies land as texting bubbles on a real messenger's rhythm — typing indicator, per-bubble typing time, thinking beats; off = text appears as it streams in">
+              <Switch
+                className="h-8"
+                value={settings.messengerPacingEnabled}
+                onChange={(v) => patchSettings({ messengerPacingEnabled: v })}
+                label={settings.messengerPacingEnabled ? "Enabled" : "Disabled"}
               />
             </Field>
             <Field label="Chat panel blur" hint="backdrop blur behind the floating chat panel & the VN dialogue box">

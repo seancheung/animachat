@@ -153,7 +153,7 @@ export function useBlip() {
 }
 
 /** Per-channel trims, so the two sliders sit at comparable loudness at the same value. */
-export const MIX = { bgm: 0.6, ambient: 0.35, blip: 0.5, emote: 0.8 };
+export const MIX = { bgm: 0.6, ambient: 0.35, blip: 0.5, emote: 0.8, notify: 0.8 };
 
 /**
  * One-shot expression SFX (laughter, sigh…): plays when a character's DISPLAYED emotion

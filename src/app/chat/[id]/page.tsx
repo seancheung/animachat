@@ -70,6 +70,7 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const DEFAULT_BLIP = "/sfx-typewriter.wav";
+const NOTIFY_SFX = "/sfx-notification.wav";
 
 /** How long the user's own line holds the dialogue box, however fast the reply lands. */
 const MIN_ECHO_MS = 700;
@@ -314,6 +315,10 @@ export default function ChatPage() {
   const bgmVolume = settings?.bgmVolume ?? DEFAULT_SETTINGS.bgmVolume;
   const sfxVolume = settings?.sfxVolume ?? DEFAULT_SETTINGS.sfxVolume;
   const muted = settings?.audioMuted ?? DEFAULT_SETTINGS.audioMuted;
+  // the messenger's knobs (casual chats): the per-bubble notification ding and the
+  // real-texter reply rhythm — both global settings, editable from the drawer too
+  const notifySfx = settings?.notificationSfxEnabled ?? DEFAULT_SETTINGS.notificationSfxEnabled;
+  const messengerPacing = settings?.messengerPacingEnabled ?? DEFAULT_SETTINGS.messengerPacingEnabled;
   // written straight to the global settings (they outlive the chat, like the other
   // presentation knobs); optimistic so a slider drag doesn't wait on the round trip.
   // The drawer's audio, panel-opacity and panel-blur controls all patch through here.
@@ -382,9 +387,21 @@ export default function ChatPage() {
   // reveal's, not the messenger's. The revealed text goes through the same
   // pure-chat transform the server applies before saving, so the saved message
   // lands pixel-identical to what streamed — no end-of-turn jump.
+  const bubbleCountRef = useRef(0);
+  const regenStreamRef = useRef(false);
   const bubblePacer = useBubblePacer({
-    onReveal: ({ text, pending, typing }) =>
-      setStreaming((s) => (s ? { ...s, text: toPureChat(text), hasMore: pending, typing } : s)),
+    onReveal: ({ text, pending, typing, bubbles }) => {
+      // the messenger ding — one per landed bubble, on the sound-effects volume under
+      // the master mute. Never for a regenerate: re-rolling a message isn't receiving
+      // a text. A Stop that flushes several bubbles at once dings once, for the batch.
+      if (bubbles > bubbleCountRef.current && !regenStreamRef.current && notifySfx && !muted) {
+        const el = new Audio(NOTIFY_SFX);
+        el.volume = Math.max(0, Math.min(1, sfxVolume * MIX.notify));
+        void el.play().catch(() => {});
+      }
+      bubbleCountRef.current = bubbles;
+      setStreaming((s) => (s ? { ...s, text: toPureChat(text), hasMore: pending, typing } : s));
+    },
   });
 
   /* ---- panel scrolling: pinned to the newest message unless the user reads back ---- */
@@ -585,10 +602,15 @@ export default function ChatPage() {
               const speaker = characters.find((c) => c.id === ev.speaker.characterId);
               blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
               typewriter.reset();
-              // a regenerate reveals as it streams (a redo, not fiction) — everything
-              // else gets the messenger rhythm: reaction pause, indicator, paced bubbles
-              if (pure) bubblePacer.begin({ instant: !!body.regenerateMessageId });
-              else bubblePacer.reset();
+              // a regenerate reveals as it streams (a redo, not fiction), as does every
+              // reply when the reply-delays setting is off — everything else gets the
+              // messenger rhythm: reaction pause, indicator, paced bubbles
+              const instant = !!body.regenerateMessageId || !messengerPacing;
+              if (pure) {
+                bubbleCountRef.current = 0;
+                regenStreamRef.current = !!body.regenerateMessageId;
+                bubblePacer.begin({ instant });
+              } else bubblePacer.reset();
               revealedRef.current = 0;
               setLastSavedId(null); // a fresh reply — the previous save must not hide its row
               setStreaming({
@@ -598,7 +620,10 @@ export default function ChatPage() {
                 emotion: null,
                 pageDone: false,
                 hasMore: false,
-                typing: false,
+                // an instant messenger reply has no reaction pause to wait out — the
+                // indicator is up from the very start, bridging until the first chunk
+                // (a paced reply starts indicator-down; a regen never shows it at all)
+                typing: pure && instant,
                 forMessageId: body.regenerateMessageId ?? null,
               });
             } else if (ev.type === "text") {
@@ -637,7 +662,7 @@ export default function ChatPage() {
         setGenerating(false);
       }
     },
-    [locked, id, characters, mutate, typewriter, bubblePacer, pure, dropEcho]
+    [locked, id, characters, mutate, typewriter, bubblePacer, pure, messengerPacing, dropEcho]
   );
 
   function send(textOverride?: string) {
@@ -912,8 +937,11 @@ export default function ChatPage() {
     const streamChar = streaming ? characters.find((c) => c.id === streaming.characterId) : null;
     // the typing indicator is the pacer's to raise: down through the reaction pause
     // (right after you text, the other side is reading, not typing), up while each
-    // bubble is "being typed" and between bubbles
-    const showTyping = generating && !streaming?.forMessageId && !!streaming?.typing;
+    // bubble is "being typed" and between bubbles. With reply delays off there is no
+    // reaction pause to sit behind, so the indicator also bridges the routing gap
+    // before the reply even starts (streaming still null)
+    const showTyping =
+      generating && !streaming?.forMessageId && (streaming ? streaming.typing : !messengerPacing);
     // the streaming reply's bubble group is on screen — the indicator joins it as its
     // next bubble instead of standing alone (which would repeat the avatar and name)
     const streamRowVisible =
@@ -1068,6 +1096,8 @@ export default function ChatPage() {
             muted={muted}
             bgmVolume={bgmVolume}
             sfxVolume={sfxVolume}
+            notifySfx={notifySfx}
+            messengerPacing={messengerPacing}
             panelOpacity={chatOpacity}
             panelBlur={panelBlur}
             onSettings={patchSettings}
@@ -1306,6 +1336,8 @@ export default function ChatPage() {
           muted={muted}
           bgmVolume={bgmVolume}
           sfxVolume={sfxVolume}
+          notifySfx={notifySfx}
+          messengerPacing={messengerPacing}
           panelOpacity={chatOpacity}
           panelBlur={panelBlur}
           onSettings={patchSettings}
@@ -1820,6 +1852,8 @@ function ChatDrawer({
   muted,
   bgmVolume,
   sfxVolume,
+  notifySfx,
+  messengerPacing,
   panelOpacity,
   panelBlur,
   onSettings,
@@ -1881,7 +1915,7 @@ function ChatDrawer({
               onChange={(v: number) => onSettings({ bgmVolume: v })}
             />
           </Field>
-          <Field label="Sound effects" hint="ambient loops and typing blips">
+          <Field label="Sound effects" hint="ambient loops, typing blips and the characters' expression sounds">
             <ChannelSlider
               muted={muted}
               value={sfxVolume}
@@ -1889,6 +1923,37 @@ function ChatDrawer({
               onChange={(v: number) => onSettings({ sfxVolume: v })}
             />
           </Field>
+        </>
+      )}
+      {/* the messenger's sound & rhythm — all global settings, like the stage knobs above */}
+      {pure && (
+        <>
+          <Field label="Sound effects" hint="the message notification sound rides this volume">
+            <ChannelSlider
+              muted={muted}
+              value={sfxVolume}
+              onMute={() => onSettings({ audioMuted: !muted })}
+              onChange={(v: number) => onSettings({ sfxVolume: v })}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Message sound" hint="a notification ding as each texting bubble lands">
+              <Switch
+                className="h-8"
+                value={notifySfx}
+                onChange={(v: boolean) => onSettings({ notificationSfxEnabled: v })}
+                label={notifySfx ? "Enabled" : "Disabled"}
+              />
+            </Field>
+            <Field label="Reply delays" hint="replies land as texting bubbles on a real messenger's rhythm; off = text shows as it streams in">
+              <Switch
+                className="h-8"
+                value={messengerPacing}
+                onChange={(v: boolean) => onSettings({ messengerPacingEnabled: v })}
+                label={messengerPacing ? "Enabled" : "Disabled"}
+              />
+            </Field>
+          </div>
         </>
       )}
       <Field label="Title">

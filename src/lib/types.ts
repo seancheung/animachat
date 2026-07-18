@@ -485,9 +485,14 @@ export interface Settings {
   typingSfxEnabled: boolean;
   /** VN typewriter reveal, in characters per second (dialogue-box layout only — the side
    *  panel always shows text as it arrives); 0 = off (text appears as it streams in).
-   *  Doubles as the casual messenger's pacing rate: each texting bubble arrives whole
-   *  after its length at this speed (clamped to a moment–3s), 0 = no pacing. */
+   *  The casual messenger ignores it — its bubble pacing runs on a fixed human rhythm. */
   typingSpeed: number;
+  /** casual messenger: a notification ding as each texting bubble lands (rides the
+   *  sound-effects volume and the master mute) */
+  notificationSfxEnabled: boolean;
+  /** casual messenger: the real-texter reply rhythm — reaction pause, per-bubble typing
+   *  time, thinking beats between bubbles; off = replies show as they stream in */
+  messengerPacingEnabled: boolean;
   /** music channel: the active scene/location BGM, 0..1 */
   bgmVolume: number;
   /** sound-effects channel: ambient loops and typing blips, 0..1 */
@@ -519,6 +524,8 @@ export const DEFAULT_SETTINGS: Settings = {
   outputReserve: 2000,
   typingSfxEnabled: true,
   typingSpeed: 60,
+  notificationSfxEnabled: true,
+  messengerPacingEnabled: true,
   bgmVolume: 0.8,
   sfxVolume: 0.8,
   audioMuted: false,

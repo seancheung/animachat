@@ -40,6 +40,10 @@ export interface BubbleReveal {
   pending: boolean;
   /** the typing indicator should be up — false during the reaction/thinking pauses */
   typing: boolean;
+  /** how many COMPLETE bubbles the text holds — grows by one as each lands (instant
+   *  replies included: there it counts fully-arrived paragraphs), the cue for the
+   *  messenger's notification ding */
+  bubbles: number;
 }
 
 interface PacerState {
@@ -116,8 +120,13 @@ export function useBubblePacer({
     const emit = () => {
       const s = st.current;
       if (!paced()) {
-        // instant reply (regenerate): passthrough, the reveal follows the stream
-        revealRef.current({ text: s.buf.trim(), pending: !s.ended, typing: !s.ended });
+        // instant reply: passthrough, the reveal follows the stream
+        revealRef.current({
+          text: s.buf.trim(),
+          pending: !s.ended,
+          typing: !s.ended,
+          bubbles: completeBubbles(s.buf, s.ended).length,
+        });
         return;
       }
       const bubbles = completeBubbles(s.buf, s.ended);
@@ -126,6 +135,7 @@ export function useBubblePacer({
         text: bubbles.slice(0, s.shown).join("\n\n"),
         pending,
         typing: !s.pausing && pending,
+        bubbles: Math.min(s.shown, bubbles.length),
       });
     };
 
