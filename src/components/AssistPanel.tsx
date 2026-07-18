@@ -7,6 +7,7 @@ import { LibraryPicker, libraryTypeIcon, type LibraryRef } from "@/components/Li
 import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { ATTACHMENT_CHAR_CAP, attachmentAllowances } from "@/lib/types";
 import { streamSse } from "@/lib/ui";
 import { Markdown } from "./Markdown";
 
@@ -51,6 +52,9 @@ export function AssistPanel({
   const [drafting, setDrafting] = useState<{ label?: string | null } | null>(null);
   const [refs, setRefs] = useState<LibraryRef[]>([]);
   const [files, setFiles] = useState<TextFile[]>([]);
+  // what the server will actually send of each file under the shared budget —
+  // same computation as its truncation, so the chips warn about the exact cut
+  const allowances = attachmentAllowances(files);
   const [pickerOpen, setPickerOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -248,8 +252,19 @@ export function AssistPanel({
               </Badge>
             );
           })}
-          {files.map((f) => (
-            <Badge key={f.name} variant="secondary" rounded>
+          {files.map((f, i) => (
+            <Badge
+              key={f.name}
+              variant={f.text.length > allowances[i] ? "warning" : "secondary"}
+              rounded
+              title={
+                f.text.length <= allowances[i]
+                  ? undefined
+                  : allowances[i] === 0
+                    ? "The shared source-material budget is spent by smaller files — none of this file's text will be sent"
+                    : `Over the shared source-material budget — only the first ${allowances[i].toLocaleString("en-US")} of its ${f.text.length.toLocaleString("en-US")} characters will be sent`
+              }
+            >
               <FileText size={11} /> {f.name}
               <button
                 type="button"
@@ -344,10 +359,19 @@ export function AssistPanel({
                 }
               })
             );
-            setFiles((prev) => [
-              ...prev,
-              ...read.filter((f): f is TextFile => !!f?.text && !prev.some((p) => p.name === f!.name)),
-            ]);
+            const next = [
+              ...files,
+              ...read.filter((f): f is TextFile => !!f?.text && !files.some((p) => p.name === f!.name)),
+            ];
+            // warn about what the server will cut: the attachments share one
+            // character budget, so adding a file can also shrink another's share
+            const allow = attachmentAllowances(next);
+            const cut = next.filter((f, i) => f.text.length > allow[i]);
+            if (cut.length)
+              toast.warning(
+                `The attached files exceed the shared source-material budget (${ATTACHMENT_CHAR_CAP.toLocaleString("en-US")} characters) — ${cut.map((f) => `"${f.name}"`).join(", ")} will be cut. Hover the marked chips for details.`
+              );
+            setFiles(next);
           }}
         />
       )}

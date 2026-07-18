@@ -72,6 +72,28 @@ export function alivenessOf(c: { aliveness?: Partial<Aliveness> | null }): Alive
  *  server's authoritative guard. */
 export const OFFSCREEN_GAP_MS = 6 * 60 * 60 * 1000;
 
+/** Shared character budget for co-writer attached files — one total across all
+ *  attachments, so several files can't blow the context the way one couldn't
+ *  (chars, not tokens — CJK text runs ~1–1.5 tokens per char, so this is far
+ *  more tokens for Chinese than for English). Exported so the panel can warn
+ *  at attach time about exactly what the server will cut. */
+export const ATTACHMENT_CHAR_CAP = 200_000;
+
+/** Each attached file's allowed length under the shared budget, in input order.
+ *  Granted smallest-first so small notes survive intact beside a big novel —
+ *  the cut always lands on the largest files. Deterministic: the server's
+ *  truncation and the panel's warnings run the same computation. */
+export function attachmentAllowances(files: { text: string }[]): number[] {
+  const bySize = files.map((_, i) => i).sort((a, b) => files[a].text.length - files[b].text.length);
+  const out = new Array<number>(files.length).fill(0);
+  let remaining = ATTACHMENT_CHAR_CAP;
+  for (const i of bySize) {
+    out[i] = Math.min(files[i].text.length, remaining);
+    remaining -= out[i];
+  }
+  return out;
+}
+
 export interface Character {
   id: string;
   name: string;

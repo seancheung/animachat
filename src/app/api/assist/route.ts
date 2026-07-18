@@ -11,6 +11,7 @@ import {
   getSettings,
   getStory,
 } from "@/lib/store";
+import { attachmentAllowances } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -83,9 +84,6 @@ interface AssistBody {
   /** text files attached by the user as source material */
   attachments?: { name: string; text: string }[];
 }
-
-/** Cap per attached file so a huge source dump can't blow the context (chars, not tokens — CJK text runs ~1–1.5 tokens per char, so this is far more tokens for Chinese than for English). */
-const ATTACHMENT_CHAR_CAP = 200_000;
 
 /** Serialize an attached library item for the system prompt; null if it no longer exists. */
 async function referenceText(ref: { type: string; id: string }): Promise<string | null> {
@@ -173,12 +171,14 @@ export const POST = handler(async (req: Request) => {
   const refTexts = (await Promise.all((body.references ?? []).map(referenceText))).filter(
     Boolean
   ) as string[];
-  const attachTexts = (body.attachments ?? [])
+  const attachments = (body.attachments ?? [])
     .filter((a) => a?.text)
-    .map((a) => {
-      const t = String(a.text);
-      return `FILE "${a.name}"\n${t.slice(0, ATTACHMENT_CHAR_CAP)}${t.length > ATTACHMENT_CHAR_CAP ? "\n…(truncated)" : ""}`;
-    });
+    .map((a) => ({ name: a.name, text: String(a.text) }));
+  const allowances = attachmentAllowances(attachments);
+  const attachTexts = attachments.map((a, i) => {
+    const cut = a.text.length > allowances[i];
+    return `FILE "${a.name}"\n${a.text.slice(0, allowances[i])}${cut ? "\n…(truncated)" : ""}`;
+  });
 
   const system =
     `You are a creative co-writing assistant inside the editor of a visual-novel roleplay app. ` +
