@@ -466,7 +466,7 @@ export default function StoryEditorPage() {
                   setForm={setAt("scenes", i)}
                   embedded
                   locationField={
-                    <Field label="Location" hint="one of the story's locations — its artwork/BGM take precedence in chat">
+                    <Field label="Location" hint="one of the story's locations — its artwork/BGM fill in whatever the scene doesn't set">
                       <Combobox
                         className="w-full"
                         value={entry.locationId ?? null}

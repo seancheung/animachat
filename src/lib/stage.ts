@@ -151,24 +151,26 @@ export interface StageAssets {
   stageStyle: StageStyle | null;
 }
 
-/** Location assets win when present; otherwise the scene's own. Style fields resolve the same way. */
+/** Scene assets win when present (the scene is the specific moment — its time, weather,
+ *  mood in the place); the location's are the place's defaults, filling what the scene
+ *  leaves empty. Style fields resolve the same way. */
 export function resolveStageAssets(chat: Chat, state: StageState, lib?: LibraryResolvers): StageAssets {
   const scene = chatScene(chat, state.sceneId, lib);
   const location = chatLocation(chat, state.locationId, lib);
-  // per-field precedence: the location's set fields win, the scene's fill the rest;
+  // per-field precedence: the scene's set fields win, the location's fill the rest;
   // styles are opt-in — only an explicitly enabled one contributes
   const active = (st: StageStyle | null | undefined) => (st?.enabled === true ? st : null);
   const style: StageStyle = {
-    ...(active(scene?.stageStyle) ?? {}),
-    ...Object.fromEntries(Object.entries(active(location?.stageStyle) ?? {}).filter(([, v]) => v != null)),
+    ...(active(location?.stageStyle) ?? {}),
+    ...Object.fromEntries(Object.entries(active(scene?.stageStyle) ?? {}).filter(([, v]) => v != null)),
   };
   delete style.enabled;
   return {
     scene,
     location,
-    artworkAsset: location?.artworkAsset ?? scene?.artworkAsset ?? null,
-    bgmAsset: location?.bgmAsset ?? scene?.bgmAsset ?? null,
-    ambientAsset: location?.ambientAsset ?? scene?.ambientAsset ?? null,
+    artworkAsset: scene?.artworkAsset ?? location?.artworkAsset ?? null,
+    bgmAsset: scene?.bgmAsset ?? location?.bgmAsset ?? null,
+    ambientAsset: scene?.ambientAsset ?? location?.ambientAsset ?? null,
     stageStyle: Object.values(style).some((v) => v != null) ? style : null,
   };
 }

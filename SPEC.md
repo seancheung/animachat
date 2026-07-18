@@ -62,7 +62,7 @@ Library entities (characters, personas, locations, scenes, lorebooks) are reusab
 - A situation/setup; optionally references a location.
 - Optional **artwork** (**16:9**), optional **BGM**, optional **ambient SFX loop**, optional **chat style** (same fields as a location's).
 - **Image prompt:** stored text-to-image prompt for the background artwork (co-writable by the AI assistant).
-- **Precedence:** if a scene references a location, the location's artwork/BGM is used; otherwise the scene's own. If the referenced location lacks an asset, fall back to the scene's own (location wins when present — the slot isn't forced). Chat style resolves the same way, per field.
+- **Precedence:** the scene's own artwork/BGM/ambient win when present — the scene is the specific moment (a time of day, a weather, a mood) in the place; the referenced location's assets are the place's defaults, filling per-asset whatever the scene leaves empty. Chat style resolves the same way, per field.
 
 ### Story
 
@@ -342,7 +342,7 @@ Everything in this section applies to **immersive chats and playthroughs** — t
   - **Dialogue box** — a VN dialogue box + input box centered at the bottom of the stage (see below).
 - **Corner controls:** four floating buttons at the stage's bottom-left corner — a **layout switch** (persisted; a shortcut for the chat-layout setting in the settings drawer, which opens from the **left**), **chat settings**, **picture mode** (a non-persisted toggle that hides the chat UI — panel/dialogue box and the scene/location chip — to enjoy the unobstructed stage; generation keeps streaming while hidden, and the button hints at ongoing activity), and **mute**: silences both audio channels at once (persisted).
   The buttons idle at low opacity and come up to full under the cursor. **In picture mode the corner group and the floating back button fade out entirely**, reappearing only on hover — nothing sits on the stage but the art. They stay clickable while invisible, exactly where they were, and **Esc leaves picture mode** (the way out that needs no aiming). An open drawer/dialog always gets Esc first.
-- **Scene/location styling:** when the global "scene & location styling" switch is on (default on), the active scene/location's chat style colors the view. Location fields win over scene fields, per field. Off = the app's default look everywhere. The palette follows one rule — **each text color belongs to exactly one background family**, and every family's text auto-contrasts when not explicitly set:
+- **Scene/location styling:** when the global "scene & location styling" switch is on (default on), the active scene/location's chat style colors the view. Scene fields win over location fields, per field. Off = the app's default look everywhere. The palette follows one rule — **each text color belongs to exactly one background family**, and every family's text auto-contrasts when not explicitly set:
 
 | Family | Backgrounds | Text |
 |---|---|---|

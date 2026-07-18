@@ -36,7 +36,7 @@ AI-driven virtual character chat webapp with a visual-novel presentation. Histor
 - **Presence gates speaking**: in playthroughs the orchestrator, @mentions, force-speaker, and the VN stage all operate on `ctx.present` (on-stage cast), never the full roster.
 - **Character order in a chat is fixed at creation** — it drives `[charN_name]` placeholder resolution (story mode: cast order minus the played character).
 - **Model resolution order**: per-character (group chats) → per-chat → per-task (`taskModels`) → global default.
-- **Asset & location/scene precedence**: location assets win over scene assets when present, falling back per-asset.
+- **Asset & location/scene precedence**: scene assets win over location assets when present (the scene is the specific moment in the place), falling back per-asset to the location's defaults.
 - **Asset references are materialized in `asset_refs`**: every store save/delete of a character/location/scene/story/chat rewrites the owner's rows in the same transaction (`syncAssetRefs`), deriving the ids via `assetIdsOf`/`storyDocAssetIds` (storyDoc.ts) — a new asset-bearing field MUST be added there, or prune will treat its uploads as unreferenced and delete them. The prune endpoint deletes exactly what the table doesn't reference (plus bucket objects with no DB row); no grace period — prune is a manual operator action, and unsaved-editor uploads count as unused.
 
 ## Gotchas

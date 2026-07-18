@@ -20,11 +20,11 @@ function storyListItem(s: Story) {
     castCount: s.characters.length,
     sceneCount: s.scenes.length,
     castNames: s.characters.map((c) => c.name),
-    // cover: the opening scene's artwork (location precedence, like the stage),
+    // cover: the opening scene's artwork (scene precedence, like the stage),
     // else the lead character's sprite/avatar
     coverAsset:
-      firstLocation?.artworkAsset ??
       first?.artworkAsset ??
+      firstLocation?.artworkAsset ??
       lead?.sprites?.neutral ??
       lead?.avatarAsset ??
       null,

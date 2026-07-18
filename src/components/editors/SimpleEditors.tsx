@@ -280,7 +280,7 @@ export function SceneEditor({ initial, onSaved }: { initial: Partial<Scene>; onS
         form={form}
         setForm={setForm}
         locationField={
-          <Field label="Location" hint="when set, the location's artwork/BGM take precedence in chat">
+          <Field label="Location" hint="when set, the location's artwork/BGM fill in whatever the scene doesn't set">
             <Combobox
               className="w-full"
               value={form.locationId ?? null}

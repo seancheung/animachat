@@ -169,18 +169,18 @@ const stageOf = (sceneId: string | null, locationId: string | null) => ({
 });
 
 describe("resolveStageAssets stage style", () => {
-  it("merges per-field with location fields winning, and strips the enabled flag", async () => {
+  it("merges per-field with scene fields winning, and strips the enabled flag", async () => {
     const loc = await saveLocation({ name: "L1", stageStyle: { enabled: true, panelBg: "#111111", accent: "#aaaaaa" } });
     const scn = await saveScene({ name: "S1", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222", stageBg: "#000000" } });
     const st = (await resolveStageAssets(chat, stageOf(scn.id, loc.id))).stageStyle;
-    expect(st).toMatchObject({ panelBg: "#111111", accent: "#aaaaaa", stageBg: "#000000" });
+    expect(st).toMatchObject({ panelBg: "#222222", accent: "#aaaaaa", stageBg: "#000000" });
     expect(st).not.toHaveProperty("enabled");
   });
 
   it("styles are opt-in: a style without enabled: true contributes nothing", async () => {
-    const loc = await saveLocation({ name: "L2", stageStyle: { panelBg: "#111111" } });
-    const scn = await saveScene({ name: "S2", locationId: loc.id, stageStyle: { enabled: true, panelBg: "#222222" } });
-    expect((await resolveStageAssets(chat, stageOf(scn.id, loc.id))).stageStyle?.panelBg).toBe("#222222");
+    const loc = await saveLocation({ name: "L2", stageStyle: { enabled: true, panelBg: "#111111" } });
+    const scn = await saveScene({ name: "S2", locationId: loc.id, stageStyle: { panelBg: "#222222" } });
+    expect((await resolveStageAssets(chat, stageOf(scn.id, loc.id))).stageStyle?.panelBg).toBe("#111111");
   });
 
   it("returns null when the only style is not enabled", async () => {

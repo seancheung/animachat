@@ -785,7 +785,7 @@ export default function ChatPage() {
     void switchLayout("dialogue");
   };
 
-  // active scene/location coloring (location fields win) — gated by the global switch.
+  // active scene/location coloring (scene fields win) — gated by the global switch.
   // Per-surface token derivation lives in lib/stageStyle.ts. Styles supply colors only;
   // panel & bubble opacity are system settings.
   const stageStyle = settings?.stageStyleEnabled !== false ? viewStage?.stageStyle : null;
