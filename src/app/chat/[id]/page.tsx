@@ -151,6 +151,9 @@ interface Streaming {
   pageDone: boolean;
   /** there is more text past the current page */
   hasMore: boolean;
+  /** messenger view: the typing indicator is up (pacer-owned — down during the
+   *  reaction pause before the reply "starts being typed") */
+  typing: boolean;
   /** regeneration: the message this reply replaces — it reveals in place on that row */
   forMessageId: string | null;
 }
@@ -373,14 +376,15 @@ export default function ChatPage() {
 
   // pure chat: the messenger's counterpart to the typewriter — a real text arrives
   // WHOLE once the sender "typed" it, so the pacer holds each paragraph back until
-  // fully streamed and pops it after a typing-time delay (typing speed setting;
-  // 0 = off). `pending` keeps the typing indicator up between bubbles. The revealed
-  // text goes through the same pure-chat transform the server applies before saving,
-  // so the saved message lands pixel-identical to what streamed — no end-of-turn jump.
+  // fully streamed and pops it after a jittered human typing-time delay, a random
+  // reaction pause first and the typing indicator (`typing`) bridging the gaps
+  // between bubbles. Its rhythm is fixed — the typing-speed setting is the VN
+  // reveal's, not the messenger's. The revealed text goes through the same
+  // pure-chat transform the server applies before saving, so the saved message
+  // lands pixel-identical to what streamed — no end-of-turn jump.
   const bubblePacer = useBubblePacer({
-    speed: settings?.typingSpeed ?? DEFAULT_SETTINGS.typingSpeed,
-    onReveal: ({ text, pending }) =>
-      setStreaming((s) => (s ? { ...s, text: toPureChat(text), hasMore: pending } : s)),
+    onReveal: ({ text, pending, typing }) =>
+      setStreaming((s) => (s ? { ...s, text: toPureChat(text), hasMore: pending, typing } : s)),
   });
 
   /* ---- panel scrolling: pinned to the newest message unless the user reads back ---- */
@@ -433,8 +437,10 @@ export default function ChatPage() {
     // `data` is a dep because the scroll container only MOUNTS once the chat GET lands:
     // when the messages page resolves first (its length change fires against the loading
     // screen, scrollRef null), the commit that finally mounts the container changes no
-    // other dep — without `data` the opening jump would never run
-  }, [messages.length, streaming?.text, isStreaming, pendingUser, layout, pictureMode, data]);
+    // other dep — without `data` the opening jump would never run. `streaming?.typing`
+    // because the messenger's indicator pops up mid-turn (after the reaction pause)
+    // with no text change — the pinned view must grow to keep it in sight
+  }, [messages.length, streaming?.text, streaming?.typing, isStreaming, pendingUser, layout, pictureMode, data]);
 
   /* ---- older pages load as the reader scrolls up (panel layout) ---- */
   // a sentinel above the oldest loaded message; the observer fires on mount too, so a
@@ -579,7 +585,10 @@ export default function ChatPage() {
               const speaker = characters.find((c) => c.id === ev.speaker.characterId);
               blipUrlRef.current = assetUrl(speaker?.typingSfxAsset) ?? DEFAULT_BLIP;
               typewriter.reset();
-              bubblePacer.reset();
+              // a regenerate reveals as it streams (a redo, not fiction) — everything
+              // else gets the messenger rhythm: reaction pause, indicator, paced bubbles
+              if (pure) bubblePacer.begin({ instant: !!body.regenerateMessageId });
+              else bubblePacer.reset();
               revealedRef.current = 0;
               setLastSavedId(null); // a fresh reply — the previous save must not hide its row
               setStreaming({
@@ -589,6 +598,7 @@ export default function ChatPage() {
                 emotion: null,
                 pageDone: false,
                 hasMore: false,
+                typing: false,
                 forMessageId: body.regenerateMessageId ?? null,
               });
             } else if (ev.type === "text") {
@@ -900,10 +910,21 @@ export default function ChatPage() {
    * further down exists here. */
   if (pure) {
     const streamChar = streaming ? characters.find((c) => c.id === streaming.characterId) : null;
-    // the typing indicator holds the reply's place before the first bubble (routing,
-    // model latency, the first bubble's typing time) and BETWEEN paced bubbles —
-    // hasMore is the pacer saying more of the reply is still unrevealed
-    const showTyping = generating && !streaming?.forMessageId && (!streaming?.text || !!streaming?.hasMore);
+    // the typing indicator is the pacer's to raise: down through the reaction pause
+    // (right after you text, the other side is reading, not typing), up while each
+    // bubble is "being typed" and between bubbles
+    const showTyping = generating && !streaming?.forMessageId && !!streaming?.typing;
+    // the streaming reply's bubble group is on screen — the indicator joins it as its
+    // next bubble instead of standing alone (which would repeat the avatar and name)
+    const streamRowVisible =
+      !!streaming && !streaming.forMessageId && !!streaming.text && lastNonMarker?.id !== lastSavedId;
+    const typingDots = (
+      <div className="msg-bubble rounded-lg px-3.5 py-3 inline-flex items-center gap-1">
+        <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce" />
+        <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:120ms]" />
+        <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:240ms]" />
+      </div>
+    );
     return (
       <div className="h-full relative flex flex-col">
         <div className="flex items-center gap-2 px-4 h-14 py-2 border-b border-base-400 bg-base-100 shrink-0">
@@ -971,7 +992,7 @@ export default function ChatPage() {
             )}
             {/* a new reply streams in as texting bubbles (paragraph breaks split it live);
                 the row yields to the saved message the moment the refetch carries it */}
-            {streaming && !streaming.forMessageId && streaming.text && lastNonMarker?.id !== lastSavedId && (
+            {streamRowVisible && streaming && (
               <div className="flex gap-3 fade-in">
                 <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
                   {streamChar?.avatarAsset ? (
@@ -988,18 +1009,24 @@ export default function ChatPage() {
                       .split(/\n{2,}/)
                       .map((p) => p.trim())
                       .filter(Boolean)
-                      .map((bubble, i, arr) => (
+                      .map((bubble, i) => (
                         <div key={i} className="msg-bubble rounded-lg px-3.5 py-2.5 text-[0.925rem] leading-relaxed max-w-full">
-                          {/* caret only while more is coming — by swap time (saved row takes
-                              over) it is gone, so the handoff is pixel-identical */}
-                          <MessageText text={bubble} streaming={i === arr.length - 1 && !!streaming.hasMore} />
+                          {/* no caret: a paced bubble lands whole — a caret would say it's
+                              still being typed — and the handoff to the saved row stays
+                              pixel-identical */}
+                          <MessageText text={bubble} />
                         </div>
                       ))}
+                    {/* mid-reply the dots are just the group's next bubble — the row above
+                        already carries the avatar and name */}
+                    {showTyping && <div className="fade-in">{typingDots}</div>}
                   </div>
                 </div>
               </div>
             )}
-            {showTyping && (
+            {/* no bubbles on screen yet (routing, the first bubble's typing time) — the
+                indicator stands alone and introduces the sender */}
+            {showTyping && !streamRowVisible && (
               <div className="flex gap-3 fade-in">
                 <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 bg-base-400 flex items-center justify-center text-sm mt-1">
                   {streamChar?.avatarAsset ? (
@@ -1011,11 +1038,7 @@ export default function ChatPage() {
                 </div>
                 <div>
                   {streamChar && <div className="text-xs text-content-300 mb-0.5">{streamChar.name}</div>}
-                  <div className="msg-bubble rounded-lg px-3.5 py-3 inline-flex items-center gap-1">
-                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce" />
-                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:120ms]" />
-                    <span className="size-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:240ms]" />
-                  </div>
+                  {typingDots}
                 </div>
               </div>
             )}
