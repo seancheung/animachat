@@ -69,7 +69,7 @@ import {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const DEFAULT_BLIP = "/defaults/sfx-typewriter.wav";
+const DEFAULT_BLIP = "/sfx-typewriter.wav";
 
 /** How long the user's own line holds the dialogue box, however fast the reply lands. */
 const MIN_ECHO_MS = 700;

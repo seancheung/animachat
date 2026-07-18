@@ -121,8 +121,8 @@ function CharacterPreview({
             <div
               className="w-2/3 h-5/6 bg-base-400"
               style={{
-                WebkitMaskImage: "url(/defaults/sprite-placeholder.svg)",
-                maskImage: "url(/defaults/sprite-placeholder.svg)",
+                WebkitMaskImage: "url(/sprite-placeholder.svg)",
+                maskImage: "url(/sprite-placeholder.svg)",
                 WebkitMaskSize: "contain",
                 maskSize: "contain",
                 WebkitMaskRepeat: "no-repeat",

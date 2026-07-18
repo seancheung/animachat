@@ -61,8 +61,8 @@ export function VNStage({
                 <div
                   className="h-[92%] w-full"
                   style={{
-                    WebkitMaskImage: "url(/defaults/sprite-placeholder.svg)",
-                    maskImage: "url(/defaults/sprite-placeholder.svg)",
+                    WebkitMaskImage: "url(/sprite-placeholder.svg)",
+                    maskImage: "url(/sprite-placeholder.svg)",
                     WebkitMaskRepeat: "no-repeat",
                     maskRepeat: "no-repeat",
                     WebkitMaskPosition: "bottom center",
