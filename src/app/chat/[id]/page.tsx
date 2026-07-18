@@ -1018,7 +1018,7 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
-            {/* a new reply streams in as texting bubbles (paragraph breaks split it live);
+            {/* a new reply streams in as texting bubbles (line breaks split it live);
                 the row yields to the saved message the moment the refetch carries it */}
             {streamRowVisible && streaming && (
               <div className="flex gap-3 fade-in">
@@ -1034,7 +1034,7 @@ export default function ChatPage() {
                   <div className="text-xs text-content-300 mb-0.5">{streamChar?.name}</div>
                   <div className="flex flex-col gap-1 items-start">
                     {streaming.text
-                      .split(/\n{2,}/)
+                      .split(/\n+/)
                       .map((p) => p.trim())
                       .filter(Boolean)
                       .map((bubble, i) => (

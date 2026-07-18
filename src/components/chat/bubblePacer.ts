@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 /* Paces a streamed pure-chat reply into texting bubbles — the messenger sibling of
  * the VN typewriter (typewriter.ts). A real text arrives WHOLE after the sender
- * "typed" it, so instead of revealing characters this holds each paragraph back
+ * "typed" it, so instead of revealing characters this holds each line back
  * until it has fully arrived, then plays a real messenger's rhythm: a short random
  * pause before the typing indicator comes up (they read your message first), then
  * indicator → bubble → a beat with the indicator DOWN (they think about the next
@@ -34,14 +34,14 @@ const THINK_MIN_MS = 300;
 const THINK_MAX_MS = 1200;
 
 export interface BubbleReveal {
-  /** revealed text — whole bubbles only, joined by paragraph breaks */
+  /** revealed text — whole bubbles only, joined by line breaks */
   text: string;
   /** more of the reply is still unrevealed */
   pending: boolean;
   /** the typing indicator should be up — false during the reaction/thinking pauses */
   typing: boolean;
   /** how many COMPLETE bubbles the text holds — grows by one as each lands (instant
-   *  replies included: there it counts fully-arrived paragraphs), the cue for the
+   *  replies included: there it counts fully-arrived lines), the cue for the
    *  messenger's notification ding */
   bubbles: number;
 }
@@ -89,11 +89,11 @@ function thinkPauseMs(): number {
   return THINK_MIN_MS + Math.random() * (THINK_MAX_MS - THINK_MIN_MS);
 }
 
-/** The bubbles that have FULLY arrived: a paragraph is complete once its trailing
- *  separator has text after it (same rule as the typewriter's pageLimit — a
- *  separator with nothing following isn't a break yet), or the stream has ended. */
+/** The bubbles that have FULLY arrived: a line is complete once a line break
+ *  follows it — text still growing at the buffer's tail isn't a bubble yet — or
+ *  the stream has ended. */
 function completeBubbles(buf: string, ended: boolean): string[] {
-  const parts = buf.split(/\n{2,}/);
+  const parts = buf.split(/\n+/);
   if (!ended) parts.pop(); // still arriving — never show a half-typed text
   return parts.map((p) => p.trim()).filter(Boolean);
 }
@@ -132,7 +132,7 @@ export function useBubblePacer({
       const bubbles = completeBubbles(s.buf, s.ended);
       const pending = !s.ended || s.shown < bubbles.length;
       revealRef.current({
-        text: bubbles.slice(0, s.shown).join("\n\n"),
+        text: bubbles.slice(0, s.shown).join("\n"),
         pending,
         typing: !s.pausing && pending,
         bubbles: Math.min(s.shown, bubbles.length),

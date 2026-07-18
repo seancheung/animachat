@@ -136,11 +136,11 @@ export const MessageRow = memo(function MessageRow({
         </div>
 
         {pureChat && !editing ? (
-          // texting bubbles: paragraph breaks split the message into separate texts —
+          // texting bubbles: line breaks split the message into separate texts —
           // purely display, like the dialogue box's pagination (the raw text is edited whole)
           <div className={cn("flex flex-col gap-1", message.role === "user" ? "items-end" : "items-start")}>
             {(streaming ? streaming.text : v.content)
-              .split(/\n{2,}/)
+              .split(/\n+/)
               .map((p) => p.trim())
               .filter(Boolean)
               .map((bubble, i, arr) => (
