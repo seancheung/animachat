@@ -1,5 +1,6 @@
 import { handler } from "@/lib/api";
 import { getSettings, listModels, listProviders } from "@/lib/store";
+import { DEFAULT_SETTINGS, type Settings } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +11,18 @@ export const GET = handler(async () => {
     listProviders(),
     listModels(),
   ]);
+  // only fields changed from the app defaults travel — the import applies just the keys
+  // the file carries, so an untouched knob here doesn't stomp the target instance's own
+  // value, and a file from an older app version can't reset settings it never knew about
+  const changed: Partial<Settings> = {};
+  for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+    if (JSON.stringify(settings[k]) !== JSON.stringify(DEFAULT_SETTINGS[k]))
+      (changed as Record<string, unknown>)[k] = settings[k];
+  }
   const payload = {
     kind: "animachat-settings",
     version: 1,
-    settings,
+    settings: changed,
     providers,
     models,
   };
