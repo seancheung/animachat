@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Eraser, Plus, Upload, Volume2, VolumeX, X } from "lucide-react";
+import { Download, Eraser, Plus, RotateCcw, Upload, Volume2, VolumeX, X } from "lucide-react";
 import { Field, Modal, Row } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import { ModelPicker, useProviders } from "@/components/ModelPicker";
@@ -18,7 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { useGet } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { AI_TASKS, POV_LABELS, TASK_MAX_TOKENS_DEFAULTS, type CappedTask, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
+import { AI_TASKS, DEFAULT_SETTINGS, POV_LABELS, TASK_MAX_TOKENS_DEFAULTS, type CappedTask, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -83,6 +83,37 @@ const fmtBytes = (b: number) =>
     : b > 0
       ? `${Math.max(1, Math.round(b / 1024))} KB`
       : "0 KB";
+
+/** Numeric setting input in the reply-caps style: the app default shows as the
+ *  placeholder, a value only when it differs from the default, and clearing the
+ *  field returns the setting to the default. A value typed equal to the default
+ *  reads as untouched — the same nuance the settings export lives with. */
+function SettingNumber({
+  value,
+  def,
+  onCommit,
+  integer,
+  min,
+}: {
+  value: number;
+  def: number;
+  onCommit: (v: number) => void;
+  integer?: boolean;
+  min?: number;
+}) {
+  return (
+    <InputNumber
+      className="w-full"
+      integer={integer}
+      min={min}
+      placeholder={`${def} (default)`}
+      value={value === def ? null : value}
+      clearable
+      onClear={() => onCommit(def)}
+      onChange={(v) => onCommit(v ?? def)}
+    />
+  );
+}
 
 const TASK_LABELS: Record<string, string> = {
   chat: "Chat generation",
@@ -510,19 +541,19 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold">Advanced: memory & context</h2>
           <div className="panel p-4 grid md:grid-cols-4 gap-3">
             <Field label="Context budget cap" hint="max prompt tokens per request">
-              <InputNumber className="w-full" integer value={settings.contextBudgetCap} onChange={(v) => patchSettings({ contextBudgetCap: v || 32000 })} />
+              <SettingNumber integer min={1} value={settings.contextBudgetCap} def={DEFAULT_SETTINGS.contextBudgetCap} onCommit={(v) => patchSettings({ contextBudgetCap: v })} />
             </Field>
             <Field label="Verbatim share" hint="fraction kept as raw messages">
-              <InputNumber className="w-full" value={settings.verbatimShare} onChange={(v) => patchSettings({ verbatimShare: v || 0.35 })} />
+              <SettingNumber value={settings.verbatimShare} def={DEFAULT_SETTINGS.verbatimShare} onCommit={(v) => patchSettings({ verbatimShare: v })} />
             </Field>
             <Field label="Chunk threshold" hint="tokens before a summarization pass">
-              <InputNumber className="w-full" integer value={settings.chunkThreshold} onChange={(v) => patchSettings({ chunkThreshold: v || 3000 })} />
+              <SettingNumber integer min={1} value={settings.chunkThreshold} def={DEFAULT_SETTINGS.chunkThreshold} onCommit={(v) => patchSettings({ chunkThreshold: v })} />
             </Field>
             <Field label="Output reserve" hint="tokens reserved for the reply">
-              <InputNumber className="w-full" integer value={settings.outputReserve} onChange={(v) => patchSettings({ outputReserve: v || 2000 })} />
+              <SettingNumber integer min={1} value={settings.outputReserve} def={DEFAULT_SETTINGS.outputReserve} onCommit={(v) => patchSettings({ outputReserve: v })} />
             </Field>
             <Field label="Co-writer JSON fixups" hint="retries feeding a field-data parse error back to the assistant; 0 = off">
-              <InputNumber className="w-full" integer value={settings.assistFixupRetries} onChange={(v) => patchSettings({ assistFixupRetries: Math.max(0, v ?? 1) })} />
+              <SettingNumber integer min={0} value={settings.assistFixupRetries} def={DEFAULT_SETTINGS.assistFixupRetries} onCommit={(v) => patchSettings({ assistFixupRetries: v })} />
             </Field>
           </div>
         </section>
@@ -614,7 +645,7 @@ export default function SettingsPage() {
         </section>
 
         <section className="space-y-3 pb-10">
-          <h2 className="text-lg font-semibold">Settings transfer</h2>
+          <h2 className="text-lg font-semibold">Settings transfer & reset</h2>
           <Row>
             <Button
               variant="secondary"
@@ -627,6 +658,26 @@ export default function SettingsPage() {
             </Button>
             <Button variant="secondary" onClick={() => importSettingsRef.current?.click()}>
               <Upload /> Import settings…
+            </Button>
+            <Button
+              variant="danger"
+              onClick={async () => {
+                if (
+                  !(await confirmDialog({
+                    title: "Reset settings",
+                    message:
+                      "Every global setting returns to the app defaults — including the global default & per-task model picks (you'll need to re-pick a default model), reply caps, roleplay, interface and advanced preferences. Providers & models (and API keys), library content and chats are untouched. Continue?",
+                    confirmLabel: "Reset",
+                    danger: true,
+                  }))
+                )
+                  return;
+                await api.del("/api/settings");
+                toast.success("Settings reset to defaults");
+                location.reload();
+              }}
+            >
+              <RotateCcw /> Reset to defaults
             </Button>
             <input
               ref={importSettingsRef}

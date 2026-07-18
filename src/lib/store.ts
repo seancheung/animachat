@@ -90,6 +90,14 @@ export async function putSettings(patch: Partial<Settings>): Promise<void> {
   });
 }
 
+/** Back to the app defaults: settings are stored-over-defaults, so clearing the
+ *  stored rows (legacy/stray keys included) IS the reset. Providers & models
+ *  live in their own tables and are untouched — but the default/per-task model
+ *  picks are settings, so they clear with everything else. */
+export async function resetSettings(): Promise<void> {
+  await run("DELETE FROM settings");
+}
+
 /* ---------------- providers & models ---------------- */
 
 const providerFromRow = (r: Row): Provider => ({

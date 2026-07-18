@@ -1,5 +1,5 @@
 import { handler, ok } from "@/lib/api";
-import { getSettings, putSettings } from "@/lib/store";
+import { getSettings, putSettings, resetSettings } from "@/lib/store";
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/types";
 
 export const GET = handler(async () => ok(await getSettings()));
@@ -13,5 +13,11 @@ export const PUT = handler(async (req: Request) => {
     if (k in b) patch[k] = b[k];
   }
   await putSettings(patch);
+  return ok(await getSettings());
+});
+
+// reset every global setting to the app defaults; providers & models are untouched
+export const DELETE = handler(async () => {
+  await resetSettings();
   return ok(await getSettings());
 });

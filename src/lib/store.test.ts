@@ -22,6 +22,7 @@ import {
   deleteStory,
   encodeCursor,
   getMessage,
+  getSettings,
   listChatFolders,
   listDistinctTags,
   listReferencedAssetIds,
@@ -29,6 +30,8 @@ import {
   pageChats,
   pageFacts,
   pageMessages,
+  putSettings,
+  resetSettings,
   saveChat,
   saveCharacter,
   registerAsset,
@@ -41,6 +44,18 @@ import {
 
 beforeAll(() => initTestSchema(TEST_SCHEMA));
 afterAll(() => dropTestSchema(TEST_SCHEMA));
+
+describe("resetSettings", () => {
+  it("clears every stored setting back to the defaults", async () => {
+    await putSettings({ language: "French", typingSpeed: 90, taskMaxTokens: { chat: 2500 } });
+    expect((await getSettings()).language).toBe("French");
+    await resetSettings();
+    const s = await getSettings();
+    expect(s.language).toBe("English");
+    expect(s.typingSpeed).toBe(60);
+    expect(s.taskMaxTokens).toEqual({});
+  });
+});
 
 describe("appendMessage tail freeze", () => {
   it("collapses the previous tail's variants to the active one when a follow-up lands", async () => {
