@@ -1,4 +1,5 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
+import { memoryProgress } from "@/lib/ai/memory";
 import {
   getChat,
   getCharacter,
@@ -53,5 +54,7 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     charRelationships: Object.fromEntries(charRelationshipEntries),
     mindStates,
     offscreenNotes,
+    // the two-stage march toward the next summarization pass (null = no memory model)
+    progress: await memoryProgress(id),
   });
 });

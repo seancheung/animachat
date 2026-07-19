@@ -2119,6 +2119,10 @@ function DrawerMemory({ data }: { data: any }) {
     charRelationships: Record<string, any[]>;
     mindStates: { characterId: string; content: string; updatedAt: number }[];
     offscreenNotes: { characterId: string; content: string; createdAt: number }[];
+    progress: {
+      window: { tokens: number; budget: number };
+      pending: { tokens: number; threshold: number };
+    } | null;
   }>(`/api/chats/${chat.id}/memory`);
   const m = memory.data;
   if (!m)
@@ -2132,7 +2136,8 @@ function DrawerMemory({ data }: { data: any }) {
   const hasRels =
     Object.keys(m.relationships ?? {}).length > 0 ||
     Object.values(m.charRelationships ?? {}).some((l) => l.length);
-  if (!m.summary && !hasRels && !m.mindStates.length && !m.offscreenNotes.length)
+  const empty = !m.summary && !hasRels && !m.mindStates.length && !m.offscreenNotes.length;
+  if (empty && !m.progress)
     return (
       <div className="text-xs text-content-400">
         nothing recorded yet — memory builds up in the background as the chat grows
@@ -2143,6 +2148,37 @@ function DrawerMemory({ data }: { data: any }) {
       <div className="text-xs text-content-400">
         read-only — maintained by the background memory pass
       </div>
+      {m.progress && (
+        <Field
+          label="Verbatim window"
+          hint="recent messages sent raw with every request; once the window fills, the oldest scroll out toward summarization"
+        >
+          <div className="space-y-1">
+            <Progress value={Math.min(100, (m.progress.window.tokens / m.progress.window.budget) * 100)} />
+            <div className="text-xs text-content-400">
+              ≈ {m.progress.window.tokens.toLocaleString()} / {m.progress.window.budget.toLocaleString()} tokens
+            </div>
+          </div>
+        </Field>
+      )}
+      {m.progress && (
+        <Field
+          label="Next memory pass"
+          hint="history that has scrolled out of the verbatim window, waiting to be folded into the rolling summary"
+        >
+          <div className="space-y-1">
+            <Progress value={Math.min(100, (m.progress.pending.tokens / m.progress.pending.threshold) * 100)} />
+            <div className="text-xs text-content-400">
+              ≈ {m.progress.pending.tokens.toLocaleString()} / {m.progress.pending.threshold.toLocaleString()} tokens
+            </div>
+          </div>
+        </Field>
+      )}
+      {empty && (
+        <div className="text-xs text-content-400">
+          nothing recorded yet — memory builds up in the background as the chat grows
+        </div>
+      )}
       {m.summary && (
         <Field label="Rolling summary" hint="covers the history that has scrolled out of the recent verbatim window">
           <div className="panel p-2.5 text-xs text-content-300 whitespace-pre-wrap max-h-64 overflow-y-auto">

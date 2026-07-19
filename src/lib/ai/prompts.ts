@@ -236,18 +236,29 @@ async function renderMessageLine(ctx: ChatContext, m: Message): Promise<string |
  *  summary yet would otherwise appear in NEITHER — invisible until the next
  *  memory pass. The memory trigger passes `includeUnsummarized: false` — that
  *  overflow is exactly what it measures and summarizes. */
+/** The verbatim window's token budget for a model — one formula, shared with the
+ *  Memory tab's window-fill gauge so the displayed capacity is the selecting one. */
+export function verbatimBudget(ctx: ChatContext, model: ResolvedModel): number {
+  return Math.max(1000, ctx.contextBudget(model) * ctx.verbatimShare);
+}
+
+/** A message's cost against the window budget (+8 covers role/name framing). */
+export function messageCost(m: Message): number {
+  return estimateTokens(activeContent(m)) + 8;
+}
+
 export function verbatimWindow(
   ctx: ChatContext,
   model: ResolvedModel,
   opts?: { includeUnsummarized?: boolean }
 ): Message[] {
-  const budget = Math.max(1000, ctx.contextBudget(model) * ctx.verbatimShare);
+  const budget = verbatimBudget(ctx, model);
   const extra = opts?.includeUnsummarized === false ? 0 : ctx.chunkThreshold;
   const out: Message[] = [];
   let used = 0;
   for (let i = ctx.messages.length - 1; i >= 0; i--) {
     const m = ctx.messages[i];
-    const cost = estimateTokens(activeContent(m)) + 8;
+    const cost = messageCost(m);
     if (out.length > 0 && used + cost > budget) {
       if (m.position <= ctx.summaryCovered) break;
       if (used + cost > budget + extra) break;

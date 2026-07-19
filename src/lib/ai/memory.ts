@@ -1,5 +1,13 @@
 import { callLlm, estimateTokens, extractJson, resolveModel, type ResolvedModel } from "./client";
-import { activeContent, buildContext, speakerName, verbatimWindow, type ChatContext } from "./prompts";
+import {
+  activeContent,
+  buildContext,
+  messageCost,
+  speakerName,
+  verbatimBudget,
+  verbatimWindow,
+  type ChatContext,
+} from "./prompts";
 import {
   addFact,
   getCharacter,
@@ -50,17 +58,38 @@ function pendingChunk(ctx: ChatContext, windowStart: number): Message[] {
   );
 }
 
-export async function pendingMemoryTokens(chatId: string): Promise<number> {
+/** The two-stage march toward the next memory pass, for the drawer's Memory tab:
+ *  how full the verbatim window is (stage one — nothing summarizes while all
+ *  history still fits), then how far the scrolled-out chunk has crept toward the
+ *  threshold (stage two — the trigger's own measurement, so the bar can't drift
+ *  from what actually fires the pass). Null when no memory model resolves: no
+ *  pass will ever run. */
+export async function memoryProgress(chatId: string): Promise<{
+  window: { tokens: number; budget: number };
+  pending: { tokens: number; threshold: number };
+} | null> {
   const ctx = await buildContext(chatId);
   let model;
   try {
     model = await resolveModel("memory", ctx.chat);
   } catch {
-    return 0;
+    return null;
   }
-  const window = verbatimWindow(ctx, await windowModel(ctx, model), { includeUnsummarized: false });
+  const wModel = await windowModel(ctx, model);
+  const window = verbatimWindow(ctx, wModel, { includeUnsummarized: false });
   const windowStart = window[0]?.position ?? Number.MAX_SAFE_INTEGER;
-  return pendingChunk(ctx, windowStart).reduce((n, m) => n + estimateTokens(activeContent(m)), 0);
+  const tokens = pendingChunk(ctx, windowStart).reduce((n, m) => n + estimateTokens(activeContent(m)), 0);
+  return {
+    window: {
+      tokens: window.reduce((n, m) => n + messageCost(m), 0),
+      budget: verbatimBudget(ctx, wModel),
+    },
+    pending: { tokens, threshold: ctx.chunkThreshold },
+  };
+}
+
+export async function pendingMemoryTokens(chatId: string): Promise<number> {
+  return (await memoryProgress(chatId))?.pending.tokens ?? 0;
 }
 
 /**
