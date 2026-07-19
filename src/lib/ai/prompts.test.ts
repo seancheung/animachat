@@ -608,6 +608,58 @@ describe("buildCharacterRequest", () => {
   });
 });
 
+describe("time awareness (the wall clock reaches the prompt)", () => {
+  const HOUR = 60 * 60 * 1000;
+  const aware = makeCharacter("c1", "Mira");
+  aware.aliveness = { ...DEFAULT_ALIVENESS, timeAware: true };
+
+  /** good night a day ago, then the user comes back and speaks */
+  function agedMessages(gapMs = 24 * HOUR): Message[] {
+    const now = Date.now();
+    const msgs = makeMessages([{ role: "user" }, { role: "character", characterId: "c1" }, { role: "user" }]);
+    msgs[0].createdAt = now - gapMs - HOUR;
+    msgs[1].createdAt = now - gapMs;
+    msgs[2].createdAt = now - 60 * 1000;
+    return msgs;
+  }
+
+  it("injects the clock and the resume note, and marks the gap inside the history", async () => {
+    const ctx = makeCtx(agedMessages(), [aware]);
+    const req = await buildCharacterRequest(ctx, aware, modelRef);
+    expect(req.system).toContain("TIME: right now it is");
+    expect(req.system).toContain("of real time passed since the previous exchange");
+    // the separator lands as a user-role line right where the day passed
+    const gapLines = req.messages.filter((m) => m.role === "user" && m.content.includes("[About 24 hours later.]"));
+    expect(gapLines).toHaveLength(1);
+    // never inside the character's own few-shot lines
+    expect(req.messages.some((m) => m.role === "assistant" && m.content.includes("later.]"))).toBe(false);
+  });
+
+  it("keeps the clock but drops gap material when the conversation never paused", async () => {
+    const ctx = makeCtx(agedMessages(5 * 60 * 1000), [aware]);
+    const req = await buildCharacterRequest(ctx, aware, modelRef);
+    expect(req.system).toContain("TIME: right now it is");
+    expect(req.system).not.toContain("real time passed");
+    expect(req.messages.some((m) => m.content.includes("later.]"))).toBe(false);
+  });
+
+  it("injects nothing without the trait", async () => {
+    const plain = makeCharacter("c1", "Mira");
+    const ctx = makeCtx(agedMessages(), [plain]);
+    const req = await buildCharacterRequest(ctx, plain, modelRef);
+    expect(req.system).not.toContain("TIME:");
+    expect(req.messages.some((m) => m.content.includes("later.]"))).toBe(false);
+  });
+
+  it("injects nothing when a setting pins the fiction to its own moment", async () => {
+    const ctx = makeCtx(agedMessages(), [aware]);
+    ctx.chat = { ...chat, locationId: "loc1" };
+    const req = await buildCharacterRequest(ctx, aware, modelRef);
+    expect(req.system).not.toContain("TIME:");
+    expect(req.messages.some((m) => m.content.includes("later.]"))).toBe(false);
+  });
+});
+
 describe("playing as narrator (the user is the narrator)", () => {
   const mira = makeCharacter("c1", "Mira");
   const gmCtx = (): ChatContext => ({
@@ -720,15 +772,18 @@ describe("aliveness prompt gates", () => {
     const req = await buildCharacterRequest(ctxFor(dbChar, { snapshot: true, msgAt: Date.now() - 8 * HOUR }), dbChar, modelRef);
     expect(req.system).not.toContain("HAS A LIFE OF THEIR OWN");
     expect(req.system).not.toContain("ON VALE'S MIND");
-    expect(req.system).not.toContain("TIME: about");
+    expect(req.system).not.toContain("TIME:");
   });
 
-  it("a real gap surfaces as a TIME note only when time awareness is on", async () => {
+  it("a real gap surfaces in the TIME note only when time awareness is on", async () => {
     const old = { msgAt: Date.now() - 30 * HOUR };
-    expect((await buildCharacterRequest(ctxFor(dbChar, old), dbChar, modelRef)).system).toContain("TIME: about 30 hours");
-    expect((await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef)).system).not.toContain("TIME: about");
+    expect((await buildCharacterRequest(ctxFor(dbChar, old), dbChar, modelRef)).system).toContain("About 30 hours of real time passed");
+    // no gap: the clock still reads, the resume note doesn't
+    const fresh = (await buildCharacterRequest(ctxFor(dbChar), dbChar, modelRef)).system;
+    expect(fresh).toContain("TIME: right now it is");
+    expect(fresh).not.toContain("real time passed");
     const timeless = { ...dbChar, aliveness: { ...dbChar.aliveness, timeAware: false } };
-    expect((await buildCharacterRequest(ctxFor(timeless, old), timeless, modelRef)).system).not.toContain("TIME: about");
+    expect((await buildCharacterRequest(ctxFor(timeless, old), timeless, modelRef)).system).not.toContain("TIME:");
   });
 
   it("mind state and off-screen notes inject from the store behind their gates", async () => {

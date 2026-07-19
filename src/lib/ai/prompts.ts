@@ -11,7 +11,7 @@ import {
   type StageAssets,
   type StageState,
 } from "@/lib/stage";
-import { affinityTone, GAP_NOTE_MIN_MS, humanDuration, realTimeApplies, resumeGapMs, timeAgo } from "./aliveness";
+import { affinityTone, clockTime, GAP_NOTE_MIN_MS, humanDuration, realTimeApplies, resumeGapMs, timeAgo } from "./aliveness";
 import { toPureChat } from "./pureChat";
 import {
   getChat,
@@ -426,7 +426,8 @@ export async function historyAsMessages(
   ctx: ChatContext,
   window: Message[],
   isSelf: (m: Message) => boolean,
-  selfEmotionTags: boolean
+  selfEmotionTags: boolean,
+  timeGaps = false
 ): Promise<LlmMessage[]> {
   const out: LlmMessage[] = [];
   const push = (role: "user" | "assistant", content: string) => {
@@ -435,8 +436,18 @@ export async function historyAsMessages(
     if (last && last.role === role) last.content += "\n\n" + content;
     else out.push({ role, content });
   };
+  // time awareness: a real-time jump between messages is marked IN the history,
+  // where the model actually reads — adjacent undated lines read as seconds
+  // apart, and a system-prompt note alone loses to that. User-role like the
+  // [Continue.] convention, so the character's own few-shot lines stay clean.
+  let prevAt: number | null = null;
   for (const m of window) {
-    if (isSelf(m) && m.role !== "marker") {
+    if (m.role === "marker") continue; // legacy role — never a timeline moment
+    if (timeGaps && prevAt !== null && m.createdAt - prevAt >= GAP_NOTE_MIN_MS) {
+      push("user", `[About ${humanDuration(m.createdAt - prevAt)} later.]`);
+    }
+    prevAt = m.createdAt;
+    if (isSelf(m)) {
       const emo = activeEmotion(m);
       push("assistant", (selfEmotionTags && emo ? `<emo>${emo}</emo>` : "") + activeContent(m));
     } else {
@@ -526,10 +537,12 @@ export async function buildCharacterRequest(
     ? `WHAT ${character.name.toUpperCase()} HAS BEEN UP TO SINCE THE LAST CONVERSATION (their off-screen life — bring it up only as it naturally would come up):\n${offscreen.content}`
     : "";
   const gap = timeAware ? resumeGapMs(ctx.messages, Date.now()) : 0;
-  const timeBlock =
-    gap >= GAP_NOTE_MIN_MS
-      ? `TIME: about ${humanDuration(gap)} of real time passed since the previous exchange in this conversation. Let that register the way it would for ${character.name} — a greeting after absence, wondering how things went, life having moved on — without making a ceremony of it.`
-      : "";
+  const timeBlock = timeAware
+    ? `TIME: right now it is ${clockTime(new Date())}.` +
+      (gap >= GAP_NOTE_MIN_MS
+        ? ` About ${humanDuration(gap)} of real time passed since the previous exchange in this conversation. Let that register the way it would for ${character.name} — a greeting after absence, wondering how things went, life having moved on — without making a ceremony of it.`
+        : "")
+    : "";
   const initiativeBlock = alive.initiative
     ? `${character.name.toUpperCase()} HAS A LIFE OF THEIR OWN: moods, opinions, wants, and things going on beyond this conversation. Let that show — bring up ${character.name}'s own topics when the moment allows, ask ${personaName} about things ${character.name} remembers, disagree or tease when it's in character, want things and say so, drift the subject the way real conversation drifts. Not every reply must serve ${personaName}'s last line, and none should follow a fixed shape (action + response + question back) — vary length and rhythm like a real person.`
     : "";
@@ -620,7 +633,7 @@ export async function buildCharacterRequest(
 
   return {
     system,
-    messages: await historyAsMessages(ctx, window, (m) => m.role === "character" && m.characterId === character.id, true),
+    messages: await historyAsMessages(ctx, window, (m) => m.role === "character" && m.characterId === character.id, true, timeAware),
   };
 }
 

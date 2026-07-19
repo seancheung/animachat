@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   affinityTone,
+  clockTime,
   GAP_NOTE_MIN_MS,
   humanDuration,
   resumeGapMs,
@@ -53,6 +54,18 @@ describe("humanDuration / timeAgo", () => {
   it("dates facts, with a floor for fresh ones", () => {
     expect(timeAgo(5 * 60 * 1000)).toBe("just now");
     expect(timeAgo(3 * DAY)).toBe("3 days ago");
+  });
+});
+
+describe("clockTime", () => {
+  it("formats a local wall-clock moment rounded to the nearest hour", () => {
+    expect(clockTime(new Date(2026, 6, 19, 21, 20))).toBe("Sunday, July 19, 2026, around 9 PM");
+    expect(clockTime(new Date(2026, 6, 19, 21, 40))).toBe("Sunday, July 19, 2026, around 10 PM");
+    expect(clockTime(new Date(2026, 0, 5, 0, 7))).toBe("Monday, January 5, 2026, around 12 AM");
+    expect(clockTime(new Date(2026, 0, 5, 11, 45))).toBe("Monday, January 5, 2026, around 12 PM");
+  });
+  it("rolls the date over when rounding crosses midnight", () => {
+    expect(clockTime(new Date(2026, 6, 19, 23, 40))).toBe("Monday, July 20, 2026, around 12 AM");
   });
 });
 

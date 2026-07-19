@@ -43,6 +43,23 @@ export function timeAgo(ms: number): string {
   return `${humanDuration(ms)} ago`;
 }
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "Saturday, July 19, 2026, around 9 PM" — the wall clock as prompt material
+ *  (time awareness), rounded to the nearest hour: precise enough for the fiction,
+ *  coarse enough that the system prompt only changes hourly (a minute clock would
+ *  bust provider prefix caching on every turn). The whole timestamp is rounded,
+ *  so a late-night hour rolls the date over with it. Server-local time, which
+ *  today is the user's own machine; per-user time zones are a multi-user-migration
+ *  concern. Hand-assembled so the format doesn't drift with the runtime's ICU. */
+export function clockTime(date: Date): string {
+  const d = new Date(date.getTime() + 30 * 60 * 1000);
+  const h12 = d.getHours() % 12 || 12;
+  const ampm = d.getHours() < 12 ? "AM" : "PM";
+  return `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, around ${h12} ${ampm}`;
+}
+
 /**
  * The real-time gap the conversation just resumed across, in ms (0 = none).
  * If the newest message is old, the user is returning to an idle chat right now;
