@@ -14,6 +14,8 @@ import {
   Clapperboard,
   Download,
   Eye,
+  GitFork,
+  Landmark,
   MapPin,
   PanelRight,
   ScrollText,
@@ -63,6 +65,7 @@ import {
   type EmotionEntry,
   type Message,
   type Pov,
+  type SceneEvent,
   type Settings,
   type StageEventEntry,
 } from "@/lib/types";
@@ -723,6 +726,17 @@ export default function ChatPage() {
     await mutate();
   };
 
+  // fork-at-message — shared by the message rows and the drawer's story milestones
+  const forkAt = async (messageId: string) => {
+    if (!(await confirmDialog({
+      title: "Fork chat",
+      message: "Start a new chat from this point? Everything up to this message is copied — this chat stays untouched.",
+      confirmLabel: "Fork",
+    }))) return;
+    const res = await api.post(`/api/chats/${id}/fork`, { messageId });
+    router.push(`/chat/${res.chatId}`);
+  };
+
   // human-readable stage direction for a narrator message's events
   const charName = (cid: string) =>
     characters.find((c) => c.id === cid)?.name ?? chat?.nameSnapshots?.[cid] ?? "?";
@@ -740,6 +754,7 @@ export default function ChatPage() {
     if (ev.sceneId) parts.push(`Scene: ${sceneNameById[ev.sceneId] ?? "?"}`);
     if (ev.enter?.length) parts.push(`Enter ${ev.enter.map(charName).join(", ")}`);
     if (ev.leave?.length) parts.push(`Exit ${ev.leave.map(charName).join(", ")}`);
+    for (const c of ev.commit ?? []) parts.push(`Committed: ${c.length > 80 ? `${c.slice(0, 80)}…` : c}`);
     if (ev.theEnd) parts.push("The End");
     return parts.length ? parts.join(" · ") : null;
   };
@@ -996,15 +1011,7 @@ export default function ChatPage() {
                   await api.del(`/api/messages/${m.id}`);
                   await mutate();
                 }}
-                onFork={async () => {
-                  if (!(await confirmDialog({
-                    title: "Fork chat",
-                    message: "Start a new chat from this point? Everything up to this message is copied — this chat stays untouched.",
-                    confirmLabel: "Fork",
-                  }))) return;
-                  const res = await api.post(`/api/chats/${id}/fork`, { messageId: m.id });
-                  router.push(`/chat/${res.chatId}`);
-                }}
+                onFork={() => forkAt(m.id)}
                 onPickOption={(text) => send(text)}
               />
             ))}
@@ -1101,6 +1108,7 @@ export default function ChatPage() {
             panelOpacity={chatOpacity}
             panelBlur={panelBlur}
             onSettings={patchSettings}
+            onFork={forkAt}
             onPatch={async (patch: any) => {
               await api.patch(`/api/chats/${id}`, patch);
               await mutate();
@@ -1199,15 +1207,7 @@ export default function ChatPage() {
               await api.del(`/api/messages/${m.id}`);
               await mutate();
             }}
-            onFork={async () => {
-              if (!(await confirmDialog({
-                title: "Fork chat",
-                message: "Start a new chat from this point? Everything up to this message is copied — this chat stays untouched.",
-                confirmLabel: "Fork",
-              }))) return;
-              const res = await api.post(`/api/chats/${id}/fork`, { messageId: m.id });
-              router.push(`/chat/${res.chatId}`);
-            }}
+            onFork={() => forkAt(m.id)}
             onPickOption={(text) => send(text)}
             onShowOnStage={() => showOnStage(m)}
           />
@@ -1341,6 +1341,7 @@ export default function ChatPage() {
           panelOpacity={chatOpacity}
           panelBlur={panelBlur}
           onSettings={patchSettings}
+          onFork={forkAt}
           onPatch={async (patch: any) => {
             await api.patch(`/api/chats/${id}`, patch);
             await mutate();
@@ -1857,6 +1858,7 @@ function ChatDrawer({
   panelOpacity,
   panelBlur,
   onSettings,
+  onFork,
   onPatch,
 }: any) {
   const chat = data.chat;
@@ -2077,6 +2079,7 @@ function ChatDrawer({
             </Field>
           );
         })()}
+      {chat.mode === "story" && <StoryLedger data={data} onFork={onFork} />}
       {chat.mode === "immersive" && (data.stage?.scene || data.stage?.location) && (
         <Field label="Setting (fixed)">
           <div className="flex gap-1.5">
@@ -2111,6 +2114,99 @@ function ChatDrawer({
 /** The drawer's Memory tab: read-only inspection of what the memory pass maintains
  *  for this chat — rolling summary, relationship states, states of mind, off-screen
  *  notes. Fetched lazily on first open; nothing here is editable. */
+/** The playthrough's consequence ledger — a deterministic fold of the timeline's
+ *  stage events (no fetch, no model call): the road taken, standing commitments,
+ *  the secrets score, and the irreversible moments as fork-here milestones. */
+function StoryLedger({ data, onFork }: any) {
+  const chat = data.chat;
+  const events: { id: string; position: number; sceneEvent: SceneEvent }[] = data.stageEvents ?? [];
+  const sceneName = (sid: string) =>
+    data.storyScenes?.find((s: any) => s.id === sid)?.name ?? data.sceneNames?.[sid] ?? "?";
+  const secrets: any[] = chat.storySnapshot?.secrets ?? [];
+  const secretTitle = (sid: string) => secrets.find((s) => s.id === sid)?.title ?? "?";
+  const revealed: string[] = data.stage?.revealed ?? [];
+  const buried = secrets.filter((s) => !revealed.includes(s.id));
+  const commitments: string[] = data.stage?.commitments ?? [];
+
+  // the road taken: start scene, then every advance in timeline order
+  const startId = chat.sceneId ?? chat.storySnapshot?.scenes?.[0]?.id ?? null;
+  const path = [startId, ...events.map((e) => e.sceneEvent.sceneId)].filter(Boolean).map((sid) => sceneName(sid!));
+
+  // milestones = the irreversible moments (staging-only events are routine, not milestones)
+  const milestones = events.flatMap((e) => {
+    const ev = e.sceneEvent;
+    const parts: string[] = [];
+    if (ev.sceneId) parts.push(`Scene: ${sceneName(ev.sceneId)}`);
+    for (const r of ev.reveal ?? []) parts.push(`Revealed: ${secretTitle(r)}`);
+    for (const c of ev.commit ?? []) parts.push(c);
+    if (ev.theEnd) parts.push("The End");
+    return parts.length ? [{ id: e.id, label: parts.join(" · ") }] : [];
+  });
+
+  if (!milestones.length && !commitments.length && path.length <= 1 && !secrets.length) return null;
+  return (
+    <Field
+      label="Story ledger"
+      hint="what this run has made true — fork a milestone to replay from just after that moment"
+    >
+      <div className="space-y-2 text-xs">
+        {path.length > 1 && (
+          <div className="text-content-300">
+            <span className="text-content-200">The road taken:</span> {path.join(" → ")}
+          </div>
+        )}
+        {!data.ended && data.exitRead && (
+          <div className="text-content-300">
+            Scene progress:{" "}
+            {data.exitRead === "met"
+              ? "the scene's work feels done"
+              : data.exitRead === "near"
+                ? "the scene feels close to done"
+                : "the scene still has work to do"}
+          </div>
+        )}
+        {commitments.length > 0 && (
+          <div className="space-y-0.5">
+            <div className="text-content-200 flex items-center gap-1"><Landmark size={11} /> What has been done</div>
+            {commitments.map((c, i) => (
+              <div key={i} className="text-content-300 pl-4">— {c}</div>
+            ))}
+          </div>
+        )}
+        {secrets.length > 0 && (
+          <div className="text-content-300">
+            Secrets: {revealed.length} revealed
+            {buried.length > 0 && <> · {buried.length} still buried{data.ended && " for good"}</>}
+            {/* naming what never surfaced is only fair once nothing can surface anymore */}
+            {data.ended && buried.length > 0 && (
+              <span className="text-content-400"> ({buried.map((s) => s.title).join(", ")})</span>
+            )}
+          </div>
+        )}
+        {milestones.length > 0 && (
+          <div className="space-y-0.5">
+            <div className="text-content-200">Milestones</div>
+            {milestones.map((m) => (
+              <div key={m.id} className="flex items-center gap-1.5 group">
+                <span className="text-content-300 truncate">{m.label}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto shrink-0 opacity-60 hover:opacity-100"
+                  title="Fork a new chat from this moment"
+                  onClick={() => onFork?.(m.id)}
+                >
+                  <GitFork size={12} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 function DrawerMemory({ data }: { data: any }) {
   const chat = data.chat;
   const memory = useGet<{
@@ -2119,6 +2215,7 @@ function DrawerMemory({ data }: { data: any }) {
     charRelationships: Record<string, any[]>;
     mindStates: { characterId: string; content: string; updatedAt: number }[];
     offscreenNotes: { characterId: string; content: string; createdAt: number }[];
+    storyBonds: { characterId: string; bonds: { towards: string; stance: string; note: string }[] }[];
     progress: {
       window: { tokens: number; budget: number };
       pending: { tokens: number; threshold: number };
@@ -2136,7 +2233,8 @@ function DrawerMemory({ data }: { data: any }) {
   const hasRels =
     Object.keys(m.relationships ?? {}).length > 0 ||
     Object.values(m.charRelationships ?? {}).some((l) => l.length);
-  const empty = !m.summary && !hasRels && !m.mindStates.length && !m.offscreenNotes.length;
+  const bonds = (m.storyBonds ?? []).filter((b) => b.bonds.length);
+  const empty = !m.summary && !hasRels && !m.mindStates.length && !m.offscreenNotes.length && !bonds.length;
   if (empty && !m.progress)
     return (
       <div className="text-xs text-content-400">
@@ -2215,6 +2313,23 @@ function DrawerMemory({ data }: { data: any }) {
                 </div>
               );
             })}
+          </div>
+        </Field>
+      )}
+      {bonds.length > 0 && (
+        <Field label="Bonds" hint="this playthrough's evolving stances — story-local: a replay starts fresh">
+          <div className="space-y-2">
+            {bonds.map((rec) => (
+              <div key={rec.characterId} className="panel p-2.5 space-y-0.5">
+                <div className="text-sm">{nameOf(rec.characterId)}</div>
+                {rec.bonds.map((b, i) => (
+                  <div key={i} className="text-xs text-content-300">
+                    → {b.towards}: {b.stance}
+                    {b.note ? ` — ${b.note}` : ""}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </Field>
       )}

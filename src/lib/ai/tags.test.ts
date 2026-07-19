@@ -111,6 +111,29 @@ describe("TagStreamParser", () => {
     expect(textOf(events)).toBe("<reveal>Kael's debt");
   });
 
+  it("parses commit lines, stripped from text, across chunk boundaries", () => {
+    const events = run(["She swears it. <com", "mit>Mira promised Kael the medallion</commit>Done."]);
+    expect(events.find((e) => e.type === "commit")).toEqual({
+      type: "commit",
+      text: "Mira promised Kael the medallion",
+    });
+    expect(textOf(events)).toBe("She swears it. Done.");
+  });
+
+  it("holds a commit payload longer than a name would be allowed", () => {
+    // commit bodies are sentences, not names — the name-length cap must not
+    // flush a legitimate payload as text mid-stream
+    const line = "The player chose the smugglers over the guard, and the eastern gate now stands unwatched at night";
+    const events = run([`<commit>${line}`, `</commit>`]);
+    expect(events.find((e) => e.type === "commit")).toEqual({ type: "commit", text: line });
+  });
+
+  it("fails soft on an unclosed commit tag", () => {
+    const events = run(["<commit>never closed"]);
+    expect(events.some((e) => e.type === "commit")).toBe(false);
+    expect(textOf(events)).toBe("<commit>never closed");
+  });
+
   it("empty-bodied tags flush as literal text without corrupting what follows", () => {
     // regression: the parser used to consume the tag before rejecting it,
     // eating the first character of the following prose
@@ -149,6 +172,10 @@ describe("TagStreamParser", () => {
 describe("parseTagged", () => {
   it("collects reveal titles", () => {
     expect(parseTagged("A. <reveal>What sleeps below</reveal> B.").reveal).toEqual(["What sleeps below"]);
+  });
+
+  it("collects commit lines", () => {
+    expect(parseTagged("Sworn. <commit>Kael was spared</commit> After.").commit).toEqual(["Kael was spared"]);
   });
 
   it("captures the targeted next-scene payload; bare tag leaves it null", () => {

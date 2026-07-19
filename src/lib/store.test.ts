@@ -21,16 +21,21 @@ import {
   deleteCharacter,
   deleteStory,
   encodeCursor,
+  getDirectorRead,
   getMessage,
   getSettings,
+  getStoryBonds,
   listChatFolders,
   listDistinctTags,
   listReferencedAssetIds,
+  listStoryBonds,
   pageCharacters,
   pageChats,
   pageFacts,
   pageMessages,
+  putDirectorRead,
   putSettings,
+  putStoryBonds,
   resetSettings,
   saveChat,
   saveCharacter,
@@ -507,5 +512,38 @@ describe("pageFacts", () => {
     const after = await pageFacts(c.id, {});
     expect(after.items.map((f) => f.id).sort()).toEqual(ids);
     expect(after.items.find((f) => f.id === inChat.id)?.chatTitle).toBeNull();
+  });
+});
+
+describe("story bonds & director reads (playthrough-scoped)", () => {
+  it("round-trips bonds keyed by snapshot cast id (no character row needed)", async () => {
+    const chat = await saveChat({ title: "bonds" });
+    // embedded cast ids have no characters row — the table must accept them
+    expect(await getStoryBonds(chat.id, "embedded-1")).toBeNull();
+    const bonds = [{ towards: "Mira", stance: "guarded", note: "she saw the scar" }];
+    await putStoryBonds(chat.id, "embedded-1", bonds);
+    expect((await getStoryBonds(chat.id, "embedded-1"))?.bonds).toEqual(bonds);
+    // replacement, not merge
+    const next = [{ towards: "Mira", stance: "wavering", note: "" }];
+    await putStoryBonds(chat.id, "embedded-1", next);
+    expect((await getStoryBonds(chat.id, "embedded-1"))?.bonds).toEqual(next);
+    expect(await listStoryBonds(chat.id)).toHaveLength(1);
+    // bonds die with the chat (ON DELETE CASCADE)
+    await deleteChat(chat.id);
+    expect(await listStoryBonds(chat.id)).toEqual([]);
+  });
+
+  it("director reads are scene-keyed: a scene change invalidates by mismatch", async () => {
+    const chat = await saveChat({ title: "reads" });
+    expect(await getDirectorRead(chat.id, "s1")).toBeNull();
+    await putDirectorRead(chat.id, "s1", "near");
+    expect(await getDirectorRead(chat.id, "s1")).toBe("near");
+    // read from another scene — stale, treated as absent
+    expect(await getDirectorRead(chat.id, "s2")).toBeNull();
+    // one row per chat: the new scene's read replaces the old
+    await putDirectorRead(chat.id, "s2", "met");
+    expect(await getDirectorRead(chat.id, "s2")).toBe("met");
+    expect(await getDirectorRead(chat.id, "s1")).toBeNull();
+    await deleteChat(chat.id);
   });
 });

@@ -6,6 +6,8 @@ import {
   getSummary,
   inTransaction,
   listMessages,
+  listStoryBonds,
+  putStoryBonds,
   putSummary,
   saveChat,
 } from "@/lib/store";
@@ -48,6 +50,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         (m) => m.position <= anchor.position && m.position <= summary.coveredPosition
       ).length;
       await putSummary(created.id, summary.content, covered - 1);
+      // story-local bonds are written only from summarized chunks, so they describe
+      // history up to the summary's coverage — valid for the fork exactly when the
+      // summary itself carries (truncated-away history must not leak in as feelings)
+      for (const rec of await listStoryBonds(id)) {
+        if (rec.bonds.length) await putStoryBonds(created.id, rec.characterId, rec.bonds);
+      }
     }
     return created;
   });

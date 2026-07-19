@@ -7,6 +7,8 @@
  *                               chosen road at an authored branch point)
  *   <enter>name</enter> / <leave>name</leave>  (narrator, inline — stage presence)
  *   <reveal>title</reveal>     (narrator, inline — story secret established as truth)
+ *   <commit>fact</commit>      (narrator, inline — an irreversible commitment recorded
+ *                               as a standing fact of the playthrough; free-text payload)
  *   <the-end/>                 (narrator, trailing — playthrough concluded)
  *
  * Everything fails soft: malformed/unclosed tags flush as plain text.
@@ -20,13 +22,16 @@ export type TagEvent =
   | { type: "enter"; name: string }
   | { type: "leave"; name: string }
   | { type: "reveal"; name: string }
+  | { type: "commit"; text: string }
   | { type: "theEnd" };
 
-const OPENERS = ["<emo>", "<options>", "<next-scene", "<enter>", "<leave>", "<reveal>", "<the-end"];
+const OPENERS = ["<emo>", "<options>", "<next-scene", "<enter>", "<leave>", "<reveal>", "<commit>", "<the-end"];
 const MAX_EMO = 120;
 const MAX_OPTIONS = 4000;
 const MAX_NEXT_SCENE = 40;
 const MAX_NAME = 200;
+// a commitment payload is a written line, not a name — give it sentence room
+const MAX_COMMIT = 400;
 
 export class TagStreamParser {
   private buf = "";
@@ -116,18 +121,18 @@ export class TagStreamParser {
       return b.length > MAX_OPTIONS || final ? "not-a-tag" : "hold";
     }
 
-    for (const tag of ["enter", "leave", "reveal"] as const) {
+    for (const tag of ["enter", "leave", "reveal", "commit"] as const) {
       const open = `<${tag}>`;
       if (b.startsWith(open)) {
         const closeTag = `</${tag}>`;
         const close = b.indexOf(closeTag);
         if (close !== -1) {
-          const name = b.slice(open.length, close).trim();
-          if (!name) return "not-a-tag"; // empty body: leave buf untouched so it flushes as text
+          const body = b.slice(open.length, close).trim();
+          if (!body) return "not-a-tag"; // empty body: leave buf untouched so it flushes as text
           this.buf = b.slice(close + closeTag.length);
-          return { type: tag, name };
+          return tag === "commit" ? { type: "commit", text: body } : { type: tag, name: body };
         }
-        return b.length > MAX_NAME || final ? "not-a-tag" : "hold";
+        return b.length > (tag === "commit" ? MAX_COMMIT : MAX_NAME) || final ? "not-a-tag" : "hold";
       }
     }
 
@@ -193,6 +198,7 @@ export function parseTagged(text: string): {
   enter: string[];
   leave: string[];
   reveal: string[];
+  commit: string[];
   theEnd: boolean;
 } {
   const parser = new TagStreamParser();
@@ -205,6 +211,7 @@ export function parseTagged(text: string): {
   const enter: string[] = [];
   const leave: string[] = [];
   const reveal: string[] = [];
+  const commit: string[] = [];
   let theEnd = false;
   for (const ev of events) {
     if (ev.type === "text") content += ev.text;
@@ -216,7 +223,8 @@ export function parseTagged(text: string): {
     } else if (ev.type === "enter") enter.push(ev.name);
     else if (ev.type === "leave") leave.push(ev.name);
     else if (ev.type === "reveal") reveal.push(ev.name);
+    else if (ev.type === "commit") commit.push(ev.text);
     else if (ev.type === "theEnd") theEnd = true;
   }
-  return { content: content.trim(), emotion, options, nextScene, nextSceneTarget, enter, leave, reveal, theEnd };
+  return { content: content.trim(), emotion, options, nextScene, nextSceneTarget, enter, leave, reveal, commit, theEnd };
 }

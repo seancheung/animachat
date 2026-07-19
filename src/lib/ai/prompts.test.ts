@@ -25,9 +25,11 @@ const TEST_SCHEMA = `test_prompts_${process.pid.toString(36)}_${Date.now().toStr
 process.env.ANIMACHAT_PG_SCHEMA = TEST_SCHEMA;
 import { dropTestSchema, initTestSchema } from "@/lib/testDb";
 import {
+  putDirectorRead,
   putMindState,
   putOffscreenNote,
   putRelationship,
+  putStoryBonds,
   saveChat,
   saveCharacter,
   saveLocation,
@@ -137,7 +139,7 @@ function makeCtx(messages: Message[], characters: Character[]): ChatContext {
     persona: null,
     playedCharacter: null,
     snapshot: null,
-    stage: { sceneId: null, locationId: null, present: null, revealed: [], ended: false },
+    stage: { sceneId: null, locationId: null, present: null, revealed: [], commitments: [], ended: false },
     scene: null,
     location: null,
     ended: false,
@@ -165,6 +167,7 @@ const stageOf = (sceneId: string | null, locationId: string | null) => ({
   locationId,
   present: null,
   revealed: [],
+  commitments: [],
   ended: false,
 });
 
@@ -317,7 +320,7 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
       ...ctx,
       chat: { ...chat, mode: "story", narratorEnabled: true, storySnapshot: snapshot },
       snapshot,
-      stage: { sceneId: "s1", locationId: null, present: ["c1", "c2"], revealed, ended: false },
+      stage: { sceneId: "s1", locationId: null, present: ["c1", "c2"], revealed, commitments: [], ended: false },
     };
   }
 
@@ -363,6 +366,60 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     expect(req.system).toContain("Scene goal: Entangle the user in the debt");
     expect(req.system).toContain("headed toward: Ends at dawn");
     expect(req.system).not.toContain("Kael owes the Ashen Guild too.");
+  });
+
+  it("commitments are standing facts for every participant, and the narrator records them", async () => {
+    const base = storyCtx([]);
+    const ctx = { ...base, stage: { ...base.stage, commitments: ["Mira swore to repay the Guild"] } };
+    const miraReq = await buildCharacterRequest(ctx, mira, modelRef);
+    expect(miraReq.system).toContain("WHAT HAS BEEN DONE");
+    expect(miraReq.system).toContain("Mira swore to repay the Guild");
+    const kaelReq = await buildCharacterRequest(ctx, kael, modelRef);
+    expect(kaelReq.system).toContain("Mira swore to repay the Guild");
+    const narrReq = await buildNarratorRequest(ctx, modelRef);
+    expect(narrReq.system).toContain("Mira swore to repay the Guild");
+    expect(narrReq.system).toContain("<commit>");
+    // an empty fold injects nothing and asks for no bookkeeping it can't use
+    expect((await buildCharacterRequest(base, mira, modelRef)).system).not.toContain("WHAT HAS BEEN DONE");
+  });
+
+  it("bonds are private to their owner; the narrator sees the whole web", async () => {
+    const saved = await saveChat({ title: "bonds-prompt" });
+    await putStoryBonds(saved.id, "c1", [{ towards: "Kael", stance: "wavering", note: "his debt reframed him" }]);
+    const base = storyCtx([]);
+    const tracked = [
+      { ...mira, trackRelationship: true },
+      { ...kael, trackRelationship: true },
+    ];
+    const ctx: ChatContext = {
+      ...base,
+      chat: { ...base.chat, id: saved.id },
+      characters: tracked,
+      present: tracked,
+    };
+    const miraReq = await buildCharacterRequest(ctx, tracked[0], modelRef);
+    expect(miraReq.system).toContain("HOW MIRA STANDS WITH THE OTHERS");
+    expect(miraReq.system).toContain("toward Kael: wavering");
+    const kaelReq = await buildCharacterRequest(ctx, tracked[1], modelRef);
+    expect(kaelReq.system).not.toContain("wavering");
+    const narrReq = await buildNarratorRequest(ctx, modelRef);
+    expect(narrReq.system).toContain("WHERE BONDS STAND");
+    expect(narrReq.system).toContain("Mira toward Kael: wavering");
+  });
+
+  it("the director remembers its exit read; the narrator hears it as pacing", async () => {
+    const saved = await saveChat({ title: "exit-read-prompt" });
+    const base = storyCtx([]);
+    const ctx: ChatContext = { ...base, chat: { ...base.chat, id: saved.id } };
+    // no read yet: the dashboard asks for one but reports no prior judgment
+    expect((await buildDirectorRequest(ctx, modelRef)).system).toContain(`"exit"`);
+    expect((await buildDirectorRequest(ctx, modelRef)).system).not.toContain("last turn");
+    await putDirectorRead(saved.id, "s1", "near");
+    expect((await buildDirectorRequest(ctx, modelRef)).system).toContain(
+      "Your read of the advance condition last turn: near"
+    );
+    const narrReq = await buildNarratorRequest(ctx, modelRef);
+    expect(narrReq.system).toContain("PACING: the scene is close to done");
   });
 
   it("playing a cast member anchors the narrator's camera and options to them", async () => {
@@ -528,7 +585,7 @@ describe("narrator branching & offstage pressures", () => {
       persona: playedId
         ? { id: playedId, name: "Kael", description: "", tags: [], createdAt: 0, updatedAt: 0 }
         : null,
-      stage: { sceneId, locationId: null, present: ["c1"], revealed: [], ended: false },
+      stage: { sceneId, locationId: null, present: ["c1"], revealed: [], commitments: [], ended: false },
     };
   }
 

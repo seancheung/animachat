@@ -30,8 +30,8 @@ const full = [
   stub(2, { enter: ["c"] }),
   stub(3, null),
   stub(4, { sceneId: "s2" }),
-  stub(5, null),
-  stub(6, { reveal: ["secret1"], theEnd: true }),
+  stub(5, { commit: ["Kael was spared", "Kael was spared"] }), // duplicate within an event folds once
+  stub(6, { reveal: ["secret1"], commit: ["The medallion went to the sea"], theEnd: true }),
 ];
 const sparse = full.filter((m) => m.sceneEvent);
 
@@ -44,6 +44,7 @@ describe("computeStage over the sparse event projection", () => {
       locationId: null,
       present: ["b"],
       revealed: ["secret1"],
+      commitments: ["Kael was spared", "The medallion went to the sea"],
       ended: true,
     });
   });

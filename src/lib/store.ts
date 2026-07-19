@@ -3,6 +3,7 @@ import type {
   Chat,
   Character,
   CharRelationship,
+  ExitRead,
   Fact,
   Lorebook,
   Location,
@@ -18,6 +19,8 @@ import type {
   SceneEvent,
   Settings,
   Story,
+  StoryBond,
+  StoryBondsRecord,
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
@@ -1279,6 +1282,48 @@ export async function putOffscreenNote(characterId: string, chatId: string, cont
     `INSERT INTO offscreen_notes (character_id, chat_id, content, created_at) VALUES (?,?,?,?)
      ON CONFLICT(character_id, chat_id) DO UPDATE SET content=excluded.content, created_at=excluded.created_at`,
     [characterId, chatId, content, now()]
+  );
+}
+
+/* ---- story-local bonds & the director's exit read (playthrough-scoped) ---- */
+
+const storyBondsFromRow = (r: Row): StoryBondsRecord => ({
+  chatId: r.chat_id,
+  characterId: r.character_id,
+  bonds: J.parse(r.bonds, []),
+  updatedAt: r.updated_at,
+});
+
+export async function getStoryBonds(chatId: string, characterId: string): Promise<StoryBondsRecord | null> {
+  const r = await get("SELECT * FROM story_bonds WHERE chat_id=? AND character_id=?", [chatId, characterId]);
+  return r ? storyBondsFromRow(r) : null;
+}
+
+export async function listStoryBonds(chatId: string): Promise<StoryBondsRecord[]> {
+  return (await all("SELECT * FROM story_bonds WHERE chat_id=?", [chatId])).map(storyBondsFromRow);
+}
+
+export async function putStoryBonds(chatId: string, characterId: string, bonds: StoryBond[]): Promise<void> {
+  await run(
+    `INSERT INTO story_bonds (chat_id, character_id, bonds, updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(chat_id, character_id) DO UPDATE SET bonds=excluded.bonds, updated_at=excluded.updated_at`,
+    [chatId, characterId, JSON.stringify(bonds), now()]
+  );
+}
+
+/** Pacing state, not fiction: the read is keyed to the scene it was made in, and a
+ *  read from another scene is treated as absent (scene changes invalidate by mismatch). */
+export async function getDirectorRead(chatId: string, sceneId: string | null): Promise<ExitRead | null> {
+  const r = await get("SELECT * FROM director_reads WHERE chat_id=?", [chatId]);
+  if (!r || (r.scene_id ?? null) !== (sceneId ?? null)) return null;
+  return r.exit_read === "unmet" || r.exit_read === "near" || r.exit_read === "met" ? r.exit_read : null;
+}
+
+export async function putDirectorRead(chatId: string, sceneId: string | null, exitRead: ExitRead): Promise<void> {
+  await run(
+    `INSERT INTO director_reads (chat_id, scene_id, exit_read, updated_at) VALUES (?,?,?,?)
+     ON CONFLICT(chat_id) DO UPDATE SET scene_id=excluded.scene_id, exit_read=excluded.exit_read, updated_at=excluded.updated_at`,
+    [chatId, sceneId, exitRead, now()]
   );
 }
 

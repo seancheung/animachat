@@ -1,6 +1,6 @@
 import { bad, handler, ok, type IdParams } from "@/lib/api";
 import { buildContext, resolveStageAssets } from "@/lib/ai/prompts";
-import { deleteChat, getChat, getScene, saveChat } from "@/lib/store";
+import { deleteChat, getChat, getDirectorRead, getScene, saveChat } from "@/lib/store";
 
 export const GET = handler(async (_req: Request, { params }: IdParams) => {
   const { id } = await params;
@@ -39,6 +39,9 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     storyScenes: ctx.snapshot?.scenes ?? [],
     sceneNames: Object.fromEntries(sceneNameEntries),
     ended: ctx.ended,
+    // the director's latest read of the current scene's exit condition (story mode;
+    // null until a routed turn produces one, or after a scene change resets it)
+    exitRead: ctx.snapshot && !ctx.ended ? await getDirectorRead(id, stage.sceneId) : null,
   });
 });
 

@@ -24,10 +24,13 @@ import {
   getPersona,
   getRelationship,
   getScene,
+  getDirectorRead,
   getSettings,
+  getStoryBonds,
   getSummary,
   listFacts,
   listMessages,
+  listStoryBonds,
 } from "@/lib/store";
 import type {
   Chat,
@@ -356,6 +359,17 @@ function revealedTruthsBlock(ctx: ChatContext): string {
     : "";
 }
 
+/** Standing commitments — the playthrough's irreversible facts, folded from <commit>
+ *  events. Established truth for every participant, like revealed secrets. */
+function commitmentsBlock(ctx: ChatContext): string {
+  const done = ctx.stage.commitments;
+  return done.length
+    ? ctx.sub(
+        `WHAT HAS BEEN DONE (standing facts of this playthrough — promises made, sides chosen, lines crossed. They hold: never contradict or quietly undo one):\n${done.map((c) => `- ${c}`).join("\n")}`
+      )
+    : "";
+}
+
 function worldBlock(ctx: ChatContext): string {
   const parts: string[] = [];
   if (ctx.snapshot) {
@@ -529,6 +543,16 @@ export async function buildCharacterRequest(
       if (r) charRels.push({ other: o, rel: r });
     }
   }
+  // story-local bonds replace library relationships inside a playthrough (embedded
+  // cast never touch the library tables; a replay starts fresh)
+  const bonds =
+    ctx.snapshot && character.trackRelationship
+      ? ((await getStoryBonds(ctx.chat.id, character.id))?.bonds ?? [])
+      : [];
+  const bondsBlock = bonds.length
+    ? `HOW ${character.name.toUpperCase()} STANDS WITH THE OTHERS RIGHT NOW (private, evolving — let it color tone and choices without announcing it):\n` +
+      bonds.map((b) => `- toward ${b.towards}: ${b.stance}${b.note ? ` — ${b.note}` : ""}`).join("\n")
+    : "";
 
   const emotions = [
     ...EMOTIONS,
@@ -603,6 +627,8 @@ export async function buildCharacterRequest(
       : "",
     secretBlock,
     revealedTruthsBlock(ctx),
+    commitmentsBlock(ctx),
+    bondsBlock,
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts
           .map((f) => `- ${f.content}${timeAware ? factWhen(ctx, f) : ""}`)
@@ -706,6 +732,18 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
       (offStage.length ? `\nCAST OFF STAGE (can be brought in): ${offStage.map((c) => c.name).join(", ")}` : "")
     : "";
 
+  // the director's remembered exit read — shared pacing state (like "turns since
+  // narration"), never a content instruction: what to write stays the narrator's
+  const exitRead = ctx.snapshot && !ctx.ended ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
+  const pacingBlock =
+    exitRead === "met"
+      ? finalScene
+        ? `PACING: the scene's job reads as done — and this is the story's final scene. If play agrees, the resolution is at hand.`
+        : `PACING: the scene's job reads as done. If play agrees, favor writing the transition over lingering.`
+      : exitRead === "near"
+        ? `PACING: the scene is close to done — steer play toward its exit rather than opening new ground.`
+        : "";
+
   // the story design layer — the narrator is the one voice that knows all of it
   const entry = currentSceneEntry(ctx);
   const contractBlock =
@@ -732,6 +770,18 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
           `THE CAMERA IS ${played.name.toUpperCase()}: this playthrough is ${played.name}'s story, told strictly from within their reach. Narrate only what ${played.name} can perceive. Scene setups and story text may describe the wider situation — render only the slice that reaches ${played.name}; everything elsewhere arrives only as it would (sounds, news, consequences, arrivals). Never narrate a vantage ${played.name} doesn't hold.`
         )
       : "";
+  // where bonds stand, cast-wide — the narrator's read on "when trust has grown"-style
+  // reveal hints and on which roads feel earned; written by the memory pass
+  const allBonds = ctx.snapshot ? await listStoryBonds(ctx.chat.id) : [];
+  const bondLines = allBonds.flatMap((rec) => {
+    const owner = ctx.characters.find((c) => c.id === rec.characterId);
+    return owner
+      ? rec.bonds.map((b) => `- ${owner.name} toward ${b.towards}: ${b.stance}${b.note ? ` — ${b.note}` : ""}`)
+      : [];
+  });
+  const bondsBlock = bondLines.length
+    ? `WHERE BONDS STAND (each character's private stance — visible to you alone; let it inform pacing and reveals, never announce it):\n${bondLines.join("\n")}`
+    : "";
   const secrets = storySecrets(ctx);
   const secretsBlock = secrets.length
     ? ctx.sub(
@@ -759,6 +809,7 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
         (secrets.some((s) => !isRevealed(ctx, s))
           ? `When the fiction genuinely uncovers a secret (its moment arrives, a holder confesses, evidence surfaces), state it plainly in the narration and append <reveal>Title</reveal> with the secret's exact title — from then on it is established truth everyone knows. If a secret already came out in play unmarked, mark it on your next turn.\n`
           : "") +
+        `When play produces an irreversible commitment — a promise made, a side chosen, a thing surrendered or destroyed, a person abandoned or spared, a line crossed — record it: append <commit>one short factual line naming it, in ${ctx.language}</commit>. From then on it is a standing fact of this story that every scene honors. Record only what genuinely binds what comes after (rarely more than one per scene), and never one already listed under WHAT HAS BEEN DONE.\n` +
         (nextSceneInfo
           ? branchPoint
             ? `When the scene has done its job${entry?.exit ? "" : " (clearly run its course)"}, move the story down ONE of the roads listed above: write the transition and append <next-scene>Scene Name</next-scene> with the chosen scene's exact name, on its own line. Don't advance before the scene's job is done, and don't linger long after.\n`
@@ -780,7 +831,10 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
     contractBlock,
     destinationBlock,
     secretsBlock,
+    commitmentsBlock(ctx),
+    bondsBlock,
     nextSceneInfo,
+    pacingBlock,
     ctx.summaryText ? `SUMMARY OF EARLIER CONVERSATION:\n${ctx.summaryText}` : "",
     lore.length ? `WORLD KNOWLEDGE (relevant lore):\n${lore.map((l) => `- ${l}`).join("\n")}` : "",
     `RULES:\n${formatRules(ctx, null)}\n` +
@@ -856,6 +910,9 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
     if (role !== "marker") sinceNarrator++;
   }
   const unrevealed = storySecrets(ctx).filter((s) => !isRevealed(ctx, s));
+  // the director's own remembered judgment — keyed to the scene, so a scene change
+  // starts it over. Memory instead of a fresh guess every turn.
+  const lastRead = ctx.snapshot ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
   const state = ctx.sub(
     [
       entry
@@ -863,6 +920,7 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
         : "",
       entry?.goal ? `Scene goal: ${entry.goal}` : "",
       entry?.exit ? `The scene should advance when: ${entry.exit}` : "",
+      lastRead ? `Your read of the advance condition last turn: ${lastRead}.` : "",
       ctx.snapshot?.destination ? `The story is headed toward: ${ctx.snapshot.destination}` : "",
       ctx.playedCharacter
         ? `The user plays ${ctx.playedCharacter.name} — the story advances strictly in their view.`
@@ -884,7 +942,8 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
     `Rules: characters carry conversation and relationship beats — prefer whoever was addressed or has the most natural reaction. ` +
     `Prefer the narrator when the scene needs an outside event to move, play has drifted from the scene's goal, the advance condition looks met, a secret's moment is ripe, or nobody else fits. ` +
     `You may schedule TWO speakers when the world should move and someone should react to it — the narrator first, then the character. ` +
-    `Respond with ONLY a JSON object: {"next": ["<candidate id>"]} or {"next": ["narrator", "<candidate id>"]}`;
+    `Alongside the pick, report your read of the scene's advance condition: "unmet" (the scene still has work to do), "near" (approaching — steer toward it), or "met" (done — the story should move). ` +
+    `Respond with ONLY a JSON object: {"next": ["<candidate id>"], "exit": "unmet" | "near" | "met"} — e.g. {"next": ["narrator", "<candidate id>"], "exit": "near"}`;
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho acts next?` }] };
 }
 

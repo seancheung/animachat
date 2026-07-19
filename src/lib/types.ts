@@ -371,6 +371,9 @@ export interface SceneEvent {
   leave?: string[];
   /** <reveal>: story secret ids established as revealed truth */
   reveal?: string[];
+  /** <commit>: irreversible commitments recorded as standing facts of the
+   *  playthrough (free text, verbatim — no id to resolve; shown in the ledger) */
+  commit?: string[];
   /** <the-end/>: the playthrough concluded */
   theEnd?: boolean;
 }
@@ -458,6 +461,29 @@ export interface MindState {
   content: string;
   updatedAt: number;
 }
+
+/** One directed bond a playthrough cast member holds — story-local relationship
+ *  state, descriptive rather than numeric ("guarded", "wavering", "loyal").
+ *  Kept per chat (a replay starts fresh); embedded cast never touch the
+ *  library's relationship tables. */
+export interface StoryBond {
+  /** whom the feeling is about — the player's name or another cast member's */
+  towards: string;
+  /** one or two words naming the stance */
+  stance: string;
+  /** one short line: what the stance rests on, what recently shifted */
+  note: string;
+}
+
+export interface StoryBondsRecord {
+  chatId: string;
+  characterId: string;
+  bonds: StoryBond[];
+  updatedAt: number;
+}
+
+/** The director's remembered read of the current scene's exit condition. */
+export type ExitRead = "unmet" | "near" | "met";
 
 /** What a character has been up to between conversations — generated when the
  *  user returns to a casual chat after a real-time gap (aliveness.offscreenLife).

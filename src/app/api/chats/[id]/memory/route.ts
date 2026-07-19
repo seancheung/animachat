@@ -9,6 +9,7 @@ import {
   getRelationship,
   getSummary,
   listCharRelationships,
+  listStoryBonds,
 } from "@/lib/store";
 
 /** Read-only inspection of a chat's memory: the rolling summary plus, per character,
@@ -54,6 +55,8 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     charRelationships: Object.fromEntries(charRelationshipEntries),
     mindStates,
     offscreenNotes,
+    // story-local bonds (playthroughs only — empty everywhere else)
+    storyBonds: chat.mode === "story" ? await listStoryBonds(id) : [],
     // the two-stage march toward the next summarization pass (null = no memory model)
     progress: await memoryProgress(id),
   });

@@ -25,7 +25,7 @@ import { PureChatStreamFilter, toPureChat } from "@/lib/ai/pureChat";
 import { TagStreamParser, type TagEvent } from "@/lib/ai/tags";
 import { allowedNextScenes } from "@/lib/stage";
 import { parseMentions, tagMentions } from "@/lib/mentions";
-import { addVariant, appendMessage, getChat, getMessage, saveChat, setRawOutput } from "@/lib/store";
+import { addVariant, appendMessage, getChat, getMessage, putDirectorRead, saveChat, setRawOutput } from "@/lib/store";
 import { taskMaxTokens, type Character, type Message, type SceneEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -109,7 +109,13 @@ async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
       feature: "director",
       chatId: ctx.chat.id,
     });
-    const parsed = extractJson<{ next?: string | string[] }>(raw);
+    const parsed = extractJson<{ next?: string | string[]; exit?: string }>(raw);
+    // the exit read is remembered (keyed to the scene — a scene change invalidates it
+    // by mismatch) so next turn's dashboard builds on a judgment instead of a fresh
+    // guess, and the narrator sees it as a pacing signal. Fail-soft: junk is dropped.
+    if (parsed?.exit === "unmet" || parsed?.exit === "near" || parsed?.exit === "met") {
+      await putDirectorRead(ctx.chat.id, ctx.stage.sceneId, parsed.exit).catch(() => {});
+    }
     const names = Array.isArray(parsed?.next) ? parsed.next : parsed?.next ? [parsed.next] : [];
     const out: Speaker[] = [];
     for (const n of names.slice(0, 2)) {
@@ -382,6 +388,7 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
         const enters: string[] = [];
         const leaves: string[] = [];
         const reveals: string[] = [];
+        const commits: string[] = [];
         const parser = new TagStreamParser();
 
         const handleEvents = (events: TagEvent[]) => {
@@ -413,6 +420,9 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             } else if (ev.type === "reveal") {
               // narrator-only; resolved against snapshot secrets at save time (fail-soft)
               reveals.push(ev.name);
+            } else if (ev.type === "commit") {
+              // narrator-only; free text — recorded verbatim at save time
+              commits.push(ev.text);
             }
           }
         };
@@ -484,6 +494,12 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
               ...new Set(reveals.map((t) => matchSecret(turnCtx, t)?.id).filter((x): x is string => !!x)),
             ];
             if (revealIds.length) ev.reveal = revealIds;
+            // free text, no resolution — trimmed, deduped, capped so a runaway
+            // model can't flood the fold (the ledger and every future prompt carry these)
+            const commitLines = [
+              ...new Set(commits.map((t) => t.trim().slice(0, 300)).filter(Boolean)),
+            ].slice(0, 4);
+            if (commitLines.length) ev.commit = commitLines;
             if (sawTheEnd) {
               ev.theEnd = true;
               options = null; // no suggested actions under "The End"

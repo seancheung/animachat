@@ -14,13 +14,15 @@ import {
   getCharRelationship,
   getMindState,
   getRelationship,
+  getStoryBonds,
   listFacts,
   putCharRelationship,
   putMindState,
   putRelationship,
+  putStoryBonds,
   putSummary,
 } from "@/lib/store";
-import { alivenessOf, type Message } from "@/lib/types";
+import { alivenessOf, type Message, type StoryBond } from "@/lib/types";
 
 const inFlight = new Map<string, Promise<void>>();
 
@@ -40,6 +42,7 @@ interface MemoryOutput {
   facts?: { character?: string; fact?: string }[];
   relationships?: { character?: string; towards?: string; affinityDelta?: number; note?: string }[];
   mindStates?: { character?: string; state?: string }[];
+  bonds?: { character?: string; towards?: string; stance?: string; note?: string }[];
 }
 
 async function chunkTranscript(ctx: ChatContext, chunk: Message[]): Promise<string> {
@@ -122,6 +125,16 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
   const userName = ctx.persona?.name ?? (ctx.chat.playAsNarrator ? "the narrator" : "the user");
   // state of mind: casual/immersive only (playthroughs pace themselves), per character opt-in
   const mindChars = ctx.snapshot ? [] : ctx.characters.filter((c) => alivenessOf(c).mindState);
+  // story-local bonds: playthroughs only — embedded cast never touch the library's
+  // relationship tables (a replay starts fresh), but within one run the cast's
+  // stances toward the player and each other evolve. Gated by the same global
+  // relationship switches (per direction, at write time) and per-character tracking.
+  const bondChars =
+    ctx.snapshot && (ctx.settings.userRelationshipsEnabled || ctx.settings.charRelationshipsEnabled)
+      ? ctx.characters.filter((c) => c.trackRelationship)
+      : [];
+  // in story mode ctx.persona is the played cast member's sheet (or a persona); null = spectating
+  const playerName = ctx.persona?.name ?? null;
   const system =
     `You maintain the long-term memory of ${ctx.chat.mode === "casual" ? "an ongoing text conversation" : "a roleplay chat"}. You will receive the existing rolling summary ` +
     `plus a chunk of messages that just left the recent-context window. Respond with ONLY a JSON object:\n` +
@@ -131,10 +144,16 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
     (mindChars.length
       ? `,\n "mindStates": [{"character": "name", "state": "1-3 short present-tense lines: current mood, what they want right now, threads left unresolved on their mind"}]`
       : "") +
+    (bondChars.length
+      ? `,\n "bonds": [{"character": "name", "towards": "${playerName ? `'${playerName}' or another cast member's name` : "another cast member's name"}", "stance": "one or two words, e.g. guarded / warming / wary / loyal", "note": "one short line: what the stance rests on, what recently shifted"}]`
+      : "") +
     `}\n` +
     `Characters: ${characters}. The user is ${userName}. Report a relationships entry only when it meaningfully shifted. ` +
     (mindChars.length
       ? `Report a mindStates entry for each of: ${mindChars.map((c) => c.name).join(", ")} — it REPLACES their previous state, so carry forward whatever still weighs on them. `
+      : "") +
+    (bondChars.length
+      ? `Bonds are this story's evolving relationship states (descriptive, not numeric). Report a character's bonds only when something meaningfully shifted — but a reported set REPLACES that character's previous bonds, so re-list the ones that still stand. `
       : "") +
     `Extract at most 5 facts; only genuinely durable ones, never one already recorded. Write the summary in ${ctx.language}.`;
   // show already-recorded facts so the model doesn't re-extract them — duplicates
@@ -151,10 +170,20 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
     if (m?.content) currentMindLines.push(`${c.name}: ${m.content}`);
   }
   const currentMinds = currentMindLines.join("\n");
+  const currentBondLines: string[] = [];
+  for (const c of bondChars) {
+    const rec = await getStoryBonds(chatId, c.id);
+    if (rec?.bonds.length)
+      currentBondLines.push(
+        `${c.name}: ${rec.bonds.map((b) => `toward ${b.towards} — ${b.stance}${b.note ? ` (${b.note})` : ""}`).join("; ")}`
+      );
+  }
+  const currentBonds = currentBondLines.join("\n");
   const user =
     `EXISTING SUMMARY:\n${ctx.summaryText || "(none yet)"}\n\n` +
     (knownFacts ? `FACTS ALREADY RECORDED (never repeat these):\n${knownFacts}\n\n` : "") +
     (currentMinds ? `CURRENT STATES OF MIND (update these):\n${currentMinds}\n\n` : "") +
+    (currentBonds ? `CURRENT BONDS (a reported set replaces that character's list):\n${currentBonds}\n\n` : "") +
     `NEW MESSAGES TO FOLD IN:\n` +
     (await chunkTranscript(ctx, chunk));
 
@@ -185,6 +214,33 @@ async function doMemoryPass(chatId: string, force: boolean): Promise<void> {
     const c = s.character && byName.get(s.character.toLowerCase());
     if (c && s.state && mindChars.some((mc) => mc.id === c.id) && (await inLibrary(c.id)))
       await putMindState(c.id, chatId, s.state);
+  }
+  // story-local bonds: chat-scoped, keyed by the snapshot cast id — deliberately no
+  // library guard (embedded cast are exactly whom this table exists for). A character's
+  // reported set replaces their stored one; unreported characters keep theirs.
+  if (bondChars.length) {
+    const wanted = new Map<string, StoryBond[]>();
+    for (const b of out.bonds ?? []) {
+      const c = b.character && byName.get(b.character.toLowerCase());
+      if (!c || !b.stance || !bondChars.some((bc) => bc.id === c.id)) continue;
+      const towards = (b.towards ?? "").trim();
+      if (!towards || towards.toLowerCase() === c.name.toLowerCase()) continue;
+      const isPlayer =
+        (!!playerName && towards.toLowerCase() === playerName.toLowerCase()) || towards.toLowerCase() === "user";
+      if (isPlayer && !playerName) continue; // spectator run — nobody to bond toward
+      const target = isPlayer ? null : byName.get(towards.toLowerCase());
+      if (!isPlayer && !target) continue; // a name the cast doesn't contain — dropped fail-soft
+      // the global relationship switches gate per direction, same meaning as in the library
+      if (isPlayer ? !ctx.settings.userRelationshipsEnabled : !ctx.settings.charRelationshipsEnabled) continue;
+      const list = wanted.get(c.id) ?? [];
+      list.push({
+        towards: isPlayer ? playerName! : target!.name,
+        stance: String(b.stance).slice(0, 60),
+        note: String(b.note ?? "").slice(0, 300),
+      });
+      wanted.set(c.id, list);
+    }
+    for (const [cid, bonds] of wanted) await putStoryBonds(chatId, cid, bonds.slice(0, 6));
   }
   for (const r of out.relationships ?? []) {
     const c = r.character && byName.get(r.character.toLowerCase());
