@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/utils/cn";
 
 const trackVariants = cva(
-  "relative w-full overflow-hidden rounded-full bg-base-100",
+  "relative w-full overflow-hidden rounded-full bg-base-400",
   {
     variants: {
       size: {
