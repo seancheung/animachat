@@ -3,6 +3,8 @@ import type {
   Chat,
   Character,
   CharRelationship,
+  DirectorBeat,
+  DirectorRead,
   ExitRead,
   Fact,
   Lorebook,
@@ -1313,17 +1315,27 @@ export async function putStoryBonds(chatId: string, characterId: string, bonds: 
 
 /** Pacing state, not fiction: the read is keyed to the scene it was made in, and a
  *  read from another scene is treated as absent (scene changes invalidate by mismatch). */
-export async function getDirectorRead(chatId: string, sceneId: string | null): Promise<ExitRead | null> {
+export async function getDirectorRead(chatId: string, sceneId: string | null): Promise<DirectorRead | null> {
   const r = await get("SELECT * FROM director_reads WHERE chat_id=?", [chatId]);
   if (!r || (r.scene_id ?? null) !== (sceneId ?? null)) return null;
-  return r.exit_read === "unmet" || r.exit_read === "near" || r.exit_read === "met" ? r.exit_read : null;
+  if (r.exit_read !== "unmet" && r.exit_read !== "near" && r.exit_read !== "met") return null;
+  const beat =
+    r.beat === "carry" || r.beat === "escalate" || r.beat === "settle" || r.beat === "close" ? r.beat : null;
+  return { exit: r.exit_read, beat };
 }
 
-export async function putDirectorRead(chatId: string, sceneId: string | null, exitRead: ExitRead): Promise<void> {
+/** Every write replaces the beat (null clears it) — a stale beat is worse than none;
+ *  the exit read keeps its stronger scene-keyed memory semantics. */
+export async function putDirectorRead(
+  chatId: string,
+  sceneId: string | null,
+  exitRead: ExitRead,
+  beat: DirectorBeat | null = null
+): Promise<void> {
   await run(
-    `INSERT INTO director_reads (chat_id, scene_id, exit_read, updated_at) VALUES (?,?,?,?)
-     ON CONFLICT(chat_id) DO UPDATE SET scene_id=excluded.scene_id, exit_read=excluded.exit_read, updated_at=excluded.updated_at`,
-    [chatId, sceneId, exitRead, now()]
+    `INSERT INTO director_reads (chat_id, scene_id, exit_read, beat, updated_at) VALUES (?,?,?,?,?)
+     ON CONFLICT(chat_id) DO UPDATE SET scene_id=excluded.scene_id, exit_read=excluded.exit_read, beat=excluded.beat, updated_at=excluded.updated_at`,
+    [chatId, sceneId, exitRead, beat, now()]
   );
 }
 

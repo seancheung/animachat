@@ -15,6 +15,7 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     const name = ctx.snapshot?.scenes.find((s) => s.id === sid)?.name ?? (await getScene(sid))?.name;
     if (name) sceneNameEntries.push([sid, name]);
   }
+  const directorRead = ctx.snapshot && !ctx.ended ? await getDirectorRead(id, stage.sceneId) : null;
   return ok({
     chat,
     // bodies are paged separately (GET ./messages); this payload carries the sparse
@@ -39,9 +40,11 @@ export const GET = handler(async (_req: Request, { params }: IdParams) => {
     storyScenes: ctx.snapshot?.scenes ?? [],
     sceneNames: Object.fromEntries(sceneNameEntries),
     ended: ctx.ended,
-    // the director's latest read of the current scene's exit condition (story mode;
-    // null until a routed turn produces one, or after a scene change resets it)
-    exitRead: ctx.snapshot && !ctx.ended ? await getDirectorRead(id, stage.sceneId) : null,
+    // the director's latest read of the current scene (story mode; null until a routed
+    // turn produces one, or after a scene change resets it): the exit condition and
+    // the beat pick, both surfaced in the drawer's story ledger
+    exitRead: directorRead?.exit ?? null,
+    directorBeat: directorRead?.beat ?? null,
   });
 });
 

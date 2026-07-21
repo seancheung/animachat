@@ -42,6 +42,7 @@ import type {
   Persona,
   Pov,
   Scene,
+  SceneEvent,
   Settings,
   StorySecret,
   StorySnapshot,
@@ -351,6 +352,21 @@ function isRevealed(ctx: ChatContext, s: StorySecret): boolean {
   return ctx.stage.revealed.includes(s.id);
 }
 
+/** Non-marker messages since the last stage event matching `pred` — null when none has
+ *  (deterministic pacing signal, same species as the director's "turns since narration"). */
+function messagesSinceEvent(ctx: ChatContext, pred: (ev: SceneEvent) => boolean): number | null {
+  let n = 0;
+  for (let i = ctx.messages.length - 1; i >= 0; i--) {
+    const m = ctx.messages[i];
+    if (m.sceneEvent && pred(m.sceneEvent)) return n;
+    if (m.role !== "marker") n++;
+  }
+  return null;
+}
+
+/** How recent a revelation still counts as "just landed" (messages). */
+const REVEAL_BREATHER = 4;
+
 /** Secrets already out in the open — established truth for every participant. */
 function revealedTruthsBlock(ctx: ChatContext): string {
   const open = storySecrets(ctx).filter((s) => isRevealed(ctx, s));
@@ -553,6 +569,18 @@ export async function buildCharacterRequest(
     ? `HOW ${character.name.toUpperCase()} STANDS WITH THE OTHERS RIGHT NOW (private, evolving — let it color tone and choices without announcing it):\n` +
       bonds.map((b) => `- toward ${b.towards}: ${b.stance}${b.note ? ` — ${b.note}` : ""}`).join("\n")
     : "";
+  // the director's beat, mapped to an APP-AUTHORED pacing line — tempo and open-vs-close
+  // only, never what to feel, say, decide, or reveal (the model picks a token; these
+  // sentences are ours). "carry" is the default flow and injects nothing.
+  const directorRead = ctx.snapshot && !ctx.ended ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
+  const beatBlock =
+    directorRead?.beat === "escalate"
+      ? `PACING (the scene's shared rhythm, not a script): the moment is coming to a head — keep the reply taut, let the pressure show, and stay with the matter at hand rather than opening new topics.`
+      : directorRead?.beat === "settle"
+        ? `PACING (the scene's shared rhythm, not a script): a quiet beat — keep the reply small and grounded; let the last moment land instead of pushing things forward.`
+        : directorRead?.beat === "close"
+          ? `PACING (the scene's shared rhythm, not a script): the scene is winding down — keep the reply brief, and close threads rather than open new ones.`
+          : "";
 
   const emotions = [
     ...EMOTIONS,
@@ -629,6 +657,7 @@ export async function buildCharacterRequest(
     revealedTruthsBlock(ctx),
     commitmentsBlock(ctx),
     bondsBlock,
+    beatBlock,
     facts.length
       ? `THINGS ${character.name.toUpperCase()} REMEMBERS (long-term memory):\n${facts
           .map((f) => `- ${f.content}${timeAware ? factWhen(ctx, f) : ""}`)
@@ -726,26 +755,40 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
       }
     }
   }
+  // the story design layer — the narrator is the one voice that knows all of it
+  const entry = currentSceneEntry(ctx);
   const offStage = ctx.snapshot ? ctx.characters.filter((c) => !ctx.present.some((p) => p.id === c.id)) : [];
+  // the scene's authored cast is a SCOPE — who appears over its course — never an
+  // opening tableau: the stage opens empty and the narrator stages every entrance
+  const featured = ctx.snapshot ? ctx.characters.filter((c) => entry?.cast?.includes(c.id)) : [];
   const castBlock = ctx.snapshot
-    ? `CAST ON STAGE: ${ctx.present.map((c) => c.name).join(", ") || "(nobody)"}` +
-      (offStage.length ? `\nCAST OFF STAGE (can be brought in): ${offStage.map((c) => c.name).join(", ")}` : "")
+    ? `CAST ON STAGE: ${ctx.present.map((c) => c.name).join(", ") || "(nobody — the stage is empty until you bring someone into view)"}` +
+      (offStage.length ? `\nCAST OFF STAGE (can be brought in): ${offStage.map((c) => c.name).join(", ")}` : "") +
+      (featured.length
+        ? `\nTHIS SCENE FEATURES: ${featured.map((c) => c.name).join(", ")} — they appear over the scene's course, at its opening or later, as you stage them.`
+        : "")
     : "";
 
   // the director's remembered exit read — shared pacing state (like "turns since
   // narration"), never a content instruction: what to write stays the narrator's
-  const exitRead = ctx.snapshot && !ctx.ended ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
-  const pacingBlock =
+  const read = ctx.snapshot && !ctx.ended ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
+  const exitRead = read?.exit ?? null;
+  // reveal recency is pacing state too: the Narrate button bypasses the director,
+  // so the narrator itself is told when a revelation still needs room to land
+  const sinceReveal = ctx.snapshot && !ctx.ended ? messagesSinceEvent(ctx, (ev) => !!ev.reveal?.length) : null;
+  const pacingLines = [
     exitRead === "met"
       ? finalScene
         ? `PACING: the scene's job reads as done — and this is the story's final scene. If play agrees, the resolution is at hand.`
         : `PACING: the scene's job reads as done. If play agrees, favor writing the transition over lingering.`
       : exitRead === "near"
         ? `PACING: the scene is close to done — steer play toward its exit rather than opening new ground.`
-        : "";
-
-  // the story design layer — the narrator is the one voice that knows all of it
-  const entry = currentSceneEntry(ctx);
+        : "",
+    sinceReveal !== null && sinceReveal <= REVEAL_BREATHER
+      ? `PACING: a revelation landed just ${sinceReveal === 0 ? "moments" : `${sinceReveal} message${sinceReveal === 1 ? "" : "s"}`} ago — let it breathe: favor the cast's reactions over another reveal or a scene advance right on its heels.`
+      : "",
+  ].filter(Boolean);
+  const pacingBlock = pacingLines.join("\n");
   const contractBlock =
     ctx.snapshot && entry && (entry.goal || entry.obstacles || entry.exit || entry.pressures)
       ? ctx.sub(
@@ -804,8 +847,10 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
 
   const stagingRules =
     ctx.snapshot && !ctx.ended
-      ? `You direct the stage. To bring a cast member on, append <enter>Name</enter>; to send one off, append <leave>Name</leave> — always also describing the arrival or departure in the narration itself. Only cast members listed above can enter.\n` +
-        `An entered character takes the very next turn and speaks for themselves — stage the arrival, then stop. If an off-stage cast member's words must be heard (in person, by phone, radio, or through a wall), that IS an entrance: bring them on and end your narration.\n` +
+      ? `You direct the stage, and presence is yours alone: a scene OPENS ON AN EMPTY STAGE — nobody is on it until you bring them into view. To bring a cast member on, append <enter>Name</enter>; to send one off, append <leave>Name</leave> — always also describing the arrival or departure in the narration itself. Only cast members listed above can enter.\n` +
+        `When a scene opens (your first narration of this story, and every transition you write), stage its opening in that same message: <enter> exactly those within ${played?.name ?? ctx.persona?.name ?? "the user"}'s reach right now — perceivable AND part of the action, there to act or be engaged. A figure glimpsed across the square, heard about, or idling in the background is NOT on stage: bring each cast member on only at the moment the scene actually reaches them — when they act, speak up, or come within engaging distance. The rest of the scene's cast arrive later, when the fiction brings them — an opening entrance sets the stage, nobody speaks up unprompted.\n` +
+        `A MID-SCENE entered character takes the very next turn and speaks for themselves — stage the arrival, then stop. If an off-stage cast member's words must be heard (in person, by phone, radio, or through a wall), that IS an entrance: bring them on and end your narration.\n` +
+        `When an attempt fails, fail FORWARD: the failure changes the scene — a cost paid, a complication surfacing, a pressure advancing — never a flat "it doesn't work" that leaves everything as it was.\n` +
         (secrets.some((s) => !isRevealed(ctx, s))
           ? `When the fiction genuinely uncovers a secret (its moment arrives, a holder confesses, evidence surfaces), state it plainly in the narration and append <reveal>Title</reveal> with the secret's exact title — from then on it is established truth everyone knows. If a secret already came out in play unmarked, mark it on your next turn.\n`
           : "") +
@@ -849,7 +894,7 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
           stagingRules +
           `Unless you are concluding the story, ALWAYS end with 2-4 suggested actions the user could take next, formatted exactly as:\n` +
           `<options><o>first suggestion</o><o>second suggestion</o></options>\n` +
-          `Each suggestion is written as the user's own message, ready to send as-is — an action or line for ${ctx.persona?.name ?? "the user"} alone, doable from where they are; never another character's move. Format each like the user's messages, not like your narration: actions in *asterisks*, speech plain or quoted. ${userPovRules(ctx.pov, ctx.persona?.name ?? "the user")}`),
+          `Each suggestion is written as the user's own message, ready to send as-is — an action or line for ${ctx.persona?.name ?? "the user"} alone, doable from where they are; never another character's move. Make the options genuinely different approaches to the moment — talking it through, pressing on or acting, investigating or going sideways, holding back or walking away, as the moment allows — never shades of the same move. Format each like the user's messages, not like your narration: actions in *asterisks*, speech plain or quoted. ${userPovRules(ctx.pov, ctx.persona?.name ?? "the user")}`),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -910,6 +955,23 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
     if (role !== "marker") sinceNarrator++;
   }
   const unrevealed = storySecrets(ctx).filter((s) => !isRevealed(ctx, s));
+  // more deterministic pacing signals, same species as sinceNarrator: how recently
+  // the scene opened, how recently a secret came out, who is dominating the floor
+  const sinceSceneOpen = messagesSinceEvent(ctx, (ev) => !!ev.sceneId);
+  const sinceReveal = messagesSinceEvent(ctx, (ev) => !!ev.reveal?.length);
+  // the trailing run of character turns by one speaker — user messages don't break
+  // it (alternation is still one voice carrying), a narrator message does (the world moved)
+  let streak = 0;
+  let streakChar: Character | undefined;
+  for (let i = ctx.messages.length - 1; i >= 0; i--) {
+    const m = ctx.messages[i];
+    if (m.role === "narrator") break;
+    if (m.role !== "character") continue;
+    const c = ctx.present.find((x) => x.id === m.characterId);
+    if (!c || (streakChar && c.id !== streakChar.id)) break;
+    streakChar = c;
+    streak++;
+  }
   // the director's own remembered judgment — keyed to the scene, so a scene change
   // starts it over. Memory instead of a fresh guess every turn.
   const lastRead = ctx.snapshot ? await getDirectorRead(ctx.chat.id, ctx.stage.sceneId) : null;
@@ -920,7 +982,7 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
         : "",
       entry?.goal ? `Scene goal: ${entry.goal}` : "",
       entry?.exit ? `The scene should advance when: ${entry.exit}` : "",
-      lastRead ? `Your read of the advance condition last turn: ${lastRead}.` : "",
+      lastRead ? `Your read of the advance condition last turn: ${lastRead.exit}.` : "",
       ctx.snapshot?.destination ? `The story is headed toward: ${ctx.snapshot.destination}` : "",
       ctx.playedCharacter
         ? `The user plays ${ctx.playedCharacter.name} — the story advances strictly in their view.`
@@ -929,6 +991,13 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
         ? `Unrevealed secrets in play: ${unrevealed.map((s) => `"${s.title}"`).join(", ")}`
         : "",
       `Messages since the narrator last spoke: ${sinceNarrator}`,
+      sinceSceneOpen !== null && sinceSceneOpen <= 4
+        ? `The scene opened just ${sinceSceneOpen === 0 ? "now" : `${sinceSceneOpen} message${sinceSceneOpen === 1 ? "" : "s"} ago`}.`
+        : "",
+      sinceReveal !== null && sinceReveal <= REVEAL_BREATHER
+        ? `A secret was revealed just ${sinceReveal === 0 ? "now" : `${sinceReveal} message${sinceReveal === 1 ? "" : "s"} ago`}.`
+        : "",
+      streak >= 2 && streakChar ? `${streakChar.name} has spoken the last ${streak} character turns.` : "",
       ctx.ended ? `The story has concluded — this is a free-form epilogue; pacing pressure is off.` : "",
     ]
       .filter(Boolean)
@@ -939,11 +1008,13 @@ export async function buildDirectorRequest(ctx: ChatContext, model: ResolvedMode
     `You are the invisible director of a story playthrough. Decide who acts next — you never write prose.\n` +
     `Candidates:\n${candidates.join("\n")}\n` +
     `STORY STATE:\n${state}\n` +
-    `Rules: characters carry conversation and relationship beats — prefer whoever was addressed or has the most natural reaction. ` +
+    `Rules: characters carry conversation and relationship beats — prefer whoever was addressed or has the most natural reaction, but vary who carries the scene: don't let one character dominate turn after turn. ` +
     `Prefer the narrator when the scene needs an outside event to move, play has drifted from the scene's goal, the advance condition looks met, a secret's moment is ripe, or nobody else fits. ` +
+    `Let a fresh revelation breathe: right after one, favor reactions over routing toward another reveal or an advance. ` +
     `You may schedule TWO speakers when the world should move and someone should react to it — the narrator first, then the character. ` +
     `Alongside the pick, report your read of the scene's advance condition: "unmet" (the scene still has work to do), "near" (approaching — steer toward it), or "met" (done — the story should move). ` +
-    `Respond with ONLY a JSON object: {"next": ["<candidate id>"], "exit": "unmet" | "near" | "met"} — e.g. {"next": ["narrator", "<candidate id>"], "exit": "near"}`;
+    `Also pick the BEAT the next reply should serve: "carry" (ordinary flow), "escalate" (the moment is coming to a head), "settle" (a quiet beat — let things land), or "close" (wind the scene toward its exit). ` +
+    `Respond with ONLY a JSON object: {"next": ["<candidate id>"], "exit": "unmet" | "near" | "met", "beat": "carry" | "escalate" | "settle" | "close"} — e.g. {"next": ["narrator", "<candidate id>"], "exit": "near", "beat": "escalate"}`;
   return { system, messages: [{ role: "user", content: `Transcript:\n${transcript}\n\nWho acts next?` }] };
 }
 

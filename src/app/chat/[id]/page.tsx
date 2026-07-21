@@ -211,6 +211,10 @@ export default function ChatPage() {
   // picture mode hides the chat UI (panel/dialogue box + stage chip) to enjoy the stage — never persisted
   const [pictureMode, setPictureMode] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  // the curtain call (story mode): auto-presented once when <the-end/> lands live,
+  // reopenable any time from the "The End" badge
+  const [recapOpen, setRecapOpen] = useState(false);
+  const prevEnded = useRef<boolean | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const draftAbortRef = useRef<AbortController | null>(null);
   const openedRef = useRef(false);
@@ -306,6 +310,15 @@ export default function ChatPage() {
     const st = computeStage(chat, stageEvents, browsePos);
     return { ...st, ...resolveStageAssets(chat, st) };
   }, [browsePos, chat, stageEvents, data?.stage]);
+
+  // the curtain call fires when the ending happens UNDER us (ended flips false→true
+  // in this session) — never on merely opening a finished playthrough
+  useEffect(() => {
+    const ended = data?.ended;
+    if (ended === undefined) return;
+    if (prevEnded.current === false && ended && chat?.mode === "story") setRecapOpen(true);
+    prevEnded.current = ended;
+  }, [data?.ended, chat?.mode]);
 
   // story mode: only the on-stage cast is drawn; casual/immersive show everyone
   const present: string[] | null = viewStage?.present ?? null;
@@ -1152,7 +1165,18 @@ export default function ChatPage() {
         >
           <ArrowLeft />
         </Button>
-        {viewStage?.ended && <Badge rounded className="shrink-0">The End</Badge>}
+        {viewStage?.ended && (
+          // the ending only ever folds in story mode — the badge doubles as the
+          // curtain call's reopen button
+          <button
+            type="button"
+            className="shrink-0 cursor-pointer"
+            title="The curtain call — what this run made true"
+            onClick={() => setRecapOpen(true)}
+          >
+            <Badge rounded>The End</Badge>
+          </button>
+        )}
         {stageBadges && !pictureMode && (
           <div
             key={`${viewStage?.sceneId ?? ""}:${viewStage?.locationId ?? ""}`}
@@ -1348,6 +1372,9 @@ export default function ChatPage() {
           }}
         />
       </Drawer>
+      {chat?.mode === "story" && data && (
+        <StoryRecap data={data} open={recapOpen} onClose={() => setRecapOpen(false)} />
+      )}
     </div>
   );
 }
@@ -2114,10 +2141,10 @@ function ChatDrawer({
 /** The drawer's Memory tab: read-only inspection of what the memory pass maintains
  *  for this chat — rolling summary, relationship states, states of mind, off-screen
  *  notes. Fetched lazily on first open; nothing here is editable. */
-/** The playthrough's consequence ledger — a deterministic fold of the timeline's
- *  stage events (no fetch, no model call): the road taken, standing commitments,
- *  the secrets score, and the irreversible moments as fork-here milestones. */
-function StoryLedger({ data, onFork }: any) {
+/** The deterministic event fold shared by the story ledger and the curtain-call
+ *  recap (no fetch, no model call): the road taken, standing commitments, the
+ *  secrets score, and the irreversible moments. */
+function foldStoryLedger(data: any) {
   const chat = data.chat;
   const events: { id: string; position: number; sceneEvent: SceneEvent }[] = data.stageEvents ?? [];
   const sceneName = (sid: string) =>
@@ -2126,6 +2153,7 @@ function StoryLedger({ data, onFork }: any) {
   const secretTitle = (sid: string) => secrets.find((s) => s.id === sid)?.title ?? "?";
   const revealed: string[] = data.stage?.revealed ?? [];
   const buried = secrets.filter((s) => !revealed.includes(s.id));
+  const openSecrets = secrets.filter((s) => revealed.includes(s.id));
   const commitments: string[] = data.stage?.commitments ?? [];
 
   // the road taken: start scene, then every advance in timeline order
@@ -2142,6 +2170,15 @@ function StoryLedger({ data, onFork }: any) {
     if (ev.theEnd) parts.push("The End");
     return parts.length ? [{ id: e.id, label: parts.join(" · ") }] : [];
   });
+
+  return { path, milestones, commitments, secrets, revealed, buried, openSecrets };
+}
+
+/** The playthrough's consequence ledger — event-sourced views of the run: the road
+ *  taken, standing commitments, the secrets score, the director's pacing reads, and
+ *  the irreversible moments as fork-here milestones. */
+function StoryLedger({ data, onFork }: any) {
+  const { path, milestones, commitments, secrets, revealed, buried } = foldStoryLedger(data);
 
   if (!milestones.length && !commitments.length && path.length <= 1 && !secrets.length) return null;
   return (
@@ -2163,6 +2200,16 @@ function StoryLedger({ data, onFork }: any) {
               : data.exitRead === "near"
                 ? "the scene feels close to done"
                 : "the scene still has work to do"}
+          </div>
+        )}
+        {!data.ended && data.directorBeat && data.directorBeat !== "carry" && (
+          <div className="text-content-300">
+            Scene rhythm:{" "}
+            {data.directorBeat === "escalate"
+              ? "coming to a head"
+              : data.directorBeat === "settle"
+                ? "a quiet beat"
+                : "winding down"}
           </div>
         )}
         {commitments.length > 0 && (
@@ -2204,6 +2251,54 @@ function StoryLedger({ data, onFork }: any) {
         )}
       </div>
     </Field>
+  );
+}
+
+/** The curtain call — auto-presented once when <the-end/> lands live, reopenable
+ *  from the "The End" badge: a recap of what this run made true, derived from the
+ *  same event fold as the ledger. Buried secrets are named freely here — the story
+ *  is over, nothing can surface anymore. */
+function StoryRecap({ data, open, onClose }: { data: any; open: boolean; onClose: () => void }) {
+  const { path, commitments, openSecrets, buried } = foldStoryLedger(data);
+  const ending = path.length ? path[path.length - 1] : null;
+  return (
+    <Modal open={open} onClose={onClose} title="The End">
+      <div className="space-y-4 text-sm">
+        {ending && <div className="text-base text-content-100">Ending: {ending}</div>}
+        {path.length > 1 && (
+          <div className="text-xs text-content-300">The road taken: {path.join(" → ")}</div>
+        )}
+        {commitments.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-content-200 flex items-center gap-1.5">
+              <Landmark size={13} /> What has been done
+            </div>
+            {commitments.map((c: string, i: number) => (
+              <div key={i} className="text-content-300 pl-4">— {c}</div>
+            ))}
+          </div>
+        )}
+        {(openSecrets.length > 0 || buried.length > 0) && (
+          <div className="space-y-1">
+            <div className="text-content-200 flex items-center gap-1.5">
+              <VenetianMask size={13} /> Secrets
+            </div>
+            {openSecrets.map((s: any) => (
+              <div key={s.id} className="text-content-300 pl-4">
+                — {s.title} <span className="text-content-400">(revealed)</span>
+              </div>
+            ))}
+            {buried.map((s: any) => (
+              <div key={s.id} className="text-content-400 pl-4">— {s.title} (never surfaced)</div>
+            ))}
+          </div>
+        )}
+        <div className="text-xs text-content-400">
+          The stage stays open as an epilogue — and any milestone in the story ledger can be
+          forked to replay from just after that moment.
+        </div>
+      </div>
+    </Modal>
   );
 }
 

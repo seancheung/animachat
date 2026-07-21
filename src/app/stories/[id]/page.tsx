@@ -480,7 +480,10 @@ export default function StoryEditorPage() {
                   }
                 />
                 {chars.length > 0 && (
-                  <Field label="On stage when the scene opens">
+                  <Field
+                    label="Who appears in this scene"
+                    hint="at its opening or later — the narrator stages every entrance in play; being listed doesn't put anyone on stage at the first line"
+                  >
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
                       {chars.map((c) => (
                         <Checkbox

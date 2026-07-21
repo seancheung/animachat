@@ -203,7 +203,10 @@ export interface SceneSuccessor {
  * one story, so there is no separate reusable sheet to wrap.
  */
 export interface StoryScene extends Scene {
-  /** roster members (embedded character ids) on stage when the scene opens */
+  /** roster members (embedded character ids) who APPEAR in this scene — a scope,
+      not an opening state: the stage opens empty and the narrator brings them into
+      view with <enter> as the fiction perceives them. Drives the played character's
+      entrance snap and branch filtering (a scene is "theirs" if they appear in it). */
   cast: string[];
   /** scene contract (story-specific, narrator/director-only; all optional — empty = no job, played freely) */
   /** what this scene is FOR dramatically */
@@ -484,6 +487,18 @@ export interface StoryBondsRecord {
 
 /** The director's remembered read of the current scene's exit condition. */
 export type ExitRead = "unmet" | "near" | "met";
+
+/** The director's beat pick for the next reply — an enumerable pacing token the
+ *  character prompt maps to an app-authored PACING line (tempo and open-vs-close
+ *  only, never what to feel, say, decide, or reveal). "carry" is the default flow
+ *  and injects nothing. */
+export type DirectorBeat = "carry" | "escalate" | "settle" | "close";
+
+/** The director's remembered pacing state, keyed to the scene it was read in. */
+export interface DirectorRead {
+  exit: ExitRead;
+  beat: DirectorBeat | null;
+}
 
 /** What a character has been up to between conversations — generated when the
  *  user returns to a casual chat after a real-time gap (aliveness.offscreenLife).

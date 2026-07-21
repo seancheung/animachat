@@ -47,17 +47,13 @@ export function computeStage(
 ): StageState {
   const snap = chat.mode === "story" ? chat.storySnapshot : null;
   const participants = new Set(chat.characterIds);
-  // a scene opens with its snapshot cast (minus the played character = the participants filter)
-  const castOf = (sceneId: string | null): string[] | null => {
-    if (!snap) return null;
-    const entry = snap.scenes.find((s) => s.id === sceneId);
-    return (entry?.cast ?? []).filter((id) => participants.has(id));
-  };
   const startSceneId = chat.sceneId ?? snap?.scenes[0]?.id ?? null;
   const state: StageState = {
     sceneId: startSceneId,
+    // a scene opens on an EMPTY stage — presence is built solely by the narrator's
+    // <enter> staging (the scene entry's cast is a scope — who appears — not a tableau)
     locationId: chat.locationId ?? chatScene(chat, startSceneId, lib)?.locationId ?? null,
-    present: castOf(startSceneId),
+    present: snap ? [] : null,
     revealed: [],
     commitments: [],
     ended: false,
@@ -73,7 +69,9 @@ export function computeStage(
       if (known) {
         state.sceneId = ev.sceneId;
         state.locationId = chatScene(chat, ev.sceneId, lib)?.locationId ?? null;
-        state.present = castOf(ev.sceneId);
+        // the stage empties on a scene change; the same message's <enter> events (folded
+        // below, after this reset) may stage the new scene's opening tableau
+        if (snap) state.present = [];
       }
     }
     if (state.present && (ev.enter?.length || ev.leave?.length)) {
@@ -95,14 +93,15 @@ export function computeStage(
 
 export interface SceneCastRef {
   id: string;
+  /** who APPEARS in the scene (at open or later — the narrator stages the entrances) */
   cast: string[];
   /** authored branching (story→scene relation); absent/empty = next scene in order */
   successors?: { sceneId: string; hint: string }[];
 }
 
-/** Where play opens for a played cast member: the chosen scene if they are in its
- *  cast, else their first authored scene — never earlier ground. Null when no scene
- *  includes them (caller keeps the default start, fail-soft). */
+/** Where play opens for a played cast member: the chosen scene if they appear in it,
+ *  else the first authored scene they appear in — never earlier ground. Null when no
+ *  scene includes them (caller keeps the default start, fail-soft). */
 export function entranceSceneId(
   entries: SceneCastRef[],
   playedId: string,

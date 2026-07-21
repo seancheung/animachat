@@ -536,13 +536,14 @@ describe("story bonds & director reads (playthrough-scoped)", () => {
   it("director reads are scene-keyed: a scene change invalidates by mismatch", async () => {
     const chat = await saveChat({ title: "reads" });
     expect(await getDirectorRead(chat.id, "s1")).toBeNull();
-    await putDirectorRead(chat.id, "s1", "near");
-    expect(await getDirectorRead(chat.id, "s1")).toBe("near");
+    await putDirectorRead(chat.id, "s1", "near", "escalate");
+    expect(await getDirectorRead(chat.id, "s1")).toEqual({ exit: "near", beat: "escalate" });
     // read from another scene — stale, treated as absent
     expect(await getDirectorRead(chat.id, "s2")).toBeNull();
-    // one row per chat: the new scene's read replaces the old
+    // one row per chat: the new scene's read replaces the old — and every write
+    // replaces the beat (omitted = cleared; a stale beat is worse than none)
     await putDirectorRead(chat.id, "s2", "met");
-    expect(await getDirectorRead(chat.id, "s2")).toBe("met");
+    expect(await getDirectorRead(chat.id, "s2")).toEqual({ exit: "met", beat: null });
     expect(await getDirectorRead(chat.id, "s1")).toBeNull();
     await deleteChat(chat.id);
   });

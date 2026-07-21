@@ -109,12 +109,18 @@ async function pickDefaultSpeakers(ctx: ChatContext): Promise<Speaker[]> {
       feature: "director",
       chatId: ctx.chat.id,
     });
-    const parsed = extractJson<{ next?: string | string[]; exit?: string }>(raw);
+    const parsed = extractJson<{ next?: string | string[]; exit?: string; beat?: string }>(raw);
     // the exit read is remembered (keyed to the scene — a scene change invalidates it
     // by mismatch) so next turn's dashboard builds on a judgment instead of a fresh
-    // guess, and the narrator sees it as a pacing signal. Fail-soft: junk is dropped.
+    // guess, and the narrator sees it as a pacing signal. The beat rides along: an
+    // enumerable pick among app-authored pacing lines for the next character prompt —
+    // junk clears it (a stale beat is worse than none). Fail-soft: junk exit is dropped.
     if (parsed?.exit === "unmet" || parsed?.exit === "near" || parsed?.exit === "met") {
-      await putDirectorRead(ctx.chat.id, ctx.stage.sceneId, parsed.exit).catch(() => {});
+      const beat =
+        parsed.beat === "carry" || parsed.beat === "escalate" || parsed.beat === "settle" || parsed.beat === "close"
+          ? parsed.beat
+          : null;
+      await putDirectorRead(ctx.chat.id, ctx.stage.sceneId, parsed.exit, beat).catch(() => {});
     }
     const names = Array.isArray(parsed?.next) ? parsed.next : parsed?.next ? [parsed.next] : [];
     const out: Speaker[] = [];
@@ -543,9 +549,11 @@ export const POST = handler(async (req: Request, { params }: IdParams) => {
             });
 
             // a mid-scene entrance hands the entered cast the next turns: the narrator
-            // stages the arrival and stops — the character speaks for themselves
-            // (scene changes excluded: a new scene's opening cast doesn't all speak up)
-            if (!regenTarget && speaker.role === "narrator" && sceneEvent?.enter?.length && !sceneEvent.sceneId && !sceneEvent.theEnd) {
+            // stages the arrival and stops — the character speaks for themselves.
+            // Excluded: scene-change messages and the chat's opening narration — their
+            // enters are the opening tableau, and a tableau doesn't all speak up unprompted
+            const openingMessage = !turnCtx.messages.some((m) => m.role !== "marker");
+            if (!regenTarget && speaker.role === "narrator" && sceneEvent?.enter?.length && !sceneEvent.sceneId && !sceneEvent.theEnd && !openingMessage) {
               for (const id of sceneEvent.enter) {
                 const c = turnCtx.characters.find((x) => x.id === id);
                 if (!c) continue;

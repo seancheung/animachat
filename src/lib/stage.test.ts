@@ -25,11 +25,11 @@ const chat = {
 const stub = (position: number, sceneEvent: SceneEvent | null) => ({ position, sceneEvent });
 
 const full = [
-  stub(0, null), // narrator prose, no events
+  stub(0, { enter: ["a"] }), // the opening narration stages the tableau — nothing is automatic
   stub(1, null),
   stub(2, { enter: ["c"] }),
   stub(3, null),
-  stub(4, { sceneId: "s2" }),
+  stub(4, { sceneId: "s2", enter: ["b"] }), // transition message: the stage empties, then its enters stage the NEW scene
   stub(5, { commit: ["Kael was spared", "Kael was spared"] }), // duplicate within an event folds once
   stub(6, { reveal: ["secret1"], commit: ["The medallion went to the sea"], theEnd: true }),
 ];
@@ -53,11 +53,21 @@ describe("computeStage over the sparse event projection", () => {
     for (let upto = 0; upto <= 6; upto++) {
       expect(computeStage(chat, sparse, upto)).toEqual(computeStage(chat, full, upto));
     }
-    // spot-check the mid-story state: scene 1's cast plus the staged entrance
+    // spot-check the mid-story state: the staged opening plus the mid-scene entrance
     const mid = computeStage(chat, sparse, 3);
     expect(mid.sceneId).toBe("s1");
     expect(mid.locationId).toBe("l1");
     expect([...mid.present!].sort()).toEqual(["a", "c"]);
     expect(mid.ended).toBe(false);
+  });
+
+  it("a scene opens on an empty stage — presence comes only from <enter> staging", () => {
+    // before any message: nobody, even though scene s1 authors cast ["a"]
+    expect(computeStage(chat, []).present).toEqual([]);
+    // a scene change wipes presence; enters on the SAME message stage the new scene
+    const wiped = computeStage(chat, [stub(0, { enter: ["a", "c"] }), stub(1, { sceneId: "s2" })]);
+    expect(wiped.present).toEqual([]);
+    const staged = computeStage(chat, [stub(0, { enter: ["a", "c"] }), stub(1, { sceneId: "s2", enter: ["c"] })]);
+    expect(staged.present).toEqual(["c"]);
   });
 });

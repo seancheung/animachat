@@ -245,28 +245,32 @@ describe("computeStage (playthrough presence & ending)", () => {
     createdAt: 0,
   });
 
-  it("opens on the first scene with its cast", async () => {
+  it("opens on the first scene with an EMPTY stage — the narrator stages presence", async () => {
     const st = await computeStage(playChat, []);
     expect(st.sceneId).toBe("s1");
-    expect(st.present).toEqual(["c1"]);
+    expect(st.present).toEqual([]);
     expect(st.ended).toBe(false);
   });
 
-  it("folds enter/leave events; a scene change resets to the new scene's cast", async () => {
+  it("folds enter/leave events; a scene change empties the stage, its own enters restage it", async () => {
     const msgs = [
-      narratorEvent(0, { enter: ["c2"] }),
+      narratorEvent(0, { enter: ["c1", "c2"] }),
       narratorEvent(1, { leave: ["c1"] }),
     ];
     let st = await computeStage(playChat, msgs);
     expect(st.present).toEqual(["c2"]);
+    // a bare scene change leaves nobody on stage…
     st = await computeStage(playChat, [...msgs, narratorEvent(2, { sceneId: "s2" })]);
     expect(st.sceneId).toBe("s2");
-    expect(st.present).toEqual(["c1", "c2"]);
+    expect(st.present).toEqual([]);
+    // …and a transition message's enters fold AFTER the reset: the new scene's tableau
+    st = await computeStage(playChat, [...msgs, narratorEvent(2, { sceneId: "s2", enter: ["c1"] })]);
+    expect(st.present).toEqual(["c1"]);
   });
 
   it("never puts the played character (a non-participant) on stage", async () => {
     const asMira: Chat = { ...playChat, characterIds: ["c2"], personaCharacterId: "c1" };
-    const st = await computeStage(asMira, [narratorEvent(0, { sceneId: "s2" })]);
+    const st = await computeStage(asMira, [narratorEvent(0, { sceneId: "s2", enter: ["c1", "c2"] })]);
     expect(st.present).toEqual(["c2"]);
   });
 
@@ -346,7 +350,16 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     const req = await buildNarratorRequest(storyCtx([]), modelRef);
     expect(req.system).toContain("THE CAST'S VOICES ARE NEVER YOURS");
     expect(req.system).toContain("Mira, Kael");
-    expect(req.system).toContain("An entered character takes the very next turn");
+    expect(req.system).toContain("A MID-SCENE entered character takes the very next turn");
+  });
+
+  it("the narrator owns presence: empty-stage staging rules and the scene's featured cast", async () => {
+    const req = await buildNarratorRequest(storyCtx([]), modelRef);
+    expect(req.system).toContain("a scene OPENS ON AN EMPTY STAGE");
+    expect(req.system).toContain("THIS SCENE FEATURES: Mira, Kael");
+    expect(req.system).toContain("fail FORWARD");
+    // options must span distinct approaches — the variety rule rides the options instruction
+    expect(req.system).toContain("genuinely different approaches");
   });
 
   it("the narrator sees the contract, destination, and all secrets with hints", async () => {
@@ -420,6 +433,54 @@ describe("story knowledge boundaries (secrets & reveals)", () => {
     );
     const narrReq = await buildNarratorRequest(ctx, modelRef);
     expect(narrReq.system).toContain("PACING: the scene is close to done");
+  });
+
+  it("the director's beat reaches the next character as an app-authored pacing line", async () => {
+    const saved = await saveChat({ title: "beat-prompt" });
+    const base = storyCtx([]);
+    const ctx: ChatContext = { ...base, chat: { ...base.chat, id: saved.id } };
+    // the dashboard asks for a beat pick
+    expect((await buildDirectorRequest(ctx, modelRef)).system).toContain(`"beat"`);
+    // no beat (or "carry"): no pacing line in the character prompt
+    await putDirectorRead(saved.id, "s1", "unmet");
+    expect((await buildCharacterRequest(ctx, mira, modelRef)).system).not.toContain("PACING");
+    await putDirectorRead(saved.id, "s1", "unmet", "carry");
+    expect((await buildCharacterRequest(ctx, mira, modelRef)).system).not.toContain("PACING");
+    // an active beat maps to OUR sentence — the model picked a token, never wrote a line
+    await putDirectorRead(saved.id, "s1", "near", "close");
+    const req = await buildCharacterRequest(ctx, mira, modelRef);
+    expect(req.system).toContain("PACING (the scene's shared rhythm, not a script): the scene is winding down");
+    // a scene change invalidates the read — the line disappears with it
+    const moved: ChatContext = { ...ctx, stage: { ...ctx.stage, sceneId: "s2" } };
+    expect((await buildCharacterRequest(moved, mira, modelRef)).system).not.toContain("PACING");
+  });
+
+  it("a fresh revelation is a breather: both director and narrator hear it", async () => {
+    const base = storyCtx(["sec1"]);
+    const reveal: Message = {
+      id: "r1",
+      chatId: base.chat.id,
+      position: 2,
+      role: "narrator",
+      characterId: null,
+      variants: [{ content: "The debt surfaces.", emotion: null, options: null, createdAt: 0 }],
+      activeVariant: 0,
+      sceneEvent: { reveal: ["sec1"] },
+      createdAt: 0,
+    };
+    const ctx: ChatContext = { ...base, messages: [...base.messages, reveal] };
+    expect((await buildDirectorRequest(ctx, modelRef)).system).toContain("A secret was revealed just");
+    expect((await buildNarratorRequest(ctx, modelRef)).system).toContain("PACING: a revelation landed just");
+    // long past: the breather line is gone
+    expect((await buildDirectorRequest(base, modelRef)).system).not.toContain("A secret was revealed just");
+  });
+
+  it("the dashboard flags one character dominating the floor", async () => {
+    const base = storyCtx([]);
+    const ctx: ChatContext = { ...base, messages: makeMessages(exchange("c1", 3)) };
+    expect((await buildDirectorRequest(ctx, modelRef)).system).toContain("Mira has spoken the last 3 character turns");
+    // a single reply is normal flow, not a streak
+    expect((await buildDirectorRequest(base, modelRef)).system).not.toContain("character turns");
   });
 
   it("playing a cast member anchors the narrator's camera and options to them", async () => {
