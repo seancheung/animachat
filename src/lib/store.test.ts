@@ -276,6 +276,23 @@ describe("inner self (column round-trip & seed backfill)", () => {
     expect(embedded.description).not.toContain("Secretly feeds");
   });
 
+  it("the 006 backfill rewrites the original blurb premise, is idempotent, and spares user edits", async () => {
+    const OLD_PREMISE =
+      "Mira owes the Ashen Guild more than money, and the collectors arrive at dawn. What starts as a simple help-wanted notice turns into a night of bad decisions, worse alchemy, and the secret sleeping under the Moonlit Tavern. Tone: warm low-fantasy adventure with humor and heart.";
+    const migration = fs.readFileSync(path.resolve(process.cwd(), "migrations/006_seed_premise.sql"), "utf8");
+    // the fresh test schema seeded the rewritten premise; revert to the pre-006 blurb
+    await run("UPDATE stories SET description=? WHERE id=?", [OLD_PREMISE, STORY_ID]);
+    await execRaw(migration);
+    let premise = (await get("SELECT description FROM stories WHERE id=?", [STORY_ID]))!.description;
+    expect(premise).toContain("Her help-wanted notice hangs by the tavern door");
+    expect(premise).not.toContain("What starts as");
+    await execRaw(migration); // re-run: guard no longer matches
+    expect((await get("SELECT description FROM stories WHERE id=?", [STORY_ID]))!.description).toBe(premise);
+    await run("UPDATE stories SET description=? WHERE id=?", ["my own premise", STORY_ID]);
+    await execRaw(migration);
+    expect((await get("SELECT description FROM stories WHERE id=?", [STORY_ID]))!.description).toBe("my own premise");
+  });
+
   it("the 005 backfill splits an original seed sheet, is idempotent, and spares user edits", async () => {
     // revert Mira to her pre-split sheet, as a not-yet-migrated db would hold it
     await run("UPDATE characters SET description=?, inner_self='' WHERE id=?", [MIRA_OLD, MIRA_ID]);
