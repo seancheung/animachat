@@ -26,10 +26,10 @@ const STAGE_STYLE_DOC =
 
 const FIELD_DOCS: Record<string, string> = {
   character:
-    `"name": string; "description": string (the PUBLIC sheet — personality as it shows, background as known, mannerisms; every other participant in a chat sees it in full); ` +
-    `"innerSelf": string (the PRIVATE side of the sheet, seen ONLY by this character's own prompt, never by other characters or the narrator — drives, wounds, self-knowledge, standing behavioral rules, things never told anyone; put observable material in the description instead, and never duplicate between the two. Not a plot secret: a hidden truth with a reveal moment belongs in a story's secrets, not here); ` +
-    `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes); ` +
-    `"exampleDialogue": string (a few short sample lines showing their voice — ONLY the character's own utterances, one per line, *actions* in asterisks, "dialogue" in quotes; NEVER a labeled multi-speaker transcript — no "Name: ..." turn labels, no other speakers' lines); ` +
+    `"name": string; "description": string (the PUBLIC sheet, written in THIRD person — personality as it shows, background as known, mannerisms; every other participant in a chat sees it in full. Spoiler-free standing color in the PRESENT state: who they ARE as things stand, never plot events, twists, or anything yet to happen — a future thing belongs on a sheet only as the present intention or arrangement already in place ("is saving coin to flee the city", never "will flee the city")); ` +
+    `"innerSelf": string (the PRIVATE side of the sheet, seen ONLY by this character's own prompt, never by other characters or the narrator — drives, wounds, self-knowledge, standing behavioral rules, things never told anyone — their CURRENT state, never foreknowledge of what is to come; put observable material in the description instead, and never duplicate between the two. Written in THIRD person like the description — authorial direction about the character, never "I …" inner monologue or "you …". Not a plot secret: a hidden truth with a reveal moment belongs in a story's secrets, not here); ` +
+    `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes — ONLY the character's own words, actions and perceptions: never the user's words, actions or reactions, and it ends where the user can respond); ` +
+    `"exampleDialogue": string (a few short sample lines showing their voice — ONLY the character's own utterances, one per line, *actions* in asterisks, "dialogue" in quotes; NEVER a labeled multi-speaker transcript — no "Name: ..." turn labels, no other speakers' lines. Timeless and spoiler-free: voice only, never plot events or reveals); ` +
     `"imagePrompt": string (text-to-image prompt for their neutral sprite — see IMAGE PROMPT RULES; cover, in order: physical appearance (body, face, hair), outfit, a neutral standing pose, the framing/view distance (e.g. "full-body shot"), and end with a solid flat single-color background); ` +
     `"customExpressions": [{"name": "kebab-case", "description": "when to use it"}]`,
   persona:
@@ -40,12 +40,12 @@ const FIELD_DOCS: Record<string, string> = {
     `"imagePrompt": string (text-to-image prompt for the background artwork of this place — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
   scene:
-    `"name": string; "setup": string (the situation: what is happening, stakes, how it starts); ` +
+    `"name": string; "setup": string (the situation: what is happening, stakes, how it starts. AUDIENCE-VISIBLE — every participant's prompt receives it while the scene plays: present-state and spoiler-free, what anyone in the scene could know; in a story, the scene's private job goes in its contract fields and hidden truths in secrets); ` +
     `"imagePrompt": string (text-to-image prompt for the background artwork of this scene — see IMAGE PROMPT RULES); ` +
     STAGE_STYLE_DOC,
   lorebook:
     `"name": string; "description": string; ` +
-    `"entries": [{"id": "keep existing id or omit for new", "title": string, "keywords": ["trigger", "words"], "content": string, "scanDepth": 8}]`,
+    `"entries": [{"id": "keep existing id or omit for new", "title": string, "keywords": ["trigger", "words"], "content": string (PUBLIC background knowledge — injected into every participant's prompt when a keyword comes up: world facts as they stand, spoiler-free; a guarded truth with a reveal moment belongs in a story's secrets, never in a lorebook), "scanDepth": 8}]`,
 };
 
 // whole-document story authoring: a story OWNS its characters/locations/scenes/
@@ -212,10 +212,11 @@ export const POST = handler(async (req: Request) => {
     (body.entityType === "story"
       ? `STORY DESIGN PRINCIPLE — author situations, not plots. A story records what is TRUE and under what PRESSURE, never a sequence of events: the player's freedom breaks sequences, it cannot break truths.\n` +
         `- The premise is the situation as play opens — a web of wants, debts and tensions, spoiler-free. Hidden truths belong in secrets, never in the premise.\n` +
+        `- Character sheets are spoiler-free standing color, all three fields (description, innerSelf, exampleDialogue): who someone is, wants, fears, how they carry themselves — never plot events, twists, or what will happen. A concealed EVENT or truth with a reveal moment is a secret; the sheet may carry the motive that makes it true. And sheets are the character's state as play OPENS — like secrets, present tense: a future thing is authored as the intention or arrangement already in place, and growth or change belongs to play, never the sheet.\n` +
         `- Secrets carry the drama: give each a holder (or none), a truth that stays true whatever the player does, and a reveal hint naming the KIND of moment that surfaces it — not a scheduled scene.\n` +
         `- Secrets are STANDING TRUTHS in present tense: a "will happen" is authored as the intention or arrangement already in place ("she has already signed the order", not "she will sign it in scene 3").\n` +
         `- knownByNames = who already knows as play OPENS, never who the secret concerns. A character meant to LEARN a truth mid-story starts outside it — extracting from a novel, mark who knows at the story's opening, not who knows by its end.\n` +
-        `- Scene contracts are jobs, not scripts: a goal (what the scene is for), obstacles (what resists), an exit condition (what done looks like). Never "then X happens" — write what pulls and what blocks, and let play find the path.\n` +
+        `- Scene contracts are jobs, not scripts: a goal (what the scene is for), obstacles (what resists), an exit condition (what done looks like). Never "then X happens" — write what pulls and what blocks, and let play find the path. The setup is the audience-visible half (everyone's prompts receive it); the contract is the scene's private job, seen by the narrator and director only.\n` +
         `- Offstage pressures keep the world moving: an optional per-scene line naming what advances ELSEWHERE while the scene plays ("the rival's men search the docks tonight") — it surfaces as consequences, never as a scheduled event.\n` +
         `- Branches are situations the truths make reachable, not scripted routes: give a scene successors only where the truths genuinely open more than one road, each with a condition hint ("if trust has grown → Moonlit Confession") — guidance for the narrator's judgment, never a gate. Multiple final scenes are multiple endings; the destination says what "the end" MEANS, each final scene is one way of answering it.\n` +
         `- The destination names where the story is headed, not the route or the twists.\n` +
