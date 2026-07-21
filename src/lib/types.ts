@@ -98,8 +98,12 @@ export interface Character {
   id: string;
   name: string;
   avatarAsset: string | null;
-  /** who the character is: personality, background, mannerisms, anything else */
+  /** the PUBLIC sheet — how the character presents and is known; other participants'
+      prompts receive it in full */
   description: string;
+  /** the PRIVATE side of the sheet — drives, wounds, self-knowledge, standing rules;
+      injected only into this character's own prompt, never seen by other participants */
+  innerSelf: string;
   greeting: string;
   exampleDialogue: string;
   /** text-to-image prompt for the neutral sprite */

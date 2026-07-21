@@ -19,6 +19,7 @@ function char(id: string, aliveness: Partial<Character["aliveness"]> = {}): Char
     name: id,
     avatarAsset: null,
     description: "",
+    innerSelf: "",
     greeting: "",
     exampleDialogue: "",
     imagePrompt: "",

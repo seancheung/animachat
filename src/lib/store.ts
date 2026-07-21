@@ -246,6 +246,8 @@ const characterFromRow = (r: Row): Character => ({
   name: r.name,
   avatarAsset: r.avatar_asset,
   description: r.description,
+  // ?? "" covers the deploy-before-migrate window where the column doesn't exist yet
+  innerSelf: r.inner_self ?? "",
   greeting: r.greeting,
   exampleDialogue: r.example_dialogue,
   imagePrompt: r.image_prompt,
@@ -278,6 +280,7 @@ export async function saveCharacter(c: Partial<Character> & { id?: string }): Pr
     name: "Unnamed",
     avatarAsset: null,
     description: "",
+    innerSelf: "",
     greeting: "",
     exampleDialogue: "",
     imagePrompt: "",
@@ -296,14 +299,14 @@ export async function saveCharacter(c: Partial<Character> & { id?: string }): Pr
   });
   await inTransaction(async () => {
     await run(
-      `INSERT INTO characters (id,name,avatar_asset,description,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET name=excluded.name, avatar_asset=excluded.avatar_asset, description=excluded.description, greeting=excluded.greeting,
+      `INSERT INTO characters (id,name,avatar_asset,description,inner_self,greeting,example_dialogue,image_prompt,sprites,sprite_sfx,custom_expressions,typing_sfx_asset,track_relationship,aliveness,idle_motion,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, avatar_asset=excluded.avatar_asset, description=excluded.description, inner_self=excluded.inner_self, greeting=excluded.greeting,
        example_dialogue=excluded.example_dialogue, image_prompt=excluded.image_prompt, sprites=excluded.sprites, sprite_sfx=excluded.sprite_sfx,
        custom_expressions=excluded.custom_expressions, typing_sfx_asset=excluded.typing_sfx_asset,
        track_relationship=excluded.track_relationship, aliveness=excluded.aliveness, idle_motion=excluded.idle_motion, tags=excluded.tags, updated_at=excluded.updated_at`,
     [
-      m.id, m.name, m.avatarAsset, m.description, m.greeting, m.exampleDialogue, m.imagePrompt,
+      m.id, m.name, m.avatarAsset, m.description, m.innerSelf, m.greeting, m.exampleDialogue, m.imagePrompt,
       J.str(m.sprites), J.str(m.spriteSfx), J.str(m.customExpressions), m.typingSfxAsset,
       m.trackRelationship ? 1 : 0, J.str({ ...DEFAULT_ALIVENESS, ...m.aliveness }), m.idleMotion ? 1 : 0,
       J.str(m.tags), m.createdAt, m.updatedAt,

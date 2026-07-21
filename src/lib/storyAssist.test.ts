@@ -31,8 +31,16 @@ describe("mergeStoryAssist", () => {
     expect(out.characters.map((c) => c.name)).toEqual(["Mira", "Kael"]);
     expect(out.characters[0].id).toBe("c1"); // update keeps the id
     expect(out.characters[0].description).toBe("sharper");
+    expect(out.characters[0].innerSelf).toBe(""); // untouched fields keep their normalized default
     expect(out.characters[1].id).toBeTruthy();
     expect(doc.characters).toHaveLength(1); // pure — input untouched
+  });
+
+  it("carries an innerSelf update through the merge", () => {
+    const out = mergeStoryAssist(baseDoc(), {
+      characters: [{ name: "Mira", innerSelf: "hides warmth behind sarcasm" }],
+    });
+    expect(out.characters[0].innerSelf).toBe("hides warmth behind sarcasm");
   });
 
   it("renames via renameFrom instead of duplicating", () => {

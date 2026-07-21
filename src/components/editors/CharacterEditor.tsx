@@ -218,8 +218,11 @@ export function CharacterFields({
           </Field>
         </div>
       </div>
-      <Field label="Description" hint={`personality, background, mannerisms, anything else — ${embedded ? "write literal names — story content doesn't use placeholder tags (everything in a story is fixed)" : PLACEHOLDER_HINT}`}>
+      <Field label="Description" hint={`the public sheet — personality, background, mannerisms as they show and are known; other characters in a chat see it in full — ${embedded ? "write literal names — story content doesn't use placeholder tags (everything in a story is fixed)" : PLACEHOLDER_HINT}`}>
         <Textarea className="w-full h-36" value={form.description ?? ""} onChange={(v) => setForm({ ...form, description: v })} />
+      </Field>
+      <Field label="Inner self" hint="private direction only this character's own prompt sees — drives, wounds, self-knowledge, standing rules; never shown to other characters or the narrator">
+        <Textarea className="w-full h-24" value={form.innerSelf ?? ""} onChange={(v) => setForm({ ...form, innerSelf: v })} />
       </Field>
       <Field label="Example dialogue" hint="a few short lines in their own voice only — one utterance per line, never other speakers' turns">
         <Textarea className="w-full h-24" value={form.exampleDialogue ?? ""} onChange={(v) => setForm({ ...form, exampleDialogue: v })} />

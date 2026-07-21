@@ -56,6 +56,8 @@ async function doReturnPass(chatId: string): Promise<ReturnResult> {
       .join(" | ");
     sheetParts.push(
       `${c.name}:\n${ctx.sub(c.description, c.name).slice(0, 600)}` +
+        // self-facing call — the character's own inner self informs their off-screen life
+        (c.innerSelf ? `\nPrivately (their inner self): ${ctx.sub(c.innerSelf, c.name).slice(0, 300)}` : "") +
         (mind ? `\nOn their mind lately: ${mind}` : "") +
         (facts ? `\nThey remember: ${facts}` : "")
     );

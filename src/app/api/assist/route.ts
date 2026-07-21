@@ -26,7 +26,8 @@ const STAGE_STYLE_DOC =
 
 const FIELD_DOCS: Record<string, string> = {
   character:
-    `"name": string; "description": string (detailed personality, background, mannerisms — the character sheet); ` +
+    `"name": string; "description": string (the PUBLIC sheet — personality as it shows, background as known, mannerisms; every other participant in a chat sees it in full); ` +
+    `"innerSelf": string (the PRIVATE side of the sheet, seen ONLY by this character's own prompt, never by other characters or the narrator — drives, wounds, self-knowledge, standing behavioral rules, things never told anyone; put observable material in the description instead, and never duplicate between the two. Not a plot secret: a hidden truth with a reveal moment belongs in a story's secrets, not here); ` +
     `"greeting": string (their opening message, *actions* in asterisks, "dialogue" in quotes); ` +
     `"exampleDialogue": string (a few short sample lines showing their voice — ONLY the character's own utterances, one per line, *actions* in asterisks, "dialogue" in quotes; NEVER a labeled multi-speaker transcript — no "Name: ..." turn labels, no other speakers' lines); ` +
     `"imagePrompt": string (text-to-image prompt for their neutral sprite — see IMAGE PROMPT RULES; cover, in order: physical appearance (body, face, hair), outfit, a neutral standing pose, the framing/view distance (e.g. "full-body shot"), and end with a solid flat single-color background); ` +
@@ -91,7 +92,8 @@ async function referenceText(ref: { type: string; id: string }): Promise<string 
     case "character": {
       const c = await getCharacter(ref.id);
       if (!c) return null;
-      return `CHARACTER "${c.name}"\n${c.description}${c.exampleDialogue ? `\nExample dialogue:\n${c.exampleDialogue}` : ""}`;
+      // authoring-time context — the user is the author, so the private side rides along, labeled
+      return `CHARACTER "${c.name}"\n${c.description}${c.innerSelf ? `\nInner self (private to the character): ${c.innerSelf}` : ""}${c.exampleDialogue ? `\nExample dialogue:\n${c.exampleDialogue}` : ""}`;
     }
     case "persona": {
       const p = await getPersona(ref.id);

@@ -2080,10 +2080,20 @@ function ChatDrawer({
             (s) => chat.personaCharacterId && s.knownBy.includes(chat.personaCharacterId) && !revealed.includes(s.id)
           );
           const open = secrets.filter((s) => revealed.includes(s.id));
-          if (!mine.length && !open.length) return null;
+          const inner: string = chat.storySnapshot?.characters?.find((c: any) => c.id === chat.personaCharacterId)?.innerSelf ?? "";
+          if (!mine.length && !open.length && !inner) return null;
           return (
             <Field label="Secrets" hint="what you know that others don't — and what the story has revealed">
               <div className="space-y-1.5">
+                {inner && (
+                  <div className="panel p-2.5 text-xs space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-sm text-content-100">
+                      <VenetianMask size={13} /> Inner self
+                      <Badge variant="secondary" rounded className="ml-auto">yours to play</Badge>
+                    </div>
+                    <div className="text-content-300">{inner}</div>
+                  </div>
+                )}
                 {mine.map((s) => (
                   <div key={s.id} className="panel p-2.5 text-xs space-y-0.5">
                     <div className="flex items-center gap-1.5 text-sm text-content-100">

@@ -627,6 +627,12 @@ export async function buildCharacterRequest(
       ? `You are ${character.name}, chatting with ${personaName} over an online messenger. Stay in character at all times.`
       : `You are ${character.name}, a character in an ongoing roleplay chat. Stay in character at all times.`,
     `ABOUT ${character.name.toUpperCase()}:\n${ctx.sub(character.description, character.name)}`,
+    character.innerSelf
+      ? ctx.sub(
+          `${character.name.toUpperCase()}'S INNER SELF (private — no one else in this fiction knows or sees any of this):\n${character.innerSelf}\nLet it steer what ${character.name} wants, avoids and reaches for. It is direction, not content: never announce, quote or explain it — it surfaces only through behavior, and stays unspoken unless the scene truly drags it out.`,
+          character.name
+        )
+      : "",
     character.exampleDialogue && ownReplies < EXAMPLE_DIALOGUE_FADE
       ? pure
         ? // example dialogue is written in the RP convention — inject it in this
@@ -634,8 +640,9 @@ export async function buildCharacterRequest(
           `EXAMPLE OF HOW ${character.name} TEXTS:\n${toPureChat(ctx.sub(character.exampleDialogue, character.name))}`
         : `EXAMPLE OF HOW ${character.name} SPEAKS:\n${ctx.sub(character.exampleDialogue, character.name)}`
       : "",
+    // public sheets only — a character's innerSelf never reaches anyone else's prompt
     others.length
-      ? `OTHER CHARACTERS PRESENT: ${others.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`
+      ? `OTHER CHARACTERS PRESENT (as they present themselves and are known — their private inner lives are not yours to read):\n${others.map((c) => `- ${c.name} — ${ctx.sub(c.description, c.name)}`).join("\n")}`
       : "",
     worldBlock(ctx),
     personaBlock(ctx),
@@ -868,7 +875,9 @@ export async function buildNarratorRequest(ctx: ChatContext, model: ResolvedMode
 
   const system = [
     `You are the NARRATOR of an ongoing roleplay. You describe scenery, atmosphere, events and transitions; you move the plot forward. You never speak or decide for the characters or the user.`,
-    `CHARACTERS: ${ctx.characters.map((c) => `${c.name} — ${ctx.sub(c.description, c.name).slice(0, 200)}`).join("; ")}`,
+    // public sheets in full; innerSelf is deliberately withheld even from the narrator
+    // (unlike story secrets — an inner self is the character's alone, with no reveal moment)
+    `CHARACTERS:\n${ctx.characters.map((c) => `- ${c.name} — ${ctx.sub(c.description, c.name)}`).join("\n")}`,
     castBlock,
     worldBlock(ctx),
     personaBlock(ctx),

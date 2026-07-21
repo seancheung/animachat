@@ -36,6 +36,7 @@ export const normalizeCharacter = (c: any): Character => ({
   name: str(c?.name, "Unnamed"),
   avatarAsset: str(c?.avatarAsset) || null,
   description: str(c?.description),
+  innerSelf: str(c?.innerSelf),
   greeting: str(c?.greeting),
   exampleDialogue: str(c?.exampleDialogue),
   imagePrompt: str(c?.imagePrompt),

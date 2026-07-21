@@ -46,6 +46,7 @@ function makeCharacter(id: string, name: string): Character {
     name,
     avatarAsset: null,
     description: "Keeper of the moonlit tavern.",
+    innerSelf: "",
     greeting: "",
     exampleDialogue: `"Welcome, traveler."`,
     imagePrompt: "",
@@ -680,6 +681,41 @@ describe("narrator branching & offstage pressures", () => {
     const req = await buildNarratorRequest(branchCtx("s1"), modelRef);
     expect(req.system).toContain("THIS SCENE'S JOB");
     expect(req.system).toContain("Meanwhile, elsewhere: the collectors work their way up the river road");
+  });
+});
+
+describe("character sheet split (public description, private inner self)", () => {
+  const mira = { ...makeCharacter("c1", "Mira"), innerSelf: "Hides genuine warmth behind sarcasm." };
+  const kael = { ...makeCharacter("c2", "Kael"), description: "K".repeat(260) };
+
+  it("the inner self reaches only its owner's prompt — never a co-character or the narrator", async () => {
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira, kael]);
+    const miraReq = await buildCharacterRequest(ctx, mira, modelRef);
+    expect(miraReq.system).toContain("MIRA'S INNER SELF");
+    expect(miraReq.system).toContain("Hides genuine warmth behind sarcasm.");
+    const kaelReq = await buildCharacterRequest(ctx, kael, modelRef);
+    expect(kaelReq.system).not.toContain("Hides genuine warmth behind sarcasm.");
+    const narrReq = await buildNarratorRequest({ ...ctx, chat: { ...chat, narratorEnabled: true } }, modelRef);
+    expect(narrReq.system).not.toContain("Hides genuine warmth behind sarcasm.");
+  });
+
+  it("an empty inner self injects no block", async () => {
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [kael]);
+    expect((await buildCharacterRequest(ctx, kael, modelRef)).system).not.toContain("INNER SELF");
+  });
+
+  it("co-characters and the narrator see the full public description, untruncated", async () => {
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira, kael]);
+    const miraReq = await buildCharacterRequest(ctx, mira, modelRef);
+    expect(miraReq.system).toContain("K".repeat(260));
+    const narrReq = await buildNarratorRequest({ ...ctx, chat: { ...chat, narratorEnabled: true } }, modelRef);
+    expect(narrReq.system).toContain("K".repeat(260));
+  });
+
+  it("the inner-self block applies in casual (pure chat) mode too", async () => {
+    const ctx = makeCtx(makeMessages(exchange("c1", 1)), [mira]);
+    const req = await buildCharacterRequest({ ...ctx, chat: { ...chat, mode: "casual" } }, mira, modelRef);
+    expect(req.system).toContain("MIRA'S INNER SELF");
   });
 });
 

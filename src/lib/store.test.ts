@@ -7,8 +7,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // docker-compose one by default).
 const TEST_SCHEMA = `test_store_${process.pid.toString(36)}_${Date.now().toString(36)}`;
 process.env.ANIMACHAT_PG_SCHEMA = TEST_SCHEMA;
+import fs from "node:fs";
+import path from "node:path";
 import { dropTestSchema, initTestSchema } from "./testDb";
-import { all } from "./db";
+import { all, execRaw, get, run } from "./db";
 import { normalizeStoryDoc } from "./storyDoc";
 import {
   PageError,
@@ -21,6 +23,7 @@ import {
   deleteCharacter,
   deleteStory,
   encodeCursor,
+  getCharacter,
   getDirectorRead,
   getMessage,
   getSettings,
@@ -236,6 +239,62 @@ describe("saveStory (embedded document)", () => {
     expect(story.scenes[1].successors).toEqual([{ sceneId: "a", hint: "back to the start" }]);
     expect(story.secrets[0].knownBy).toEqual(["c1"]);
     expect(story.characters[0]).toMatchObject({ name: "Mira", trackRelationship: true });
+    expect(story.characters[0].innerSelf).toBe(""); // sparse-safe: missing key normalizes to empty
+  });
+
+  it("preserves an embedded character's innerSelf through normalization", async () => {
+    const story = await saveStory({
+      name: "inner",
+      characters: [{ id: "c1", name: "Mira", innerSelf: "hides warmth behind sarcasm" }],
+    } as never);
+    expect(story.characters[0].innerSelf).toBe("hides warmth behind sarcasm");
+  });
+});
+
+describe("inner self (column round-trip & seed backfill)", () => {
+  const MIRA_ID = "d29d05fd-1ada-40fc-893b-c0c444136140";
+  const STORY_ID = "11872c33-a24f-49dd-a702-6718d23fe3ab";
+  // the pre-split seed description, byte-for-byte (real apostrophes and em-dashes)
+  const MIRA_OLD =
+    "[char_name] Thistledown, 24, alchemist and reluctant owner of the Moonlit Tavern's back-room apothecary. Sharp-tongued and fiercely independent, she hides genuine warmth behind sarcasm. Brilliant with potions, terrible with money — she's three payments behind to the Ashen Guild. Secretly feeds every stray cat in the alley. Hates being thanked; blushes when compliments land.";
+  const MIGRATION = fs.readFileSync(path.resolve(process.cwd(), "migrations/005_inner_self.sql"), "utf8");
+
+  it("round-trips innerSelf; omitted defaults to empty", async () => {
+    const c = await saveCharacter({ name: "Orphan", innerSelf: "an orphan — has never told anyone" });
+    expect((await getCharacter(c.id))!.innerSelf).toBe("an orphan — has never told anyone");
+    const plain = await saveCharacter({ name: "Plain" });
+    expect((await getCharacter(plain.id))!.innerSelf).toBe("");
+  });
+
+  it("the seed ships split sheets (character row and the story's embedded copy)", async () => {
+    const mira = (await getCharacter(MIRA_ID))!;
+    expect(mira.innerSelf).toContain("Secretly feeds every stray cat");
+    expect(mira.description).not.toContain("Secretly feeds");
+    const row = (await get("SELECT characters FROM stories WHERE id=?", [STORY_ID]))!;
+    const embedded = JSON.parse(row.characters).find((c: { name: string }) => c.name === "Mira");
+    expect(embedded.innerSelf).toContain("Secretly feeds every stray cat");
+    expect(embedded.description).not.toContain("Secretly feeds");
+  });
+
+  it("the 005 backfill splits an original seed sheet, is idempotent, and spares user edits", async () => {
+    // revert Mira to her pre-split sheet, as a not-yet-migrated db would hold it
+    await run("UPDATE characters SET description=?, inner_self='' WHERE id=?", [MIRA_OLD, MIRA_ID]);
+    await execRaw(MIGRATION);
+    let mira = (await getCharacter(MIRA_ID))!;
+    expect(mira.innerSelf).toContain("Secretly feeds every stray cat");
+    expect(mira.description).not.toContain("Secretly feeds");
+    const after = { description: mira.description, innerSelf: mira.innerSelf };
+
+    await execRaw(MIGRATION); // re-run: the WHERE guard no longer matches
+    mira = (await getCharacter(MIRA_ID))!;
+    expect({ description: mira.description, innerSelf: mira.innerSelf }).toEqual(after);
+
+    // a user-edited sheet never matches the guard and is left alone
+    await run("UPDATE characters SET description=?, inner_self='' WHERE id=?", ["my own Mira now", MIRA_ID]);
+    await execRaw(MIGRATION);
+    mira = (await getCharacter(MIRA_ID))!;
+    expect(mira.description).toBe("my own Mira now");
+    expect(mira.innerSelf).toBe("");
   });
 });
 
