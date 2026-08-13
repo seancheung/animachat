@@ -209,6 +209,7 @@ function resolveNextScene(ctx: ChatContext, target: string | null): string | nul
 async function maybeGenerateTitle(chatId: string) {
   try {
     const ctx = await buildContext(chatId);
+    if (!ctx.settings.titleGenerationEnabled) return;
     // playthroughs are titled at creation ("Playthrough — <played name>") — never by AI
     if (ctx.chat.mode === "story") return;
     if (ctx.chat.title !== "New chat" || ctx.messages.length < 2) return;

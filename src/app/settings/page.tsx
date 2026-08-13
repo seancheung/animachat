@@ -444,6 +444,14 @@ export default function SettingsPage() {
                 options={Object.entries(POV_LABELS).map(([k, v]) => ({ value: k, label: v }))}
               />
             </Field>
+            <Field label="Automatic chat titles" hint="generate a short title after a new casual or immersive chat's first exchange">
+              <Switch
+                className="h-8"
+                value={settings.titleGenerationEnabled}
+                onChange={(v) => patchSettings({ titleGenerationEnabled: v })}
+                label={settings.titleGenerationEnabled ? "Enabled" : "Disabled"}
+              />
+            </Field>
             <Field label="User relationships" hint="track affinity between you (persona) and characters — off: no updates, no prompt injection">
               <Switch
                 className="h-8"

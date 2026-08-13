@@ -565,6 +565,8 @@ export function taskMaxTokens(settings: Settings, task: CappedTask): number {
 export interface Settings {
   defaultModelId: string | null;
   taskModels: Partial<Record<AiTask, string | null>>;
+  /** generate a short AI title after a casual/immersive chat's first exchange */
+  titleGenerationEnabled: boolean;
   language: string;
   pov: Pov;
   contextBudgetCap: number;
@@ -608,6 +610,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   defaultModelId: null,
   taskModels: {},
+  titleGenerationEnabled: true,
   language: "English",
   pov: "user1st",
   contextBudgetCap: 32000,
