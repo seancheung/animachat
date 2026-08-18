@@ -11,8 +11,10 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  FileText,
   LoaderCircle,
   MessagesSquare,
+  MoreHorizontal,
   Plus,
   Settings2,
   Trash2,
@@ -28,8 +30,10 @@ import {
   type SettingsAssistantUpdate,
 } from "@/components/manuscript/ManuscriptAssistant";
 import { ManuscriptChatsPanel } from "@/components/manuscript/ManuscriptChatsPanel";
+import { ChapterSummaryDialog } from "@/components/manuscript/ChapterSummaryDialog";
 import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
+import Dropdown from "@/components/ui/dropdown";
 import Input from "@/components/ui/input";
 import Select from "@/components/ui/select";
 import Textarea from "@/components/ui/textarea";
@@ -38,8 +42,22 @@ import { confirmDialog } from "@/components/confirm";
 import { confirmNavigation, registerNavigationGuard } from "@/lib/navigationGuard";
 import { useGet, useInvalidate } from "@/lib/queries";
 import { api, timestamp } from "@/lib/ui";
-import { emptyManuscript, MANUSCRIPT_PERSPECTIVE_LABELS, normalizeManuscriptChapter, normalizeManuscriptCharacter } from "@/lib/manuscript";
-import type { Manuscript, ManuscriptAssistantScope, ManuscriptConversation, ManuscriptPerspective, ManuscriptSession } from "@/lib/types";
+import {
+  emptyManuscript,
+  isManuscriptChapterSummaryStale,
+  MANUSCRIPT_PERSPECTIVE_LABELS,
+  manuscriptChapterContentHash,
+  normalizeManuscriptChapter,
+  normalizeManuscriptCharacter,
+} from "@/lib/manuscript";
+import type {
+  Manuscript,
+  ManuscriptAssistantScope,
+  ManuscriptChapterContext,
+  ManuscriptConversation,
+  ManuscriptPerspective,
+  ManuscriptSession,
+} from "@/lib/types";
 import { countWords } from "@/lib/wordCount";
 
 type EditorTab = ManuscriptAssistantScope;
@@ -52,7 +70,7 @@ function manuscriptSnapshot(manuscript: Manuscript): string {
     perspective: manuscript.perspective,
     style: manuscript.style,
     modelId: manuscript.modelId,
-    assistantIncludeActiveChapter: manuscript.assistantIncludeActiveChapter,
+    assistantChapterContext: manuscript.assistantChapterContext,
     chapters: manuscript.chapters,
     characters: manuscript.characters,
     sessions: manuscript.sessions,
@@ -72,6 +90,7 @@ export default function ManuscriptEditorPage() {
   const formRef = useRef<Manuscript | null>(null);
   const [tab, setTab] = useState<EditorTab>("manuscript");
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  const [summaryChapterId, setSummaryChapterId] = useState<string | null>(null);
   const [quote, setQuote] = useState<ManuscriptQuote | null>(null);
   const [rightPanel, setRightPanel] = useState<"assistant" | "chats" | null>("assistant");
   const [saveState, setSaveState] = useState<AutoSaveState>("pristine");
@@ -483,6 +502,19 @@ export default function ManuscriptEditorPage() {
     patch({ chapters });
   };
 
+  const saveChapterSummary = (chapterId: string, summary: string) => {
+    patch({
+      chapters: form.chapters.map((chapter) => chapter.id === chapterId ? {
+        ...chapter,
+        summary,
+        summaryContentHash: summary ? manuscriptChapterContentHash(chapter.content) : null,
+        updatedAt: timestamp(),
+      } : chapter),
+    });
+  };
+
+  const summaryChapter = form.chapters.find((chapter) => chapter.id === summaryChapterId) ?? null;
+
   return (
     <div className="h-full min-h-0 flex flex-col">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
@@ -568,10 +600,50 @@ export default function ManuscriptEditorPage() {
                   <div className="text-[11px] text-content-400 mt-1 flex items-center">
                     {countWords(chapter.content).toLocaleString()} words
                     <span className="flex-1" />
-                    <span className="opacity-0 group-hover:opacity-100 flex" onClick={(e) => e.stopPropagation()}>
-                      <button className="p-0.5 cursor-pointer hover:text-content-100" title="Move up" onClick={() => moveChapter(chapter.id, -1)} disabled={i === 0}><ChevronUp size={13} /></button>
-                      <button className="p-0.5 cursor-pointer hover:text-content-100" title="Move down" onClick={() => moveChapter(chapter.id, 1)} disabled={i === form.chapters.length - 1}><ChevronDown size={13} /></button>
-                      <button className="p-0.5 cursor-pointer hover:text-error" title="Delete" onClick={() => removeChapter(chapter.id)}><Trash2 size={13} /></button>
+                    <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
+                      <Dropdown
+                        compact
+                        align="end"
+                        items={[
+                          {
+                            label: "Summary",
+                            icon: <FileText />,
+                            shortcut: chapter.summary
+                              ? isManuscriptChapterSummaryStale(chapter) ? "Stale" : "Current"
+                              : "Empty",
+                            onSelect: () => setSummaryChapterId(chapter.id),
+                          },
+                          { type: "separator" },
+                          {
+                            label: "Move up",
+                            icon: <ChevronUp />,
+                            disabled: i === 0,
+                            onSelect: () => moveChapter(chapter.id, -1),
+                          },
+                          {
+                            label: "Move down",
+                            icon: <ChevronDown />,
+                            disabled: i === form.chapters.length - 1,
+                            onSelect: () => moveChapter(chapter.id, 1),
+                          },
+                          { type: "separator" },
+                          {
+                            label: "Delete chapter",
+                            icon: <Trash2 />,
+                            danger: true,
+                            disabled: form.chapters.length === 1,
+                            onSelect: () => void removeChapter(chapter.id),
+                          },
+                        ]}
+                      >
+                        <button
+                          type="button"
+                          className="has-icon-3.5 flex size-5 cursor-pointer items-center justify-center rounded-sm text-content-400 outline-none hover:bg-base-300 hover:text-content-100 focus-visible:ring-2 focus-visible:ring-primary-500"
+                          aria-label={`Actions for ${chapter.title}`}
+                        >
+                          <MoreHorizontal />
+                        </button>
+                      </Dropdown>
                     </span>
                   </div>
                 </div>
@@ -604,6 +676,23 @@ export default function ManuscriptEditorPage() {
                   </Field>
                   <Field label="AI model" hint="Overrides the Manuscript model from system settings for this project only.">
                     <ModelPicker value={form.modelId} onChange={(modelId) => patch({ modelId })} placeholder="(Manuscript default model)" />
+                  </Field>
+                  <Field
+                    label="Active chapter context"
+                    hint="Controls what the settings and character assistants receive from the active chapter."
+                  >
+                    <Select
+                      className="w-full"
+                      value={form.assistantChapterContext}
+                      onChange={(assistantChapterContext) => patch({
+                        assistantChapterContext: assistantChapterContext as ManuscriptChapterContext,
+                      })}
+                      options={[
+                        { value: "none", label: "None" },
+                        { value: "summary", label: "Summary" },
+                        { value: "full", label: "Full content" },
+                      ]}
+                    />
                   </Field>
                 </div>
               </section>
@@ -734,7 +823,6 @@ export default function ManuscriptEditorPage() {
                 onPreview={previewStructuredAi}
                 onCommitPreview={commitStructuredAiPreview}
                 onDiscardPreview={discardStructuredAiPreview}
-                onIncludeActiveChapterChange={(assistantIncludeActiveChapter) => patch({ assistantIncludeActiveChapter })}
                 onSaveSessions={saveSessions}
                 canUndo={historyState.undo > 0}
                 canRedo={historyState.redo > 0}
@@ -755,6 +843,14 @@ export default function ManuscriptEditorPage() {
           </div>
         </motion.div>
       </motion.div>
+
+      <ChapterSummaryDialog
+        manuscript={form}
+        chapter={summaryChapter}
+        open={!!summaryChapter}
+        onOpenChange={(open) => { if (!open) setSummaryChapterId(null); }}
+        onSave={saveChapterSummary}
+      />
 
     </div>
   );

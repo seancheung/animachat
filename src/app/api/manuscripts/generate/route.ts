@@ -14,15 +14,25 @@ import {
 } from "@/lib/ai/manuscriptCharacterDesign";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
-  manuscriptIncludesActiveChapter,
+  manuscriptChapterContextForAction,
+  manuscriptGenerationModelTask,
   manuscriptInputBudget,
   manuscriptResponseTokens,
   packManuscriptPrompt,
   type ManuscriptGenerationAction,
   type ManuscriptContextState,
 } from "@/lib/ai/manuscriptContext";
+import { isManuscriptChapterSummaryStale } from "@/lib/manuscript";
 import { getSettings } from "@/lib/store";
-import { type Manuscript, type ManuscriptCharacter, type ManuscriptConversationMessage, type ManuscriptMessage, type Settings } from "@/lib/types";
+import {
+  type Manuscript,
+  type ManuscriptChapter,
+  type ManuscriptChapterContext,
+  type ManuscriptCharacter,
+  type ManuscriptConversationMessage,
+  type ManuscriptMessage,
+  type Settings,
+} from "@/lib/types";
 import { countWords } from "@/lib/wordCount";
 
 type Action = ManuscriptGenerationAction;
@@ -36,13 +46,14 @@ interface Body {
   quoteEnd?: number;
   prompt?: string;
   characterIds?: string[];
+  chapterContext?: ManuscriptChapterContext;
   includeActiveChapter?: boolean;
   messages?: (ManuscriptMessage | ManuscriptConversationMessage)[];
 }
 
 const ACTIONS = new Set<Action>([
   "continue", "rewrite", "assistant", "settings-assistant", "character-design",
-  "synopsis", "style", "character", "conversation-chat",
+  "synopsis", "style", "character", "chapter-summary", "conversation-chat",
 ]);
 const FIELDS_OPEN = "<fields>";
 const FIELDS_CLOSE = "</fields>";
@@ -51,7 +62,7 @@ const ELIDED_FIELDS = `${FIELDS_OPEN}(elided — applied to the manuscript form)
 function contextOf(
   manuscript: Manuscript,
   chapterId?: string,
-  includeActiveChapter = true,
+  chapterContext: ManuscriptChapterContext = "full",
   limits?: Pick<ManuscriptContextState<unknown>, "chapterContent" | "chapterTruncated" | "historyTruncated">
 ) {
   const chapter = manuscript.chapters.find((c) => c.id === chapterId) ?? manuscript.chapters[0];
@@ -77,11 +88,25 @@ function contextOf(
       appearance: c.appearance,
       voice: c.voice,
     })),
-    activeChapter: includeActiveChapter && chapter
-      ? { title: chapter.title, content: limits?.chapterContent ?? chapter.content }
-      : null,
+    activeChapter: !chapter || chapterContext === "none"
+      ? null
+      : chapterContext === "summary"
+        ? {
+            title: chapter.title,
+            summary: limits?.chapterContent ?? chapter.summary,
+            summaryStale: isManuscriptChapterSummaryStale(chapter),
+          }
+        : { title: chapter.title, content: limits?.chapterContent ?? chapter.content },
     ...(contextLimitNotices.length ? { contextLimitNotices } : {}),
   };
+}
+
+function chapterAttachment(
+  chapter: ManuscriptChapter | undefined,
+  chapterContext: ManuscriptChapterContext
+): string | null {
+  if (!chapter || chapterContext === "none") return null;
+  return chapterContext === "summary" ? chapter.summary : chapter.content;
 }
 
 function contextLimitEvent(packed: {
@@ -172,12 +197,12 @@ async function conversationResponse(
           const speaker = queue.shift()!;
           turns++;
           const packed = packManuscriptPrompt({
-            chapterContent: includeActiveChapter && chapter ? chapter.content : null,
+            chapterContent: chapterAttachment(chapter, includeActiveChapter ? "full" : "none"),
             history: messages,
             inputBudget,
             preserveHistoryItem: (_message, index) => index === lastUserIndex,
             build: (state) => buildManuscriptCharacterRequest(
-              contextOf(body.manuscript, body.chapterId, includeActiveChapter, state),
+              contextOf(body.manuscript, body.chapterId, includeActiveChapter ? "full" : "none", state),
               state.history,
               cast,
               speaker,
@@ -262,7 +287,13 @@ export const POST = handler(async (req: Request) => {
   }
   let modelRef;
   try {
-    modelRef = await resolveModel("manuscript", null, null, body.manuscript.modelId);
+    const modelTask = manuscriptGenerationModelTask(body.action);
+    modelRef = await resolveModel(
+      modelTask,
+      null,
+      null,
+      modelTask === "manuscriptWrite" ? body.manuscript.modelId : null
+    );
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
@@ -297,6 +328,9 @@ export const POST = handler(async (req: Request) => {
     case "character":
       instruction = `Create one embedded character that fits this manuscript. Return only valid JSON with exactly these string fields: name, description, personality, appearance, voice. ${MANUSCRIPT_CHARACTER_VOICE_INSTRUCTION} User direction: ${body.prompt || "Create a dramatically useful character."}`;
       break;
+    case "chapter-summary":
+      instruction = `Summarize the active chapter faithfully and concisely. Capture the important events, decisions, revelations, character and relationship changes, current state, and unresolved threads needed for later continuity. Return only the summary, with no heading or commentary.`;
+      break;
     default:
       instruction = `Act as the manuscript assistant. Discuss the active chapter, prose, plot, pacing, and continuity concretely. When quoted text is present, treat it as the user's selected manuscript passage. Do not claim to have edited the document; direct prose edits happen through Continue and Rewrite.\n\nSelected quote:\n${body.quote || "(none)"}`;
   }
@@ -325,21 +359,21 @@ export const POST = handler(async (req: Request) => {
   if (!history.length) return bad("message required");
 
   const responseTokens = manuscriptResponseTokens(settings, body.action);
-  const includeActiveChapter = manuscriptIncludesActiveChapter(
+  const chapterContext = manuscriptChapterContextForAction(
     body.action,
-    body.includeActiveChapter ?? body.manuscript.assistantIncludeActiveChapter
+    body.chapterContext ?? body.manuscript.assistantChapterContext
   );
   const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
     ?? body.manuscript.chapters[0];
   const packed = packManuscriptPrompt({
-    chapterContent: includeActiveChapter ? chapter?.content ?? null : null,
+    chapterContent: chapterAttachment(chapter, chapterContext),
     history,
     inputBudget: manuscriptInputBudget(settings, modelRef, responseTokens),
     chapterFocus: typeof body.quoteStart === "number" && typeof body.quoteEnd === "number"
       ? { start: body.quoteStart, end: body.quoteEnd }
       : undefined,
     build: (state) => {
-      const context = contextOf(body.manuscript, body.chapterId, includeActiveChapter, state);
+      const context = contextOf(body.manuscript, body.chapterId, chapterContext, state);
       return {
         system:
           `You are an expert manuscript assistant. Respond in ${settings.language}. ` +
@@ -452,7 +486,7 @@ export const POST = handler(async (req: Request) => {
           messages: packed.request.messages,
           maxTokens: responseTokens,
           temperature: 0.8,
-          feature: "manuscript",
+          feature: body.action === "chapter-summary" ? "memory" : "manuscriptWrite",
           signal: abort.signal,
         })) {
           if (ev.type === "text") {

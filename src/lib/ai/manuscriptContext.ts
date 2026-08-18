@@ -1,5 +1,10 @@
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
-import { taskMaxTokens, type Settings } from "@/lib/types";
+import {
+  taskMaxTokens,
+  type AiTask,
+  type ManuscriptChapterContext,
+  type Settings,
+} from "@/lib/types";
 
 export type ManuscriptGenerationAction =
   | "continue"
@@ -10,7 +15,14 @@ export type ManuscriptGenerationAction =
   | "synopsis"
   | "style"
   | "character"
+  | "chapter-summary"
   | "conversation-chat";
+
+export function manuscriptGenerationModelTask(action: ManuscriptGenerationAction): AiTask {
+  if (action === "chapter-summary") return "memory";
+  if (action === "conversation-chat") return "chat";
+  return "manuscriptWrite";
+}
 
 /** Route manuscript features to the reply-length control matching their output. */
 export function manuscriptResponseTokens(
@@ -18,21 +30,22 @@ export function manuscriptResponseTokens(
   action: ManuscriptGenerationAction
 ): number {
   if (action === "conversation-chat") return taskMaxTokens(settings, "chat");
+  if (action === "chapter-summary") return taskMaxTokens(settings, "chapterSummary");
   if (action === "continue" || action === "rewrite") {
     return taskMaxTokens(settings, "manuscriptWrite");
   }
   return taskMaxTokens(settings, "assist");
 }
 
-/** Structured assistants opt into chapter prose; writing and general chat require it. */
-export function manuscriptIncludesActiveChapter(
+/** Structured assistants use the manuscript preference; prose-dependent actions require full text. */
+export function manuscriptChapterContextForAction(
   action: ManuscriptGenerationAction,
-  requested?: boolean
-): boolean {
+  requested: ManuscriptChapterContext = "none"
+): ManuscriptChapterContext {
   if (action === "settings-assistant" || action === "character-design") {
-    return requested === true;
+    return requested === "summary" || requested === "full" ? requested : "none";
   }
-  return true;
+  return "full";
 }
 
 export interface BuiltManuscriptPrompt {

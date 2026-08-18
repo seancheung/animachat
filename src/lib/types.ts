@@ -492,11 +492,15 @@ export interface StoryBondsRecord {
 /* ---------------- manuscripts ---------------- */
 
 export type ManuscriptPerspective = "first" | "third-limited" | "third-omniscient" | "second";
+export type ManuscriptChapterContext = "none" | "summary" | "full";
 
 export interface ManuscriptChapter {
   id: string;
   title: string;
   content: string;
+  summary: string;
+  /** Hash of chapter content when the current summary was last saved. */
+  summaryContentHash: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -566,8 +570,8 @@ export interface Manuscript {
   style: string;
   /** null inherits Settings → Manuscript → global default. */
   modelId: string | null;
-  /** Shared structured-assistant preference, stored per manuscript. */
-  assistantIncludeActiveChapter: boolean;
+  /** Active-chapter attachment used by the settings and character assistants. */
+  assistantChapterContext: ManuscriptChapterContext;
   chapters: ManuscriptChapter[];
   characters: ManuscriptCharacter[];
   sessions: ManuscriptSession[];
@@ -614,7 +618,7 @@ export type AiTask =
   | "impersonate"
   | "title"
   | "novelize"
-  | "manuscript";
+  | "manuscriptWrite";
 
 export const AI_TASKS: AiTask[] = [
   "chat",
@@ -627,7 +631,7 @@ export const AI_TASKS: AiTask[] = [
   "impersonate",
   "title",
   "novelize",
-  "manuscript",
+  "manuscriptWrite",
 ];
 
 /** Built-in response-token caps for the prose-sized tasks — the only ones a user
@@ -635,7 +639,8 @@ export const AI_TASKS: AiTask[] = [
  *  director, title, memory, offscreen) keep fixed caps: theirs are protocol-sized —
  *  raising them buys nothing and lowering them truncates their JSON. For "assist"
  *  this is the big-batch cap (library Assistant, story co-writer, and manuscript
- *  assistants); the single-entity panel keeps its small fixed cap. */
+ *  assistants); the single-entity panel keeps its small fixed cap. Chapter summary
+ *  generation uses the memory model but has its own prose-sized cap. */
 export const TASK_MAX_TOKENS_DEFAULTS = {
   chat: 1400,
   narrator: 1000,
@@ -643,6 +648,7 @@ export const TASK_MAX_TOKENS_DEFAULTS = {
   assist: 32000,
   novelize: 6000,
   manuscriptWrite: 32000,
+  chapterSummary: 2000,
 } as const;
 
 export type CappedTask = keyof typeof TASK_MAX_TOKENS_DEFAULTS;

@@ -27,7 +27,7 @@ import type {
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
-import { normalizeManuscript } from "./manuscript";
+import { normalizeManuscript, normalizeManuscriptChapter } from "./manuscript";
 
 export { inTransaction };
 
@@ -572,8 +572,11 @@ const manuscriptFromRow = (r: Row): Manuscript => ({
   perspective: r.perspective ?? "third-limited",
   style: r.style ?? "",
   modelId: r.model_id ?? null,
-  assistantIncludeActiveChapter: r.assistant_include_active_chapter === true,
-  chapters: J.parse(r.chapters, []),
+  assistantChapterContext: ["none", "summary", "full"].includes(r.assistant_chapter_context)
+    ? r.assistant_chapter_context
+    : "none",
+  chapters: J.parse<Partial<Manuscript["chapters"][number]>[]>(r.chapters, [])
+    .map(normalizeManuscriptChapter),
   characters: J.parse(r.characters, []),
   sessions: J.parse(r.sessions, []),
   conversations: J.parse(r.conversations, []),
@@ -601,15 +604,15 @@ export async function saveManuscript(x: Partial<Manuscript> & { id?: string }): 
     updatedAt: now(),
   };
   await run(
-    `INSERT INTO manuscripts (id,name,synopsis,perspective,style,model_id,assistant_include_active_chapter,chapters,characters,sessions,conversations,tags,created_at,updated_at)
+    `INSERT INTO manuscripts (id,name,synopsis,perspective,style,model_id,assistant_chapter_context,chapters,characters,sessions,conversations,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, synopsis=excluded.synopsis, perspective=excluded.perspective,
        style=excluded.style, model_id=excluded.model_id,
-       assistant_include_active_chapter=excluded.assistant_include_active_chapter, chapters=excluded.chapters,
+       assistant_chapter_context=excluded.assistant_chapter_context, chapters=excluded.chapters,
        characters=excluded.characters, sessions=excluded.sessions, conversations=excluded.conversations,
        tags=excluded.tags, updated_at=excluded.updated_at`,
     [
-      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId, m.assistantIncludeActiveChapter,
+      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId, m.assistantChapterContext,
       J.str(m.chapters), J.str(m.characters), J.str(m.sessions), J.str(m.conversations), J.str(m.tags),
       m.createdAt, m.updatedAt,
     ]

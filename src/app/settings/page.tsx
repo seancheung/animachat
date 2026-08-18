@@ -127,6 +127,7 @@ const TASK_LABELS: Record<string, string> = {
   title: "Title generation",
   novelize: "Novel rewrite (export)",
   manuscriptWrite: "Manuscript writing",
+  chapterSummary: "Chapter summary",
 };
 
 function ProviderCard({ provider, models, mutate }: { provider: Provider; models: Model[]; mutate: () => void }) {
@@ -580,8 +581,10 @@ export default function SettingsPage() {
                   t === "assist"
                     ? "library Assistant, story co-writer, and manuscript assistants/settings"
                     : t === "manuscriptWrite"
-                      ? "Continue and Rewrite output; empty = default"
-                      : "max response tokens; empty = default"
+                      ? "Continue and Rewrite output"
+                      : t === "chapterSummary"
+                        ? "manuscript chapter summary generation"
+                      : "max response tokens"
                 }
               >
                 <InputNumber

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyManuscript,
+  isManuscriptChapterSummaryStale,
   latestManuscriptConversationSession,
+  manuscriptChapterContentHash,
   manuscriptConversationKey,
   normalizeManuscript,
+  normalizeManuscriptChapter,
 } from "./manuscript";
 
 describe("manuscript document", () => {
@@ -11,17 +14,29 @@ describe("manuscript document", () => {
     const manuscript = emptyManuscript();
     expect(manuscript.name).toBe("Untitled manuscript");
     expect(manuscript.perspective).toBe("third-limited");
-    expect(manuscript.assistantIncludeActiveChapter).toBe(false);
+    expect(manuscript.assistantChapterContext).toBe("none");
     expect(manuscript.chapters).toHaveLength(1);
     expect(manuscript.chapters[0].title).toBe("Chapter 1");
     expect(manuscript.conversations).toEqual([]);
   });
 
-  it("preserves the manuscript-level structured-assistant chapter preference", () => {
-    expect(normalizeManuscript({ assistantIncludeActiveChapter: true })
-      .assistantIncludeActiveChapter).toBe(true);
-    expect(normalizeManuscript({ assistantIncludeActiveChapter: false })
-      .assistantIncludeActiveChapter).toBe(false);
+  it("normalizes the manuscript-level structured-assistant chapter context", () => {
+    expect(normalizeManuscript({ assistantChapterContext: "summary" })
+      .assistantChapterContext).toBe("summary");
+    expect(normalizeManuscript({ assistantChapterContext: "invalid" as never })
+      .assistantChapterContext).toBe("none");
+  });
+
+  it("tracks chapter-summary staleness from the chapter content hash", () => {
+    const content = "The original chapter.";
+    const current = normalizeManuscriptChapter({
+      content,
+      summary: "A concise summary.",
+      summaryContentHash: manuscriptChapterContentHash(content),
+    });
+    expect(isManuscriptChapterSummaryStale(current)).toBe(false);
+    expect(isManuscriptChapterSummaryStale({ ...current, content: `${content} Revised.` })).toBe(true);
+    expect(isManuscriptChapterSummaryStale({ ...current, summary: "" })).toBe(false);
   });
 
   it("repairs invalid perspective and drops conversations with missing characters", () => {

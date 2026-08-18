@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import {
-  manuscriptIncludesActiveChapter,
+  manuscriptChapterContextForAction,
+  manuscriptGenerationModelTask,
   manuscriptInputBudget,
   manuscriptResponseTokens,
   packManuscriptPrompt,
@@ -19,19 +20,26 @@ const build = (state: ManuscriptContextState<LlmMessage>) => ({
 });
 
 describe("manuscript context packing", () => {
-  it("defaults structured assistants to excluding active-chapter prose", () => {
-    expect(manuscriptIncludesActiveChapter("settings-assistant")).toBe(false);
-    expect(manuscriptIncludesActiveChapter("character-design", false)).toBe(false);
-    expect(manuscriptIncludesActiveChapter("settings-assistant", true)).toBe(true);
-    expect(manuscriptIncludesActiveChapter("character-design", true)).toBe(true);
-    expect(manuscriptIncludesActiveChapter("assistant", false)).toBe(true);
-    expect(manuscriptIncludesActiveChapter("continue", false)).toBe(true);
+  it("routes chapter summaries through the system summarization model", () => {
+    expect(manuscriptGenerationModelTask("chapter-summary")).toBe("memory");
+    expect(manuscriptGenerationModelTask("assistant")).toBe("manuscriptWrite");
+    expect(manuscriptGenerationModelTask("conversation-chat")).toBe("chat");
+  });
+
+  it("applies the selected chapter attachment to structured assistants", () => {
+    expect(manuscriptChapterContextForAction("settings-assistant")).toBe("none");
+    expect(manuscriptChapterContextForAction("settings-assistant", "invalid" as never)).toBe("none");
+    expect(manuscriptChapterContextForAction("character-design", "summary")).toBe("summary");
+    expect(manuscriptChapterContextForAction("settings-assistant", "full")).toBe("full");
+    expect(manuscriptChapterContextForAction("assistant", "none")).toBe("full");
+    expect(manuscriptChapterContextForAction("continue", "summary")).toBe("full");
+    expect(manuscriptChapterContextForAction("chapter-summary", "none")).toBe("full");
   });
 
   it("routes each manuscript feature to the intended response cap", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
-      taskMaxTokens: { chat: 111, assist: 222, manuscriptWrite: 333 },
+      taskMaxTokens: { chat: 111, assist: 222, manuscriptWrite: 333, chapterSummary: 444 },
     };
     for (const action of [
       "assistant",
@@ -46,6 +54,7 @@ describe("manuscript context packing", () => {
     expect(manuscriptResponseTokens(settings, "continue")).toBe(333);
     expect(manuscriptResponseTokens(settings, "rewrite")).toBe(333);
     expect(manuscriptResponseTokens(settings, "conversation-chat")).toBe(111);
+    expect(manuscriptResponseTokens(settings, "chapter-summary")).toBe(444);
   });
 
   it("uses the model window, configured cap, and response reserve", () => {

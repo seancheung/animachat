@@ -1,8 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
+import { sha256 } from "js-sha256";
 import type {
   Manuscript,
   ManuscriptAssistantScope,
   ManuscriptChapter,
+  ManuscriptChapterContext,
   ManuscriptCharacter,
   ManuscriptConversation,
   ManuscriptConversationMessage,
@@ -24,6 +26,7 @@ const ASSISTANT_SCOPES = new Set<ManuscriptAssistantScope>([
   "characters",
   "settings",
 ]);
+const CHAPTER_CONTEXTS = new Set<ManuscriptChapterContext>(["none", "summary", "full"]);
 
 const text = (value: unknown, fallback = "") =>
   typeof value === "string" ? value : fallback;
@@ -39,9 +42,20 @@ export function normalizeManuscriptChapter(value: Partial<ManuscriptChapter> = {
     id: text(value.id) || uid(),
     title: text(value.title, "Untitled chapter"),
     content: text(value.content),
+    summary: text(value.summary),
+    summaryContentHash: text(value.summaryContentHash) || null,
     createdAt: timestamp(value.createdAt, t),
     updatedAt: timestamp(value.updatedAt, t),
   };
+}
+
+export function manuscriptChapterContentHash(content: string): string {
+  return sha256(content);
+}
+
+export function isManuscriptChapterSummaryStale(chapter: ManuscriptChapter): boolean {
+  return !!chapter.summary.trim()
+    && chapter.summaryContentHash !== manuscriptChapterContentHash(chapter.content);
 }
 
 export function normalizeManuscriptCharacter(
@@ -180,6 +194,7 @@ export function normalizeManuscript(
       conversationKeys.add(key);
       return true;
     });
+  const requestedChapterContext = merged.assistantChapterContext;
   return {
     name: text(merged.name, "Untitled manuscript"),
     synopsis: text(merged.synopsis),
@@ -188,7 +203,9 @@ export function normalizeManuscript(
       : "third-limited",
     style: text(merged.style),
     modelId: text(merged.modelId) || null,
-    assistantIncludeActiveChapter: merged.assistantIncludeActiveChapter === true,
+    assistantChapterContext: CHAPTER_CONTEXTS.has(requestedChapterContext as ManuscriptChapterContext)
+      ? requestedChapterContext as ManuscriptChapterContext
+      : "none",
     chapters: chapters.length ? chapters : [normalizeManuscriptChapter({ title: "Chapter 1" })],
     characters,
     sessions,

@@ -19,7 +19,6 @@ import { InputBox } from "@/components/app";
 import { Markdown } from "@/components/Markdown";
 import { confirmDialog } from "@/components/confirm";
 import Button from "@/components/ui/button";
-import Checkbox from "@/components/ui/checkbox";
 import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import type { CharacterDesignUpdate as CharacterDesignUpdatePayload } from "@/lib/ai/manuscriptCharacterDesign";
@@ -84,7 +83,6 @@ export function ManuscriptAssistant({
   onPreview,
   onCommitPreview,
   onDiscardPreview,
-  onIncludeActiveChapterChange,
   onSaveSessions,
   canUndo,
   canRedo,
@@ -104,7 +102,6 @@ export function ManuscriptAssistant({
   ) => boolean;
   onCommitPreview: () => void;
   onDiscardPreview: () => void;
-  onIncludeActiveChapterChange: (value: boolean) => void;
   onSaveSessions: (sessions: ManuscriptSession[]) => void | Promise<void>;
   canUndo: boolean;
   canRedo: boolean;
@@ -239,8 +236,8 @@ export function ManuscriptAssistant({
         quote: scope === "manuscript" ? quote?.text : undefined,
         quoteStart: scope === "manuscript" ? quote?.start : undefined,
         quoteEnd: scope === "manuscript" ? quote?.end : undefined,
-        includeActiveChapter: scope === "settings" || scope === "characters"
-          ? manuscript.assistantIncludeActiveChapter
+        chapterContext: scope === "settings" || scope === "characters"
+          ? manuscript.assistantChapterContext
           : undefined,
         prompt,
         messages: history,
@@ -459,15 +456,6 @@ export function ManuscriptAssistant({
               <WandSparkles /> Rewrite
             </Button>
           </>
-        )}
-        {(scope === "settings" || scope === "characters") && (
-          <Checkbox
-            size="sm"
-            value={manuscript.assistantIncludeActiveChapter}
-            onChange={onIncludeActiveChapterChange}
-            disabled={busy}
-            label="Include active chapter"
-          />
         )}
         <span className="flex-1" />
         {busy ? (
