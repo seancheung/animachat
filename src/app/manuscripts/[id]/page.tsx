@@ -40,6 +40,7 @@ import { useGet, useInvalidate } from "@/lib/queries";
 import { api, timestamp } from "@/lib/ui";
 import { emptyManuscript, MANUSCRIPT_PERSPECTIVE_LABELS, normalizeManuscriptChapter, normalizeManuscriptCharacter } from "@/lib/manuscript";
 import type { Manuscript, ManuscriptAssistantScope, ManuscriptConversation, ManuscriptPerspective, ManuscriptSession } from "@/lib/types";
+import { countWords } from "@/lib/wordCount";
 
 type EditorTab = ManuscriptAssistantScope;
 type AutoSaveState = "pristine" | "pending" | "saving" | "saved" | "error";
@@ -472,7 +473,7 @@ export default function ManuscriptEditorPage() {
                 <div key={chapter.id} className={`group rounded-md p-2 cursor-pointer ${activeChapter?.id === chapter.id ? "bg-primary-500/8 text-content-100" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`} onClick={() => void switchChapter(chapter.id)}>
                   <div className="text-sm truncate">{chapter.title}</div>
                   <div className="text-[11px] text-content-400 mt-1 flex items-center">
-                    {chapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                    {countWords(chapter.content).toLocaleString()} words
                     <span className="flex-1" />
                     <span className="opacity-0 group-hover:opacity-100 flex" onClick={(e) => e.stopPropagation()}>
                       <button className="p-0.5 cursor-pointer hover:text-content-100" title="Move up" onClick={() => moveChapter(chapter.id, -1)} disabled={i === 0}><ChevronUp size={13} /></button>
@@ -552,7 +553,7 @@ export default function ManuscriptEditorPage() {
                         onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, title: e.target.value, updatedAt: Date.now() } : c) })}
                       />
                       <span className="shrink-0 text-xs tabular-nums text-content-400">
-                        {activeChapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                        {countWords(activeChapter.content).toLocaleString()} words
                       </span>
                     </div>
                   </div>

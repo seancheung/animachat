@@ -9,6 +9,7 @@ import {
 } from "@/lib/ai/manuscriptConversation";
 import { getSettings } from "@/lib/store";
 import { taskMaxTokens, type Manuscript, type ManuscriptCharacter, type ManuscriptConversationMessage, type ManuscriptMessage, type Settings } from "@/lib/types";
+import { countWords } from "@/lib/wordCount";
 
 type Action =
   | "continue"
@@ -57,7 +58,7 @@ function contextOf(manuscript: Manuscript, chapterId?: string, includeActiveChap
     synopsis: manuscript.synopsis,
     perspective: manuscript.perspective,
     style: manuscript.style,
-    chapters: manuscript.chapters.map((c) => ({ title: c.title, words: c.content.trim().split(/\s+/).filter(Boolean).length })),
+    chapters: manuscript.chapters.map((c) => ({ title: c.title, words: countWords(c.content) })),
     characters: manuscript.characters.map((c) => ({
       id: c.id,
       name: c.name,
