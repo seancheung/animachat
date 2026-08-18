@@ -52,6 +52,7 @@ function manuscriptSnapshot(manuscript: Manuscript): string {
     perspective: manuscript.perspective,
     style: manuscript.style,
     modelId: manuscript.modelId,
+    assistantIncludeActiveChapter: manuscript.assistantIncludeActiveChapter,
     chapters: manuscript.chapters,
     characters: manuscript.characters,
     sessions: manuscript.sessions,
@@ -525,14 +526,6 @@ export default function ManuscriptEditorPage() {
           <div className="space-y-1 pb-3 border-b border-base-400">
             <button
               type="button"
-              aria-pressed={tab === "settings"}
-              onClick={() => void switchTab("settings")}
-              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "settings" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
-            >
-              <Settings2 size={15} /> Settings
-            </button>
-            <button
-              type="button"
               aria-pressed={tab === "manuscript"}
               onClick={() => void switchTab("manuscript")}
               className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "manuscript" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
@@ -548,6 +541,14 @@ export default function ManuscriptEditorPage() {
             >
               <Users size={15} /> Characters
               <span className="ml-auto text-xs text-content-400">{form.characters.length}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={tab === "settings"}
+              onClick={() => void switchTab("settings")}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "settings" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
+            >
+              <Settings2 size={15} /> Settings
             </button>
           </div>
 
@@ -733,6 +734,7 @@ export default function ManuscriptEditorPage() {
                 onPreview={previewStructuredAi}
                 onCommitPreview={commitStructuredAiPreview}
                 onDiscardPreview={discardStructuredAiPreview}
+                onIncludeActiveChapterChange={(assistantIncludeActiveChapter) => patch({ assistantIncludeActiveChapter })}
                 onSaveSessions={saveSessions}
                 canUndo={historyState.undo > 0}
                 canRedo={historyState.redo > 0}

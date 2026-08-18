@@ -188,6 +188,7 @@ export function normalizeManuscript(
       : "third-limited",
     style: text(merged.style),
     modelId: text(merged.modelId) || null,
+    assistantIncludeActiveChapter: merged.assistantIncludeActiveChapter === true,
     chapters: chapters.length ? chapters : [normalizeManuscriptChapter({ title: "Chapter 1" })],
     characters,
     sessions,

@@ -566,6 +566,8 @@ export interface Manuscript {
   style: string;
   /** null inherits Settings → Manuscript → global default. */
   modelId: string | null;
+  /** Shared structured-assistant preference, stored per manuscript. */
+  assistantIncludeActiveChapter: boolean;
   chapters: ManuscriptChapter[];
   characters: ManuscriptCharacter[];
   sessions: ManuscriptSession[];

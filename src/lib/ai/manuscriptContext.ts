@@ -24,6 +24,17 @@ export function manuscriptResponseTokens(
   return taskMaxTokens(settings, "assist");
 }
 
+/** Structured assistants opt into chapter prose; writing and general chat require it. */
+export function manuscriptIncludesActiveChapter(
+  action: ManuscriptGenerationAction,
+  requested?: boolean
+): boolean {
+  if (action === "settings-assistant" || action === "character-design") {
+    return requested === true;
+  }
+  return true;
+}
+
 export interface BuiltManuscriptPrompt {
   system: string;
   messages: LlmMessage[];

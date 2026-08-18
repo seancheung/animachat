@@ -11,9 +11,17 @@ describe("manuscript document", () => {
     const manuscript = emptyManuscript();
     expect(manuscript.name).toBe("Untitled manuscript");
     expect(manuscript.perspective).toBe("third-limited");
+    expect(manuscript.assistantIncludeActiveChapter).toBe(false);
     expect(manuscript.chapters).toHaveLength(1);
     expect(manuscript.chapters[0].title).toBe("Chapter 1");
     expect(manuscript.conversations).toEqual([]);
+  });
+
+  it("preserves the manuscript-level structured-assistant chapter preference", () => {
+    expect(normalizeManuscript({ assistantIncludeActiveChapter: true })
+      .assistantIncludeActiveChapter).toBe(true);
+    expect(normalizeManuscript({ assistantIncludeActiveChapter: false })
+      .assistantIncludeActiveChapter).toBe(false);
   });
 
   it("repairs invalid perspective and drops conversations with missing characters", () => {

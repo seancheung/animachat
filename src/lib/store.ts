@@ -572,6 +572,7 @@ const manuscriptFromRow = (r: Row): Manuscript => ({
   perspective: r.perspective ?? "third-limited",
   style: r.style ?? "",
   modelId: r.model_id ?? null,
+  assistantIncludeActiveChapter: r.assistant_include_active_chapter === true,
   chapters: J.parse(r.chapters, []),
   characters: J.parse(r.characters, []),
   sessions: J.parse(r.sessions, []),
@@ -600,14 +601,15 @@ export async function saveManuscript(x: Partial<Manuscript> & { id?: string }): 
     updatedAt: now(),
   };
   await run(
-    `INSERT INTO manuscripts (id,name,synopsis,perspective,style,model_id,chapters,characters,sessions,conversations,tags,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO manuscripts (id,name,synopsis,perspective,style,model_id,assistant_include_active_chapter,chapters,characters,sessions,conversations,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, synopsis=excluded.synopsis, perspective=excluded.perspective,
-       style=excluded.style, model_id=excluded.model_id, chapters=excluded.chapters,
+       style=excluded.style, model_id=excluded.model_id,
+       assistant_include_active_chapter=excluded.assistant_include_active_chapter, chapters=excluded.chapters,
        characters=excluded.characters, sessions=excluded.sessions, conversations=excluded.conversations,
        tags=excluded.tags, updated_at=excluded.updated_at`,
     [
-      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId,
+      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId, m.assistantIncludeActiveChapter,
       J.str(m.chapters), J.str(m.characters), J.str(m.sessions), J.str(m.conversations), J.str(m.tags),
       m.createdAt, m.updatedAt,
     ]

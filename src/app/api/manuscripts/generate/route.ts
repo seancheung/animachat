@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai/manuscriptCharacterDesign";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
+  manuscriptIncludesActiveChapter,
   manuscriptInputBudget,
   manuscriptResponseTokens,
   packManuscriptPrompt,
@@ -324,17 +325,21 @@ export const POST = handler(async (req: Request) => {
   if (!history.length) return bad("message required");
 
   const responseTokens = manuscriptResponseTokens(settings, body.action);
+  const includeActiveChapter = manuscriptIncludesActiveChapter(
+    body.action,
+    body.includeActiveChapter ?? body.manuscript.assistantIncludeActiveChapter
+  );
   const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
     ?? body.manuscript.chapters[0];
   const packed = packManuscriptPrompt({
-    chapterContent: chapter?.content ?? null,
+    chapterContent: includeActiveChapter ? chapter?.content ?? null : null,
     history,
     inputBudget: manuscriptInputBudget(settings, modelRef, responseTokens),
     chapterFocus: typeof body.quoteStart === "number" && typeof body.quoteEnd === "number"
       ? { start: body.quoteStart, end: body.quoteEnd }
       : undefined,
     build: (state) => {
-      const context = contextOf(body.manuscript, body.chapterId, true, state);
+      const context = contextOf(body.manuscript, body.chapterId, includeActiveChapter, state);
       return {
         system:
           `You are an expert manuscript assistant. Respond in ${settings.language}. ` +

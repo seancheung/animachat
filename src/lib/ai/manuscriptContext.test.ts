@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import {
+  manuscriptIncludesActiveChapter,
   manuscriptInputBudget,
   manuscriptResponseTokens,
   packManuscriptPrompt,
@@ -18,6 +19,15 @@ const build = (state: ManuscriptContextState<LlmMessage>) => ({
 });
 
 describe("manuscript context packing", () => {
+  it("defaults structured assistants to excluding active-chapter prose", () => {
+    expect(manuscriptIncludesActiveChapter("settings-assistant")).toBe(false);
+    expect(manuscriptIncludesActiveChapter("character-design", false)).toBe(false);
+    expect(manuscriptIncludesActiveChapter("settings-assistant", true)).toBe(true);
+    expect(manuscriptIncludesActiveChapter("character-design", true)).toBe(true);
+    expect(manuscriptIncludesActiveChapter("assistant", false)).toBe(true);
+    expect(manuscriptIncludesActiveChapter("continue", false)).toBe(true);
+  });
+
   it("routes each manuscript feature to the intended response cap", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
