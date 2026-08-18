@@ -489,11 +489,11 @@ export interface StoryBondsRecord {
   updatedAt: number;
 }
 
-/* ---------------- fiction writing ---------------- */
+/* ---------------- manuscripts ---------------- */
 
-export type WritingPerspective = "first" | "third-limited" | "third-omniscient" | "second";
+export type ManuscriptPerspective = "first" | "third-limited" | "third-omniscient" | "second";
 
-export interface FictionChapter {
+export interface ManuscriptChapter {
   id: string;
   title: string;
   content: string;
@@ -501,8 +501,8 @@ export interface FictionChapter {
   updatedAt: number;
 }
 
-/** Character sheets are embedded in a fiction project and never appear in Library. */
-export interface FictionCharacter {
+/** Character sheets are embedded in a manuscript and never appear in Library. */
+export interface ManuscriptCharacter {
   id: string;
   name: string;
   description: string;
@@ -511,38 +511,38 @@ export interface FictionCharacter {
   voice: string;
 }
 
-export interface FictionMessage {
+export interface ManuscriptMessage {
   role: "user" | "assistant" | "character";
   content: string;
   createdAt: number;
 }
 
-export type FictionAssistantScope = "manuscript" | "characters" | "settings";
+export type ManuscriptAssistantScope = "manuscript" | "characters" | "settings";
 
 /** Assistant and in-character conversations deliberately keep independent histories. */
-export interface FictionSession {
+export interface ManuscriptSession {
   id: string;
   title: string;
   kind: "assistant" | "character";
   /** Older assistant sessions without a scope are treated as manuscript sessions. */
-  scope?: FictionAssistantScope;
+  scope?: ManuscriptAssistantScope;
   characterId: string | null;
-  messages: FictionMessage[];
+  messages: ManuscriptMessage[];
   createdAt: number;
   updatedAt: number;
 }
 
-export interface Fiction {
+export interface Manuscript {
   id: string;
   name: string;
   synopsis: string;
-  perspective: WritingPerspective;
-  writingStyle: string;
-  /** null inherits Settings → Fiction writing → global default. */
+  perspective: ManuscriptPerspective;
+  style: string;
+  /** null inherits Settings → Manuscript → global default. */
   modelId: string | null;
-  chapters: FictionChapter[];
-  characters: FictionCharacter[];
-  sessions: FictionSession[];
+  chapters: ManuscriptChapter[];
+  characters: ManuscriptCharacter[];
+  sessions: ManuscriptSession[];
   tags: string[];
   createdAt: number;
   updatedAt: number;
@@ -585,7 +585,7 @@ export type AiTask =
   | "impersonate"
   | "title"
   | "novelize"
-  | "writing";
+  | "manuscript";
 
 export const AI_TASKS: AiTask[] = [
   "chat",
@@ -598,7 +598,7 @@ export const AI_TASKS: AiTask[] = [
   "impersonate",
   "title",
   "novelize",
-  "writing",
+  "manuscript",
 ];
 
 /** Built-in response-token caps for the prose-sized tasks — the only ones a user

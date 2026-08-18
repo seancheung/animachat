@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import {
   BookOpen,
   Clapperboard,
+  FileText,
   LibraryBig,
   Mountain,
   Paperclip,
@@ -33,7 +34,9 @@ export const LIBRARY_TYPES = [
 ] as const;
 
 export const libraryTypeIcon = (type: string) =>
-  LIBRARY_TYPES.find((t) => t.type === type)?.Icon ?? Paperclip;
+  type === "manuscript"
+    ? FileText
+    : LIBRARY_TYPES.find((t) => t.type === type)?.Icon ?? Paperclip;
 
 /**
  * Multi-select dialog over the whole library (all entity types): a server-searched
@@ -54,6 +57,8 @@ export function LibraryPicker({
   footer,
   hidePicker,
   types,
+  searchPath = "/api/library/search",
+  itemType,
   placeholder = "Search the library…",
 }: {
   open: boolean;
@@ -67,14 +72,21 @@ export function LibraryPicker({
   hidePicker?: boolean;
   /** restrict the search to these entity types (default: all) */
   types?: readonly string[];
+  /** alternate paged endpoint for a non-Library collection */
+  searchPath?: string;
+  /** type assigned to rows from an alternate endpoint */
+  itemType?: string;
   /** search box placeholder — override when the picker isn't over the library (e.g. stories) */
   placeholder?: string;
 }) {
   const keyOf = (r: { type: string; id: string }) => `${r.type}:${r.id}`;
-  const search = useComboboxSearch("/api/library/search", {
+  const search = useComboboxSearch(searchPath, {
     enabled: open,
-    params: { types: types?.join(",") },
-    toOption: (i: LibraryRef) => ({ value: keyOf(i), label: i.name }),
+    params: searchPath === "/api/library/search" ? { types: types?.join(",") } : undefined,
+    toOption: (i: LibraryRef) => ({
+      value: keyOf({ ...i, type: i.type ?? itemType ?? "item" }),
+      label: i.name,
+    }),
   });
 
   return (

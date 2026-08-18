@@ -20,11 +20,11 @@ import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import { streamSse, timestamp, uid } from "@/lib/ui";
 import type {
-  Fiction,
-  FictionAssistantScope,
-  FictionCharacter,
-  FictionMessage,
-  FictionSession,
+  Manuscript,
+  ManuscriptAssistantScope,
+  ManuscriptCharacter,
+  ManuscriptMessage,
+  ManuscriptSession,
 } from "@/lib/types";
 
 export interface ManuscriptQuote {
@@ -35,19 +35,19 @@ export interface ManuscriptQuote {
 
 export interface SettingsAssistantUpdate {
   synopsis?: string;
-  writingStyle?: string;
+  style?: string;
 }
 
 export interface CharacterDesignUpdate {
   characterId: string | null;
-  character: Partial<FictionCharacter>;
+  character: Partial<ManuscriptCharacter>;
 }
 
 type ApplyAction = "continue" | "rewrite" | "settings" | "character";
 type ApplyValue = string | SettingsAssistantUpdate | CharacterDesignUpdate;
 type Action = "continue" | "rewrite" | "assistant" | "settings-assistant" | "character-design";
 
-const PANEL_COPY: Record<FictionAssistantScope, {
+const PANEL_COPY: Record<ManuscriptAssistantScope, {
   title: string;
   empty: string;
   placeholder: string;
@@ -64,14 +64,14 @@ const PANEL_COPY: Record<FictionAssistantScope, {
   },
   settings: {
     title: "Story settings assistant",
-    empty: "Describe how you want to create, revise, or refine the synopsis and writing style.",
+    empty: "Describe how you want to create, revise, or refine the synopsis and prose style.",
     placeholder: "Describe the synopsis or style change…",
   },
 };
 
-export function FictionAssistant({
+export function ManuscriptAssistant({
   scope,
-  fiction,
+  manuscript,
   chapterId,
   quote,
   onClearQuote,
@@ -82,23 +82,23 @@ export function FictionAssistant({
   onUndo,
   onRedo,
 }: {
-  scope: FictionAssistantScope;
-  fiction: Fiction;
+  scope: ManuscriptAssistantScope;
+  manuscript: Manuscript;
   chapterId: string;
   quote: ManuscriptQuote | null;
   onClearQuote: () => void;
   onApply: (action: ApplyAction, value: ApplyValue, quote?: ManuscriptQuote | null) => void;
-  onSaveSessions: (sessions: FictionSession[]) => void | Promise<void>;
+  onSaveSessions: (sessions: ManuscriptSession[]) => void | Promise<void>;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
 }) {
   const assistantSessions = useMemo(
-    () => fiction.sessions.filter(
+    () => manuscript.sessions.filter(
       (session) => session.kind === "assistant" && (session.scope ?? "manuscript") === scope
     ),
-    [fiction.sessions, scope]
+    [manuscript.sessions, scope]
   );
   const [activeId, setActiveId] = useState<string | null>(() => assistantSessions.at(-1)?.id ?? null);
   const [input, setInput] = useState("");
@@ -110,7 +110,7 @@ export function FictionAssistant({
 
   async function newSession() {
     const t = timestamp();
-    const session: FictionSession = {
+    const session: ManuscriptSession = {
       id: uid(),
       title: "New session",
       kind: "assistant",
@@ -121,10 +121,10 @@ export function FictionAssistant({
       updatedAt: t,
     };
     setActiveId(session.id);
-    await onSaveSessions([...fiction.sessions, session]);
+    await onSaveSessions([...manuscript.sessions, session]);
   }
 
-  async function persistMessages(session: FictionSession, messages: FictionMessage[]) {
+  async function persistMessages(session: ManuscriptSession, messages: ManuscriptMessage[]) {
     const firstUser = messages.find((message) => message.role === "user")?.content.trim();
     const next = {
       ...session,
@@ -133,9 +133,9 @@ export function FictionAssistant({
       updatedAt: timestamp(),
     };
     await onSaveSessions(
-      fiction.sessions.some((item) => item.id === next.id)
-        ? fiction.sessions.map((item) => item.id === next.id ? next : item)
-        : [...fiction.sessions, next]
+      manuscript.sessions.some((item) => item.id === next.id)
+        ? manuscript.sessions.map((item) => item.id === next.id ? next : item)
+        : [...manuscript.sessions, next]
     );
   }
 
@@ -162,10 +162,10 @@ export function FictionAssistant({
         updatedAt: t,
       };
       setActiveId(session.id);
-      await onSaveSessions([...fiction.sessions, session]);
+      await onSaveSessions([...manuscript.sessions, session]);
     }
 
-    const userMessage: FictionMessage | null = conversational
+    const userMessage: ManuscriptMessage | null = conversational
       ? { role: "user", content: prompt, createdAt: timestamp() }
       : null;
     const history = session ? [...session.messages, ...(userMessage ? [userMessage] : [])] : [];
@@ -181,9 +181,9 @@ export function FictionAssistant({
     abortRef.current = abort;
 
     try {
-      await streamSse("/api/writings/generate", {
+      await streamSse("/api/manuscripts/generate", {
         action,
-        fiction,
+        manuscript,
         chapterId,
         quote: scope === "manuscript" ? quote?.text : undefined,
         prompt,
@@ -208,7 +208,7 @@ export function FictionAssistant({
       if (characterUpdate) onApply("character", characterUpdate);
 
       if (conversational && session && acc.trim()) {
-        const reply: FictionMessage = { role: "assistant", content: acc.trim(), createdAt: timestamp() };
+        const reply: ManuscriptMessage = { role: "assistant", content: acc.trim(), createdAt: timestamp() };
         await persistMessages(session, [...history, reply]);
       } else if (action === "continue" && acc.trim()) {
         onApply("continue", acc.trim());

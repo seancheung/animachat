@@ -2,52 +2,52 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, MessageSquarePlus, SendHorizontal, Square } from "lucide-react";
+import { ArrowLeft, History, MessageSquarePlus, SendHorizontal, Square } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { Markdown } from "@/components/Markdown";
 import Button from "@/components/ui/button";
-import Select from "@/components/ui/select";
+import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import { useGet } from "@/lib/queries";
 import { api, streamSse, timestamp, uid } from "@/lib/ui";
-import type { Fiction, FictionMessage, FictionSession } from "@/lib/types";
+import type { Manuscript, ManuscriptMessage, ManuscriptSession } from "@/lib/types";
 
-export default function FictionCharacterChatPage() {
+export default function ManuscriptCharacterChatPage() {
   const { id, characterId } = useParams<{ id: string; characterId: string }>();
   const router = useRouter();
-  const { data } = useGet<Fiction>(`/api/writings/${id}`);
-  const [fiction, setFiction] = useState<Fiction | null>(null);
+  const { data } = useGet<Manuscript>(`/api/manuscripts/${id}`);
+  const [manuscript, setManuscript] = useState<Manuscript | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState("");
   const abortRef = useRef<AbortController | null>(null);
-  if (!fiction && data) setFiction(data);
-  const character = fiction?.characters.find((c) => c.id === characterId);
+  if (!manuscript && data) setManuscript(data);
+  const character = manuscript?.characters.find((c) => c.id === characterId);
   const sessions = useMemo(
-    () => fiction?.sessions.filter((s) => s.kind === "character" && s.characterId === characterId) ?? [],
-    [fiction?.sessions, characterId]
+    () => manuscript?.sessions.filter((s) => s.kind === "character" && s.characterId === characterId) ?? [],
+    [manuscript?.sessions, characterId]
   );
   const active = sessions.find((s) => s.id === activeId) ?? sessions.at(-1) ?? null;
   if (active && activeId !== active.id) setActiveId(active.id);
 
-  if (!fiction) return <div className="p-8 text-content-300">Loading…</div>;
+  if (!manuscript) return <div className="p-8 text-content-300">Loading…</div>;
   if (!character) return <div className="p-8 text-content-300">Character not found.</div>;
-  const currentFiction = fiction;
+  const currentManuscript = manuscript;
   const currentCharacter = character;
 
-  async function commitSession(session: FictionSession) {
-    const nextSessions = currentFiction.sessions.some((s) => s.id === session.id)
-      ? currentFiction.sessions.map((s) => s.id === session.id ? session : s)
-      : [...currentFiction.sessions, session];
-    const next: Fiction = { ...currentFiction, sessions: nextSessions };
-    setFiction(next);
-    await api.put(`/api/writings/${currentFiction.id}`, next);
+  async function commitSession(session: ManuscriptSession) {
+    const nextSessions = currentManuscript.sessions.some((s) => s.id === session.id)
+      ? currentManuscript.sessions.map((s) => s.id === session.id ? session : s)
+      : [...currentManuscript.sessions, session];
+    const next: Manuscript = { ...currentManuscript, sessions: nextSessions };
+    setManuscript(next);
+    await api.put(`/api/manuscripts/${currentManuscript.id}`, next);
   }
 
   async function newSession() {
     const t = timestamp();
-    const session: FictionSession = {
+    const session: ManuscriptSession = {
       id: uid(),
       title: `Chat with ${currentCharacter.name}`,
       kind: "character",
@@ -69,7 +69,7 @@ export default function FictionCharacterChatPage() {
       session = { id: uid(), title: `Chat with ${currentCharacter.name}`, kind: "character", characterId, messages: [], createdAt: t, updatedAt: t };
       setActiveId(session.id);
     }
-    const user: FictionMessage = { role: "user", content: text, createdAt: timestamp() };
+    const user: ManuscriptMessage = { role: "user", content: text, createdAt: timestamp() };
     const history = [...session.messages, user];
     session = { ...session, messages: history, updatedAt: timestamp() };
     await commitSession(session);
@@ -80,9 +80,9 @@ export default function FictionCharacterChatPage() {
     const abort = new AbortController();
     abortRef.current = abort;
     try {
-      await streamSse("/api/writings/generate", {
+      await streamSse("/api/manuscripts/generate", {
         action: "character-chat",
-        fiction,
+        manuscript,
         characterId,
         messages: history,
       }, (ev) => {
@@ -90,7 +90,7 @@ export default function FictionCharacterChatPage() {
         else if (ev.type === "error") throw new Error(ev.message);
       }, abort.signal);
       if (acc.trim()) {
-        const reply: FictionMessage = { role: "character", content: acc.trim(), createdAt: timestamp() };
+        const reply: ManuscriptMessage = { role: "character", content: acc.trim(), createdAt: timestamp() };
         await commitSession({ ...session, messages: [...history, reply], updatedAt: timestamp() });
       }
     } catch (e) {
@@ -105,30 +105,70 @@ export default function FictionCharacterChatPage() {
   return (
     <div className="h-full min-h-0 flex flex-col max-w-4xl mx-auto">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => router.push(`/writing/${id}`)}><ArrowLeft /> {fiction.name}</Button>
-        <div className="ml-2">
-          <div className="font-medium">{character.name}</div>
-          <div className="text-xs text-content-400">Embedded character · private fiction chat</div>
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="square"
+          title={`Back to ${manuscript.name}`}
+          onClick={() => router.push(`/manuscripts/${id}`)}
+        >
+          <ArrowLeft />
+        </Button>
+        <div className="min-w-0 ml-1">
+          <div className="font-medium truncate">{character.name}</div>
+          <div className="text-xs text-content-400 truncate">Embedded character · {manuscript.name}</div>
         </div>
         <span className="flex-1" />
-        <div className="w-64">
-          <Select
-            className="w-full"
-            value={active?.id ?? null}
-            onChange={setActiveId}
-            options={sessions.map((s) => ({ value: s.id, label: s.title }))}
-            placeholder="No session"
-          />
-        </div>
-        <Button variant="secondary" title="Start a fresh session (no carried history)" onClick={newSession} disabled={busy}>
-          <MessageSquarePlus /> New session
-        </Button>
+        <Popover
+          side="bottom"
+          align="end"
+          className="w-64 p-1.5"
+          content={({ close }) => (
+            <>
+              <div className="flex items-center px-2 py-1.5">
+                <span className="text-xs uppercase tracking-wider text-content-400">Sessions</span>
+                <span className="flex-1" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Start a fresh session without carried history"
+                  disabled={busy}
+                  onClick={() => { close(); void newSession(); }}
+                >
+                  <MessageSquarePlus /> New
+                </Button>
+              </div>
+              {!sessions.length && (
+                <div className="px-2 py-3 text-xs text-content-400">No sessions yet.</div>
+              )}
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={`w-full cursor-pointer truncate rounded-md px-2.5 py-2 text-left text-sm ${session.id === active?.id ? "bg-base-300 font-medium" : "hover:bg-base-300/60"}`}
+                  onClick={() => { setActiveId(session.id); close(); }}
+                >
+                  {session.title}
+                </button>
+              ))}
+            </>
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            title={`Sessions${active ? ` — ${active.title}` : ""}`}
+          >
+            <History />
+          </Button>
+        </Popover>
       </header>
 
       <main className="flex-1 min-h-0 overflow-y-auto px-8 py-6 space-y-4">
         {!active?.messages.length && !streaming && (
           <div className="text-center text-content-400 text-sm border border-dashed border-base-400 rounded-lg py-16 px-8">
-            Talk directly with {character.name} to explore voice, motivation, secrets, or how they might react. These sessions stay inside this fiction and never appear in Chats.
+            Talk directly with {character.name} to explore voice, motivation, secrets, or how they might react. These sessions stay inside this manuscript and never appear in Chats.
           </div>
         )}
         {active?.messages.map((message, index) => (

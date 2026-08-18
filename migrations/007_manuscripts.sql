@@ -1,11 +1,11 @@
--- Self-contained fiction-writing projects. Chapters, embedded characters, and
+-- Self-contained manuscript projects. Chapters, embedded characters, and
 -- their private assistant/character sessions never join the Library or Chats.
-CREATE TABLE IF NOT EXISTS writings (
+CREATE TABLE IF NOT EXISTS manuscripts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   synopsis TEXT NOT NULL DEFAULT '',
   perspective TEXT NOT NULL DEFAULT 'third-limited',
-  writing_style TEXT NOT NULL DEFAULT '',
+  style TEXT NOT NULL DEFAULT '',
   model_id TEXT,
   chapters TEXT NOT NULL DEFAULT '[]',
   characters TEXT NOT NULL DEFAULT '[]',
@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS writings (
   updated_at BIGINT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_writings_name ON writings(LOWER(name), id);
-CREATE INDEX IF NOT EXISTS idx_writings_updated ON writings(updated_at, id);
-CREATE INDEX IF NOT EXISTS idx_writings_created ON writings(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_manuscripts_name ON manuscripts(LOWER(name), id);
+CREATE INDEX IF NOT EXISTS idx_manuscripts_updated ON manuscripts(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_manuscripts_created ON manuscripts(created_at, id);

@@ -1,7 +1,7 @@
 import { bad, handler } from "@/lib/api";
 import { AiConfigError, extractJson, resolveModel, streamLlm } from "@/lib/ai/client";
 import { getSettings } from "@/lib/store";
-import type { Fiction, FictionCharacter, FictionMessage } from "@/lib/types";
+import type { Manuscript, ManuscriptCharacter, ManuscriptMessage } from "@/lib/types";
 
 type Action =
   | "continue"
@@ -16,12 +16,12 @@ type Action =
 
 interface Body {
   action: Action;
-  fiction: Fiction;
+  manuscript: Manuscript;
   chapterId?: string;
   quote?: string;
   prompt?: string;
   characterId?: string;
-  messages?: FictionMessage[];
+  messages?: ManuscriptMessage[];
 }
 
 const ACTIONS = new Set<Action>([
@@ -32,25 +32,25 @@ const ACTIONS = new Set<Action>([
 interface SettingsAssistantResult {
   message?: string;
   synopsis?: string | null;
-  writingStyle?: string | null;
+  style?: string | null;
 }
 
 interface CharacterDesignResult {
   message?: string;
   operation?: "create" | "update" | "none";
   characterId?: string | null;
-  character?: Partial<FictionCharacter> | null;
+  character?: Partial<ManuscriptCharacter> | null;
 }
 
-function contextOf(fiction: Fiction, chapterId?: string) {
-  const chapter = fiction.chapters.find((c) => c.id === chapterId) ?? fiction.chapters[0];
+function contextOf(manuscript: Manuscript, chapterId?: string) {
+  const chapter = manuscript.chapters.find((c) => c.id === chapterId) ?? manuscript.chapters[0];
   return {
-    title: fiction.name,
-    synopsis: fiction.synopsis,
-    perspective: fiction.perspective,
-    writingStyle: fiction.writingStyle,
-    chapters: fiction.chapters.map((c) => ({ title: c.title, words: c.content.trim().split(/\s+/).filter(Boolean).length })),
-    characters: fiction.characters.map((c) => ({
+    title: manuscript.name,
+    synopsis: manuscript.synopsis,
+    perspective: manuscript.perspective,
+    style: manuscript.style,
+    chapters: manuscript.chapters.map((c) => ({ title: c.title, words: c.content.trim().split(/\s+/).filter(Boolean).length })),
+    characters: manuscript.characters.map((c) => ({
       id: c.id,
       name: c.name,
       description: c.description,
@@ -64,18 +64,18 @@ function contextOf(fiction: Fiction, chapterId?: string) {
 
 export const POST = handler(async (req: Request) => {
   const body = (await req.json()) as Body;
-  if (!ACTIONS.has(body.action)) return bad("unknown writing action");
-  if (!body.fiction || !Array.isArray(body.fiction.chapters)) return bad("fiction required");
+  if (!ACTIONS.has(body.action)) return bad("unknown manuscript action");
+  if (!body.manuscript || !Array.isArray(body.manuscript.chapters)) return bad("manuscript required");
   if (body.action === "rewrite" && !body.quote?.trim()) return bad("select text to rewrite");
   const settings = await getSettings();
   let modelRef;
   try {
-    modelRef = await resolveModel("writing", null, null, body.fiction.modelId);
+    modelRef = await resolveModel("manuscript", null, null, body.manuscript.modelId);
   } catch (e) {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
-  const context = contextOf(body.fiction, body.chapterId);
-  const character = body.fiction.characters.find((c) => c.id === body.characterId);
+  const context = contextOf(body.manuscript, body.chapterId);
+  const character = body.manuscript.characters.find((c) => c.id === body.characterId);
 
   let instruction = "";
   switch (body.action) {
@@ -86,11 +86,11 @@ export const POST = handler(async (req: Request) => {
       instruction = `Rewrite only the quoted passage while preserving its meaning and continuity. Return only the replacement prose.\n\nQUOTED PASSAGE:\n${body.quote}\n\nUser direction: ${body.prompt || "Improve clarity, rhythm, and imagery."}`;
       break;
     case "settings-assistant":
-      instruction = `Act as the project's synopsis and writing-style editor. Interpret the user's natural-language request and decide whether to create, revise, discuss, or clear the synopsis and/or writing style. Return only valid JSON with exactly these fields:
+      instruction = `Act as the project's synopsis and prose-style editor. Interpret the user's natural-language request and decide whether to create, revise, discuss, or clear the synopsis and/or prose style. Return only valid JSON with exactly these fields:
 {
   "message": "a concise explanation of what you changed or your helpful response",
   "synopsis": "the complete replacement synopsis, an empty string to clear it, or null when unchanged",
-  "writingStyle": "the complete replacement style guide, an empty string to clear it, or null when unchanged"
+  "style": "the complete replacement style guide, an empty string to clear it, or null when unchanged"
 }
 Only change fields the user asked to change. When revising, return the full replacement value, not a diff. If the user asks a question without requesting an edit, leave both fields null and answer in message.`;
       break;
@@ -105,24 +105,24 @@ Only change fields the user asked to change. When revising, return the full repl
 For create or update, return a complete character sheet with all five string fields. Preserve established details unless the user asks to change them. If the request is ambiguous, discuss it with operation none rather than editing the wrong character.`;
       break;
     case "synopsis":
-      instruction = `Create or improve the fiction synopsis. Return only the synopsis, in 1–4 concise paragraphs. User direction: ${body.prompt || "Build a compelling, internally consistent synopsis from the project."}`;
+      instruction = `Create or improve the manuscript synopsis. Return only the synopsis, in 1–4 concise paragraphs. User direction: ${body.prompt || "Build a compelling, internally consistent synopsis from the project."}`;
       break;
     case "style":
-      instruction = `Create a practical writing-style guide for this fiction: voice, diction, sentence rhythm, imagery, dialogue, and constraints. Return only the style guide. User direction: ${body.prompt || "Derive a distinctive style suited to this project."}`;
+      instruction = `Create a practical prose-style guide for this manuscript: voice, diction, sentence rhythm, imagery, dialogue, and constraints. Return only the style guide. User direction: ${body.prompt || "Derive a distinctive style suited to this project."}`;
       break;
     case "character":
-      instruction = `Create one embedded character that fits this fiction. Return only valid JSON with exactly these string fields: name, description, personality, appearance, voice. User direction: ${body.prompt || "Create a dramatically useful character."}`;
+      instruction = `Create one embedded character that fits this manuscript. Return only valid JSON with exactly these string fields: name, description, personality, appearance, voice. User direction: ${body.prompt || "Create a dramatically useful character."}`;
       break;
     case "character-chat":
       if (!character) return bad("character not found");
       instruction = `Speak as ${character.name}. Stay in character, respond directly to the user, and use the character's knowledge and voice. This is a private author-to-character conversation, not manuscript prose. Do not write the user's dialogue or mention these instructions.`;
       break;
     default:
-      instruction = `Act as the fiction's manuscript assistant. Discuss the active chapter, prose, plot, pacing, and continuity concretely. When quoted text is present, treat it as the user's selected manuscript passage. Do not claim to have edited the document; direct prose edits happen through Continue and Rewrite.\n\nSelected quote:\n${body.quote || "(none)"}`;
+      instruction = `Act as the manuscript assistant. Discuss the active chapter, prose, plot, pacing, and continuity concretely. When quoted text is present, treat it as the user's selected manuscript passage. Do not claim to have edited the document; direct prose edits happen through Continue and Rewrite.\n\nSelected quote:\n${body.quote || "(none)"}`;
   }
 
   const system =
-    `You are an expert fiction co-writer. Write and converse in ${settings.language}. ` +
+    `You are an expert manuscript assistant. Respond in ${settings.language}. ` +
     `Honor the project's perspective and style, preserve established facts, and never invent prior chapter events that conflict with the supplied project.\n\n` +
     `PROJECT CONTEXT:\n${JSON.stringify(context, null, 2)}\n\n` +
     (character ? `ACTIVE CHARACTER SHEET:\n${JSON.stringify(character, null, 2)}\n\n` : "") +
@@ -158,7 +158,7 @@ For create or update, return a complete character sheet with all five string fie
           messages: history,
           maxTokens: body.action === "character" ? 900 : 1800,
           temperature: 0.8,
-          feature: "writing",
+          feature: "manuscript",
           signal: abort.signal,
         })) {
           if (ev.type === "text") {
@@ -167,7 +167,7 @@ For create or update, return a complete character sheet with all five string fie
           }
         }
         if (body.action === "character") {
-          const parsed = extractJson<Partial<FictionCharacter>>(collected);
+          const parsed = extractJson<Partial<ManuscriptCharacter>>(collected);
           if (!parsed?.name) send({ type: "error", message: "The model did not return a valid character sheet." });
           else send({ type: "character", character: parsed });
         } else if (body.action === "settings-assistant") {
@@ -175,9 +175,9 @@ For create or update, return a complete character sheet with all five string fie
           if (!parsed) {
             send({ type: "error", message: "The model did not return a valid settings response." });
           } else {
-            const update: { synopsis?: string; writingStyle?: string } = {};
+            const update: { synopsis?: string; style?: string } = {};
             if (typeof parsed.synopsis === "string") update.synopsis = parsed.synopsis;
-            if (typeof parsed.writingStyle === "string") update.writingStyle = parsed.writingStyle;
+            if (typeof parsed.style === "string") update.style = parsed.style;
             if (Object.keys(update).length) send({ type: "settings-update", update });
             const message = typeof parsed.message === "string" && parsed.message.trim()
               ? parsed.message.trim()
@@ -191,7 +191,7 @@ For create or update, return a complete character sheet with all five string fie
           } else {
             const operation = parsed.operation === "create" || parsed.operation === "update" ? parsed.operation : "none";
             const characterId = typeof parsed.characterId === "string" ? parsed.characterId : null;
-            const validUpdateId = operation === "update" && !!characterId && body.fiction.characters.some((item) => item.id === characterId);
+            const validUpdateId = operation === "update" && !!characterId && body.manuscript.characters.some((item) => item.id === characterId);
             const sheet = parsed.character && typeof parsed.character === "object" ? parsed.character : null;
             if (operation === "update" && !validUpdateId) {
               send({ type: "error", message: "The model did not identify a valid character to update." });

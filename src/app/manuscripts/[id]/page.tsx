@@ -22,11 +22,11 @@ import {
 import { Field } from "@/components/app";
 import { ModelPicker } from "@/components/ModelPicker";
 import {
-  FictionAssistant,
+  ManuscriptAssistant,
   type CharacterDesignUpdate,
   type ManuscriptQuote,
   type SettingsAssistantUpdate,
-} from "@/components/writing/FictionAssistant";
+} from "@/components/manuscript/ManuscriptAssistant";
 import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
@@ -37,35 +37,35 @@ import { confirmDialog } from "@/components/confirm";
 import { confirmNavigation, registerNavigationGuard } from "@/lib/navigationGuard";
 import { useGet, useInvalidate } from "@/lib/queries";
 import { api, timestamp } from "@/lib/ui";
-import { emptyFiction, normalizeFictionCharacter, normalizeFictionChapter, WRITING_PERSPECTIVE_LABELS } from "@/lib/writing";
-import type { Fiction, FictionAssistantScope, FictionSession, WritingPerspective } from "@/lib/types";
+import { emptyManuscript, MANUSCRIPT_PERSPECTIVE_LABELS, normalizeManuscriptChapter, normalizeManuscriptCharacter } from "@/lib/manuscript";
+import type { Manuscript, ManuscriptAssistantScope, ManuscriptPerspective, ManuscriptSession } from "@/lib/types";
 
-type EditorTab = FictionAssistantScope;
+type EditorTab = ManuscriptAssistantScope;
 type AutoSaveState = "pristine" | "pending" | "saving" | "saved" | "error";
 
-function fictionSnapshot(fiction: Fiction): string {
+function manuscriptSnapshot(manuscript: Manuscript): string {
   return JSON.stringify({
-    name: fiction.name,
-    synopsis: fiction.synopsis,
-    perspective: fiction.perspective,
-    writingStyle: fiction.writingStyle,
-    modelId: fiction.modelId,
-    chapters: fiction.chapters,
-    characters: fiction.characters,
-    sessions: fiction.sessions,
-    tags: fiction.tags,
+    name: manuscript.name,
+    synopsis: manuscript.synopsis,
+    perspective: manuscript.perspective,
+    style: manuscript.style,
+    modelId: manuscript.modelId,
+    chapters: manuscript.chapters,
+    characters: manuscript.characters,
+    sessions: manuscript.sessions,
+    tags: manuscript.tags,
   });
 }
 
-export default function FictionEditorPage() {
+export default function ManuscriptEditorPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const invalidate = useInvalidate();
   const isNew = id === "new";
-  const { data } = useGet<Fiction>(`/api/writings/${id}`, { enabled: !isNew });
-  const [form, setForm] = useState<Fiction | null>(null);
-  const formRef = useRef<Fiction | null>(null);
+  const { data } = useGet<Manuscript>(`/api/manuscripts/${id}`, { enabled: !isNew });
+  const [form, setForm] = useState<Manuscript | null>(null);
+  const formRef = useRef<Manuscript | null>(null);
   const [tab, setTab] = useState<EditorTab>("manuscript");
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [quote, setQuote] = useState<ManuscriptQuote | null>(null);
@@ -76,8 +76,8 @@ export default function FictionEditorPage() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
   const reduceMotion = useReducedMotion();
-  const undoRef = useRef<Fiction[]>([]);
-  const redoRef = useRef<Fiction[]>([]);
+  const undoRef = useRef<Manuscript[]>([]);
+  const redoRef = useRef<Manuscript[]>([]);
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 });
 
   useEffect(() => {
@@ -92,26 +92,26 @@ export default function FictionEditorPage() {
   }, []);
 
   useEffect(() => {
-    const hasUnsavedFiction = () => {
+    const hasUnsavedManuscript = () => {
       const current = formRef.current;
       return current !== null && (
         !createdIdRef.current
-        || lastSavedSnapshotRef.current !== fictionSnapshot(current)
+        || lastSavedSnapshotRef.current !== manuscriptSnapshot(current)
       );
     };
 
     const unregister = registerNavigationGuard(async () => {
-      if (!hasUnsavedFiction()) return true;
+      if (!hasUnsavedManuscript()) return true;
       return confirmDialog({
         title: "Leave without saving?",
-        message: "This fiction is not saved yet. If you leave now, your latest changes may be lost.",
+        message: "This manuscript is not saved yet. If you leave now, your latest changes may be lost.",
         confirmLabel: "Leave",
         danger: true,
       });
     });
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsavedFiction()) return;
+      if (!hasUnsavedManuscript()) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -126,11 +126,11 @@ export default function FictionEditorPage() {
   useEffect(() => {
     if (isNew) {
       if (formRef.current) return;
-      const blank = emptyFiction();
+      const blank = emptyManuscript();
       const t = blank.chapters[0].createdAt;
-      const draft: Fiction = { id: "", ...blank, createdAt: t, updatedAt: t };
+      const draft: Manuscript = { id: "", ...blank, createdAt: t, updatedAt: t };
       formRef.current = draft;
-      lastSavedSnapshotRef.current = fictionSnapshot(draft);
+      lastSavedSnapshotRef.current = manuscriptSnapshot(draft);
       createdIdRef.current = null;
       setSaveState("pristine");
       setForm(draft);
@@ -141,12 +141,12 @@ export default function FictionEditorPage() {
     const current = formRef.current;
     if (current) {
       const baseline = lastSavedSnapshotRef.current;
-      const hasLocalChanges = baseline !== null && fictionSnapshot(current) !== baseline;
+      const hasLocalChanges = baseline !== null && manuscriptSnapshot(current) !== baseline;
       if (hasLocalChanges || data.updatedAt <= current.updatedAt) return;
     }
 
     formRef.current = data;
-    lastSavedSnapshotRef.current = fictionSnapshot(data);
+    lastSavedSnapshotRef.current = manuscriptSnapshot(data);
     createdIdRef.current = data.id;
     setSaveState("saved");
     setForm(data);
@@ -154,7 +154,7 @@ export default function FictionEditorPage() {
 
   useEffect(() => {
     if (!form) return;
-    const snapshot = fictionSnapshot(form);
+    const snapshot = manuscriptSnapshot(form);
 
     if (lastSavedSnapshotRef.current === null) {
       lastSavedSnapshotRef.current = snapshot;
@@ -170,7 +170,7 @@ export default function FictionEditorPage() {
     setSaveState("pending");
     const timer = window.setTimeout(() => {
       const draft = structuredClone(form);
-      const requestedSnapshot = fictionSnapshot(draft);
+      const requestedSnapshot = manuscriptSnapshot(draft);
 
       saveQueueRef.current = saveQueueRef.current.then(async () => {
         setSaveState("saving");
@@ -178,13 +178,13 @@ export default function FictionEditorPage() {
         const payload = existingId ? { ...draft, id: existingId } : draft;
         try {
           const saved = existingId
-            ? await api.put<Fiction>(`/api/writings/${existingId}`, payload)
-            : await api.post<Fiction>("/api/writings", payload);
+            ? await api.put<Manuscript>(`/api/manuscripts/${existingId}`, payload)
+            : await api.post<Manuscript>("/api/manuscripts", payload);
           if (!mountedRef.current) return;
-          const savedSnapshot = fictionSnapshot(saved);
+          const savedSnapshot = manuscriptSnapshot(saved);
           lastSavedSnapshotRef.current = savedSnapshot;
           createdIdRef.current = saved.id;
-          queryClient.setQueryData([`/api/writings/${saved.id}`], saved);
+          queryClient.setQueryData([`/api/manuscripts/${saved.id}`], saved);
 
           setForm((current) => {
             if (!current) return current;
@@ -194,7 +194,7 @@ export default function FictionEditorPage() {
               createdAt: saved.createdAt,
               updatedAt: saved.updatedAt,
             };
-            if (fictionSnapshot(currentWithIdentity) === requestedSnapshot) {
+            if (manuscriptSnapshot(currentWithIdentity) === requestedSnapshot) {
               formRef.current = saved;
               return saved;
             }
@@ -202,9 +202,9 @@ export default function FictionEditorPage() {
             return currentWithIdentity;
           });
 
-          if (!existingId) router.replace(`/writing/${saved.id}`);
-          void invalidate("/api/writings");
-          setSaveState(fictionSnapshot(formRef.current ?? saved) === savedSnapshot ? "saved" : "pending");
+          if (!existingId) router.replace(`/manuscripts/${saved.id}`);
+          void invalidate("/api/manuscripts");
+          setSaveState(manuscriptSnapshot(formRef.current ?? saved) === savedSnapshot ? "saved" : "pending");
         } catch (error) {
           setSaveState("error");
           toast.error(error instanceof Error ? error.message : String(error));
@@ -221,13 +221,13 @@ export default function FictionEditorPage() {
   const activeChapter = currentForm.chapters.find((c) => c.id === activeChapterId) ?? currentForm.chapters[0];
   if (activeChapter && activeChapterId !== activeChapter.id) setActiveChapterId(activeChapter.id);
 
-  const patch = (partial: Partial<Fiction>) => setForm((current) => {
+  const patch = (partial: Partial<Manuscript>) => setForm((current) => {
     if (!current) return current;
     const next = { ...current, ...partial };
     formRef.current = next;
     return next;
   });
-  const commitAi = (next: Fiction, previous: Fiction) => {
+  const commitAi = (next: Manuscript, previous: Manuscript) => {
     undoRef.current.push(structuredClone(previous));
     redoRef.current = [];
     formRef.current = next;
@@ -262,7 +262,7 @@ export default function FictionEditorPage() {
     } else if (action === "settings" && typeof value === "object") {
       const update = value as SettingsAssistantUpdate;
       if (typeof update.synopsis === "string") next.synopsis = update.synopsis;
-      if (typeof update.writingStyle === "string") next.writingStyle = update.writingStyle;
+      if (typeof update.style === "string") next.style = update.style;
     } else if (action === "character" && typeof value === "object") {
       const update = value as CharacterDesignUpdate;
       const index = update.characterId
@@ -270,9 +270,9 @@ export default function FictionEditorPage() {
         : -1;
       if (index >= 0) {
         const existing = next.characters[index];
-        next.characters[index] = normalizeFictionCharacter({ ...existing, ...update.character, id: existing.id });
+        next.characters[index] = normalizeManuscriptCharacter({ ...existing, ...update.character, id: existing.id });
       } else {
-        next.characters.push(normalizeFictionCharacter(update.character));
+        next.characters.push(normalizeManuscriptCharacter(update.character));
       }
     } else return;
     commitAi(next, previous);
@@ -295,7 +295,7 @@ export default function FictionEditorPage() {
     setHistoryState({ undo: undoRef.current.length, redo: redoRef.current.length });
   };
 
-  const saveSessions = async (sessions: FictionSession[]) => {
+  const saveSessions = async (sessions: ManuscriptSession[]) => {
     const next = { ...(formRef.current ?? currentForm), sessions };
     formRef.current = next;
     setForm(next);
@@ -306,7 +306,7 @@ export default function FictionEditorPage() {
   };
 
   const removeChapter = async (chapterId: string) => {
-    if (form.chapters.length === 1) return toast.warning("A fiction needs at least one chapter.");
+    if (form.chapters.length === 1) return toast.warning("A manuscript needs at least one chapter.");
     const chapter = form.chapters.find((c) => c.id === chapterId);
     if (!(await confirmDialog({ title: "Delete chapter", message: `Delete “${chapter?.title}” and all its content?`, confirmLabel: "Delete", danger: true }))) return;
     const chapters = form.chapters.filter((c) => c.id !== chapterId);
@@ -327,13 +327,13 @@ export default function FictionEditorPage() {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
-        <Button variant="ghost" size="sm" shape="square" title="Back to Writing" onClick={() => void navigateAway("/writing")}><ArrowLeft /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="Back to Manuscripts" onClick={() => void navigateAway("/studio?type=manuscripts")}><ArrowLeft /></Button>
         <input
           className="min-w-0 max-w-2xl flex-1 bg-transparent px-1 text-xl font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400 focus-visible:text-primary-500"
           value={form.name}
           onChange={(e) => patch({ name: e.target.value })}
-          placeholder="Untitled fiction"
-          aria-label="Fiction title"
+          placeholder="Untitled manuscript"
+          aria-label="Manuscript title"
         />
         <span className="flex-1" />
         <div
@@ -392,7 +392,7 @@ export default function FictionEditorPage() {
               <Button
                 variant="ghost" size="sm" shape="square" title="Add chapter"
                 onClick={() => {
-                  const chapter = normalizeFictionChapter({ title: `Chapter ${form.chapters.length + 1}` });
+                  const chapter = normalizeManuscriptChapter({ title: `Chapter ${form.chapters.length + 1}` });
                   patch({ chapters: [...form.chapters, chapter] });
                   setActiveChapterId(chapter.id);
                   setQuote(null);
@@ -423,12 +423,12 @@ export default function FictionEditorPage() {
             <div className="space-y-8 pb-10">
               <div>
                 <h2 className="text-lg font-semibold">Project settings</h2>
-                <p className="text-sm text-content-400 mt-1">Story guidance and AI defaults used throughout this fiction.</p>
+                <p className="text-sm text-content-400 mt-1">Story guidance and AI defaults used throughout this manuscript.</p>
               </div>
 
               <section className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-medium">Writing direction</h3>
+                  <h3 className="text-sm font-medium">Narrative direction</h3>
                   <p className="text-xs text-content-400 mt-0.5">Set the narrative viewpoint and model for this project.</p>
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
@@ -436,12 +436,12 @@ export default function FictionEditorPage() {
                     <Select
                       className="w-full"
                       value={form.perspective}
-                      onChange={(perspective) => patch({ perspective: perspective as WritingPerspective })}
-                      options={Object.entries(WRITING_PERSPECTIVE_LABELS).map(([value, label]) => ({ value, label }))}
+                      onChange={(perspective) => patch({ perspective: perspective as ManuscriptPerspective })}
+                      options={Object.entries(MANUSCRIPT_PERSPECTIVE_LABELS).map(([value, label]) => ({ value, label }))}
                     />
                   </Field>
-                  <Field label="AI model" hint="Overrides the Fiction writing model from system settings for this project only.">
-                    <ModelPicker value={form.modelId} onChange={(modelId) => patch({ modelId })} placeholder="(Writing default model)" />
+                  <Field label="AI model" hint="Overrides the Manuscript model from system settings for this project only.">
+                    <ModelPicker value={form.modelId} onChange={(modelId) => patch({ modelId })} placeholder="(Manuscript default model)" />
                   </Field>
                 </div>
               </section>
@@ -452,17 +452,17 @@ export default function FictionEditorPage() {
                   <p className="text-xs text-content-400 mt-0.5">Edit these directly or describe the change to the settings assistant.</p>
                 </div>
                 <Field label="Synopsis" hint="The assistant uses this as the project’s story compass.">
-                  <Textarea className="w-full min-h-44" value={form.synopsis} onChange={(synopsis) => patch({ synopsis })} placeholder="What is this fiction about?" />
+                  <Textarea className="w-full min-h-44" value={form.synopsis} onChange={(synopsis) => patch({ synopsis })} placeholder="What is this manuscript about?" />
                 </Field>
-                <Field label="Writing style" hint="Voice, diction, rhythm, imagery, dialogue, and constraints.">
-                  <Textarea className="w-full min-h-48" value={form.writingStyle} onChange={(writingStyle) => patch({ writingStyle })} placeholder="Describe the prose style…" />
+                <Field label="Prose style" hint="Voice, diction, rhythm, imagery, dialogue, and constraints.">
+                  <Textarea className="w-full min-h-48" value={form.style} onChange={(style) => patch({ style })} placeholder="Describe the prose style…" />
                 </Field>
               </section>
 
               <section className="space-y-4 border-t border-base-400 pt-6">
                 <div>
                   <h3 className="text-sm font-medium">Organization</h3>
-                  <p className="text-xs text-content-400 mt-0.5">Tags are used to organize the Writing page.</p>
+                  <p className="text-xs text-content-400 mt-0.5">Tags are used to organize manuscripts in Studio.</p>
                 </div>
                 <Field label="Tags" hint="Comma-separated">
                   <Input className="w-full" value={form.tags.join(", ")} onChange={(value) => patch({ tags: value.split(",").map((item) => item.trim()).filter(Boolean) })} />
@@ -475,19 +475,24 @@ export default function FictionEditorPage() {
               {activeChapter && (
                 <div className="h-full min-h-0 flex flex-col">
                   <div className="mx-auto w-full max-w-[72ch] shrink-0 px-7 pt-7 pb-5">
-                    <input
-                      className="w-full bg-transparent text-[26px] leading-tight font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400"
-                      value={activeChapter.title}
-                      aria-label="Chapter title"
-                      placeholder="Untitled chapter"
-                      onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, title: e.target.value, updatedAt: Date.now() } : c) })}
-                    />
+                    <div className="flex items-baseline gap-4">
+                      <input
+                        className="min-w-0 flex-1 bg-transparent text-[26px] leading-tight font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400"
+                        value={activeChapter.title}
+                        aria-label="Chapter title"
+                        placeholder="Untitled chapter"
+                        onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, title: e.target.value, updatedAt: Date.now() } : c) })}
+                      />
+                      <span className="shrink-0 text-xs tabular-nums text-content-400">
+                        {activeChapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                      </span>
+                    </div>
                   </div>
                   <textarea
                     className="mx-auto block h-full min-h-0 w-full max-w-[72ch] flex-1 resize-none overflow-y-auto border-0 bg-transparent px-7 pb-16 text-[17px] leading-8 text-content-100 outline-none font-[Georgia,serif] placeholder:text-content-400/70 selection:bg-primary-500/20"
                     value={activeChapter.content}
                     aria-label="Chapter content"
-                    placeholder="Begin writing…"
+                    placeholder="Begin the chapter…"
                     spellCheck
                     onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, content: e.target.value, updatedAt: Date.now() } : c) })}
                     onSelect={(e) => {
@@ -499,9 +504,6 @@ export default function FictionEditorPage() {
                       });
                     }}
                   />
-                  <div className="mx-auto w-full max-w-[72ch] shrink-0 px-7 py-2 text-right text-[11px] tabular-nums text-content-400">
-                    {activeChapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
-                  </div>
                 </div>
               )}
             </main>
@@ -511,10 +513,10 @@ export default function FictionEditorPage() {
                 <div className="flex items-center">
                   <div>
                     <h2 className="font-semibold">Embedded characters</h2>
-                    <p className="text-xs text-content-400 mt-0.5">These character sheets belong only to this fiction and can be interviewed in private sessions.</p>
+                    <p className="text-xs text-content-400 mt-0.5">These character sheets belong only to this manuscript and can be interviewed in private sessions.</p>
                   </div>
                   <span className="flex-1" />
-                  <Button onClick={() => patch({ characters: [...form.characters, normalizeFictionCharacter()] })}><Plus /> Add character</Button>
+                  <Button onClick={() => patch({ characters: [...form.characters, normalizeManuscriptCharacter()] })}><Plus /> Add character</Button>
                 </div>
                 {!form.characters.length && <div className="border border-dashed border-base-400 rounded-md text-center text-sm text-content-400 p-10">No embedded characters yet. Add one here or ask the assistant to create one.</div>}
                 {form.characters.map((character, i) => (
@@ -524,16 +526,16 @@ export default function FictionEditorPage() {
                     defaultValue={i === 0}
                     title={<span className="flex-1 truncate">{character.name}</span>}
                     chevron={() => <span className="flex items-center pr-2 gap-1">
-                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => void navigateAway(`/writing/${form.id}/characters/${character.id}/chat`)}><MessageCircle /> Chat</Button>}
+                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => void navigateAway(`/manuscripts/${form.id}/characters/${character.id}/chat`)}><MessageCircle /> Chat</Button>}
                       <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => patch({ characters: form.characters.filter((c) => c.id !== character.id), sessions: form.sessions.filter((s) => s.characterId !== character.id) })}><Trash2 /></Button>
                     </span>}
                   >
-                    <div className="grid md:grid-cols-2 gap-3 pt-2">
+                    <div className="space-y-3 pt-2">
                       <Field label="Name"><Input className="w-full" value={character.name} onChange={(name) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, name } : c) })} /></Field>
-                      <Field label="Voice"><Input className="w-full" value={character.voice} onChange={(voice) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, voice } : c) })} placeholder="Speech patterns, diction, cadence…" /></Field>
                       <Field label="Description"><Textarea className="w-full" value={character.description} onChange={(description) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, description } : c) })} /></Field>
                       <Field label="Personality"><Textarea className="w-full" value={character.personality} onChange={(personality) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, personality } : c) })} /></Field>
-                      <Field label="Appearance" className="md:col-span-2"><Textarea className="w-full" value={character.appearance} onChange={(appearance) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, appearance } : c) })} /></Field>
+                      <Field label="Voice"><Textarea className="w-full" value={character.voice} onChange={(voice) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, voice } : c) })} placeholder="Speech patterns, diction, cadence, and example dialogue…" /></Field>
+                      <Field label="Appearance"><Textarea className="w-full" value={character.appearance} onChange={(appearance) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, appearance } : c) })} /></Field>
                     </div>
                   </Collapsible>
                 ))}
@@ -559,10 +561,10 @@ export default function FictionEditorPage() {
           style={{ pointerEvents: panelOpen ? "auto" : "none" }}
         >
           <div className="h-full min-h-0 w-[380px]">
-            <FictionAssistant
+            <ManuscriptAssistant
               key={tab}
               scope={tab}
-              fiction={form}
+              manuscript={form}
               chapterId={activeChapter?.id ?? ""}
               quote={tab === "manuscript" ? quote : null}
               onClearQuote={() => setQuote(null)}

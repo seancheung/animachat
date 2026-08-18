@@ -7,7 +7,7 @@ import type {
   DirectorRead,
   ExitRead,
   Fact,
-  Fiction,
+  Manuscript,
   Lorebook,
   Location,
   Message,
@@ -27,7 +27,7 @@ import type {
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
-import { normalizeFiction } from "./writing";
+import { normalizeManuscript } from "./manuscript";
 
 export { inTransaction };
 
@@ -563,14 +563,14 @@ export async function deleteStory(id: string): Promise<void> {
   });
 }
 
-/* ---------------- fiction writing ---------------- */
+/* ---------------- manuscripts ---------------- */
 
-const fictionFromRow = (r: Row): Fiction => ({
+const manuscriptFromRow = (r: Row): Manuscript => ({
   id: r.id,
   name: r.name,
   synopsis: r.synopsis ?? "",
   perspective: r.perspective ?? "third-limited",
-  writingStyle: r.writing_style ?? "",
+  style: r.style ?? "",
   modelId: r.model_id ?? null,
   chapters: J.parse(r.chapters, []),
   characters: J.parse(r.characters, []),
@@ -580,46 +580,46 @@ const fictionFromRow = (r: Row): Fiction => ({
   updatedAt: r.updated_at,
 });
 
-export async function listFictions(): Promise<Fiction[]> {
-  return (await all("SELECT * FROM writings ORDER BY name")).map(fictionFromRow);
+export async function listManuscripts(): Promise<Manuscript[]> {
+  return (await all("SELECT * FROM manuscripts ORDER BY name")).map(manuscriptFromRow);
 }
 
-export async function getFiction(id: string): Promise<Fiction | null> {
-  const r = await get("SELECT * FROM writings WHERE id=?", [id]);
-  return r ? fictionFromRow(r) : null;
+export async function getManuscript(id: string): Promise<Manuscript | null> {
+  const r = await get("SELECT * FROM manuscripts WHERE id=?", [id]);
+  return r ? manuscriptFromRow(r) : null;
 }
 
-export async function saveFiction(x: Partial<Fiction> & { id?: string }): Promise<Fiction> {
-  const existing = x.id ? await getFiction(x.id) : null;
-  const doc = normalizeFiction(x, existing);
-  const m: Fiction = {
+export async function saveManuscript(x: Partial<Manuscript> & { id?: string }): Promise<Manuscript> {
+  const existing = x.id ? await getManuscript(x.id) : null;
+  const doc = normalizeManuscript(x, existing);
+  const m: Manuscript = {
     id: existing?.id ?? x.id ?? uid(),
     ...doc,
     createdAt: existing?.createdAt ?? now(),
     updatedAt: now(),
   };
   await run(
-    `INSERT INTO writings (id,name,synopsis,perspective,writing_style,model_id,chapters,characters,sessions,tags,created_at,updated_at)
+    `INSERT INTO manuscripts (id,name,synopsis,perspective,style,model_id,chapters,characters,sessions,tags,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, synopsis=excluded.synopsis, perspective=excluded.perspective,
-       writing_style=excluded.writing_style, model_id=excluded.model_id, chapters=excluded.chapters,
+       style=excluded.style, model_id=excluded.model_id, chapters=excluded.chapters,
        characters=excluded.characters, sessions=excluded.sessions, tags=excluded.tags, updated_at=excluded.updated_at`,
     [
-      m.id, m.name, m.synopsis, m.perspective, m.writingStyle, m.modelId,
+      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId,
       J.str(m.chapters), J.str(m.characters), J.str(m.sessions), J.str(m.tags),
       m.createdAt, m.updatedAt,
     ]
   );
-  return (await getFiction(m.id))!;
+  return (await getManuscript(m.id))!;
 }
 
 /** Id-preserving import. Existing projects with the same id are replaced. */
-export async function upsertFiction(x: Partial<Fiction> & { id: string }): Promise<Fiction> {
-  return saveFiction(x);
+export async function upsertManuscript(x: Partial<Manuscript> & { id: string }): Promise<Manuscript> {
+  return saveManuscript(x);
 }
 
-export async function deleteFiction(id: string): Promise<void> {
-  await run("DELETE FROM writings WHERE id=?", [id]);
+export async function deleteManuscript(id: string): Promise<void> {
+  await run("DELETE FROM manuscripts WHERE id=?", [id]);
 }
 
 /* ---------------- library integrity ---------------- */
@@ -1074,7 +1074,7 @@ export const pagePersonas = (o: PageOpts = {}) => pageLibrary("personas", person
 export const pageLocations = (o: PageOpts = {}) => pageLibrary("locations", locationFromRow, o);
 export const pageScenes = (o: PageOpts = {}) => pageLibrary("scenes", sceneFromRow, o);
 export const pageStories = (o: PageOpts = {}) => pageLibrary("stories", storyFromRow, o);
-export const pageFictions = (o: PageOpts = {}) => pageLibrary("writings", fictionFromRow, o);
+export const pageManuscripts = (o: PageOpts = {}) => pageLibrary("manuscripts", manuscriptFromRow, o);
 export const pageLorebooks = (o: PageOpts = {}) => pageLibrary("lorebooks", lorebookFromRow, o);
 
 export interface ChatListRow extends Chat {
