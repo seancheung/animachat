@@ -64,6 +64,9 @@ export function ManuscriptChatsPanel({
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState<{ characterId: string; text: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const messageListPinnedRef = useRef(true);
+  const messageListViewRef = useRef("");
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -77,6 +80,36 @@ export function ManuscriptChatsPanel({
   const activeSession = activeConversation?.sessions.find(
     (session) => session.id === activeSessionId
   ) ?? (activeConversation ? latestManuscriptConversationSession(activeConversation) : null);
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    if (!list || !activeConversation) return;
+
+    const view = `${activeConversation.id}:${activeSession?.id ?? "new"}`;
+    const changedView = messageListViewRef.current !== view;
+    messageListViewRef.current = view;
+    if (changedView) messageListPinnedRef.current = true;
+    if (!messageListPinnedRef.current) return;
+
+    list.scrollTop = list.scrollHeight;
+    if (changedView) {
+      requestAnimationFrame(() => {
+        if (messageListPinnedRef.current) list.scrollTop = list.scrollHeight;
+      });
+    }
+  }, [
+    activeConversation,
+    activeSession?.id,
+    activeSession?.messages.length,
+    streaming?.characterId,
+    streaming?.text,
+  ]);
+
+  function onMessageListScroll() {
+    const list = messageListRef.current;
+    if (!list) return;
+    messageListPinnedRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+  }
 
   function openConversation(conversation: ManuscriptConversation) {
     setActiveConversationId(conversation.id);
@@ -235,6 +268,7 @@ export function ManuscriptChatsPanel({
     };
     const history = [...session.messages, userMessage];
     const pendingSession = { ...session, messages: history, updatedAt: timestamp() };
+    messageListPinnedRef.current = true;
     persistMessages(activeConversation, pendingSession, history);
     setInput("");
     setBusy(true);
@@ -432,7 +466,11 @@ export function ManuscriptChatsPanel({
             </Popover>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div
+            ref={messageListRef}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
+            onScroll={onMessageListScroll}
+          >
             {!activeSession?.messages.length && !streaming && (
               <div className="py-8 text-sm leading-relaxed text-content-400">
                 Talk with {conversationTitle} while you work. This conversation’s members are fixed; start a new conversation for a different group.
