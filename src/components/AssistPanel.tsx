@@ -183,7 +183,7 @@ export function AssistPanel({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 border-l border-base-400 pl-4">
+    <div className="flex flex-col h-full min-h-0 border-l border-base-400 pl-4 pb-6">
       <div className="text-xs uppercase tracking-wider text-content-300 mb-2">
         ✦ AI co-writer
       </div>

@@ -306,7 +306,7 @@ export default function StoryEditorPage() {
 
   return (
     <div className="h-full overflow-hidden">
-      <div className="max-w-6xl mx-auto h-full p-6 grid grid-cols-[1fr_340px] grid-rows-[auto_minmax(0,1fr)] gap-x-6 gap-y-4">
+      <div className="max-w-6xl mx-auto h-full px-6 pt-6 grid grid-cols-[1fr_340px] grid-rows-[auto_minmax(0,1fr)] gap-x-6 gap-y-4">
         <div className="col-span-2 flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => router.push("/stories")}>
             <ArrowLeft /> Stories
