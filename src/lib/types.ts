@@ -556,7 +556,7 @@ export interface ManuscriptConversationSession {
 export interface ManuscriptConversation {
   id: string;
   characterIds: string[];
-  includeActiveChapter: boolean;
+  chapterContext: ManuscriptChapterContext;
   sessions: ManuscriptConversationSession[];
   createdAt: number;
   updatedAt: number;

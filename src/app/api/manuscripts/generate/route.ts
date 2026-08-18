@@ -47,7 +47,6 @@ interface Body {
   prompt?: string;
   characterIds?: string[];
   chapterContext?: ManuscriptChapterContext;
-  includeActiveChapter?: boolean;
   messages?: (ManuscriptMessage | ManuscriptConversationMessage)[];
 }
 
@@ -176,7 +175,10 @@ async function conversationResponse(
       speakers = [cast[0]];
     }
     const chatModel = await resolveModel("chat");
-    const includeActiveChapter = body.includeActiveChapter !== false;
+    const chapterContext: ManuscriptChapterContext = body.chapterContext === "summary"
+      || body.chapterContext === "full"
+      ? body.chapterContext
+      : "none";
     const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
       ?? body.manuscript.chapters[0];
     const responseTokens = manuscriptResponseTokens(settings, "conversation-chat");
@@ -197,12 +199,12 @@ async function conversationResponse(
           const speaker = queue.shift()!;
           turns++;
           const packed = packManuscriptPrompt({
-            chapterContent: chapterAttachment(chapter, includeActiveChapter ? "full" : "none"),
+            chapterContent: chapterAttachment(chapter, chapterContext),
             history: messages,
             inputBudget,
             preserveHistoryItem: (_message, index) => index === lastUserIndex,
             build: (state) => buildManuscriptCharacterRequest(
-              contextOf(body.manuscript, body.chapterId, includeActiveChapter ? "full" : "none", state),
+              contextOf(body.manuscript, body.chapterId, chapterContext, state),
               state.history,
               cast,
               speaker,

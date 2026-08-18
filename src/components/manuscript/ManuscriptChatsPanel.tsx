@@ -20,6 +20,7 @@ import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
 import Dialog from "@/components/ui/dialog";
 import Popover from "@/components/ui/popover";
+import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { truncateManuscriptConversationAtUserMessage } from "@/lib/ai/manuscriptConversation";
 import {
@@ -33,10 +34,23 @@ import {
 import { streamSse, timestamp, uid } from "@/lib/ui";
 import type {
   Manuscript,
+  ManuscriptChapterContext,
   ManuscriptConversation,
   ManuscriptConversationMessage,
   ManuscriptConversationSession,
 } from "@/lib/types";
+
+const CHAPTER_CONTEXT_OPTIONS = [
+  { value: "none", label: "None" },
+  { value: "summary", label: "Summary" },
+  { value: "full", label: "Full content" },
+] satisfies { value: ManuscriptChapterContext; label: string }[];
+
+function chapterContextNote(value: ManuscriptChapterContext): string {
+  if (value === "summary") return " The active chapter summary is included in their context.";
+  if (value === "full") return " The active chapter’s full content is included in their context.";
+  return " The active chapter is not included in their context.";
+}
 
 function memberNames(manuscript: Manuscript, conversation: ManuscriptConversation) {
   return conversation.characterIds
@@ -57,9 +71,9 @@ export function ManuscriptChatsPanel({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
-  const [includeActiveChapter, setIncludeActiveChapter] = useState(true);
+  const [chapterContext, setChapterContext] = useState<ManuscriptChapterContext>("none");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsIncludeActiveChapter, setSettingsIncludeActiveChapter] = useState(true);
+  const [settingsChapterContext, setSettingsChapterContext] = useState<ManuscriptChapterContext>("none");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState<{ characterId: string; text: string } | null>(null);
@@ -119,7 +133,7 @@ export function ManuscriptChatsPanel({
 
   function openPicker() {
     setSelectedCharacterIds([]);
-    setIncludeActiveChapter(true);
+    setChapterContext("none");
     setPickerOpen(true);
   }
 
@@ -139,7 +153,7 @@ export function ManuscriptChatsPanel({
     const conversation: ManuscriptConversation = {
       id: uid(),
       characterIds: [...selectedCharacterIds].sort(),
-      includeActiveChapter,
+      chapterContext,
       sessions: [],
       createdAt: t,
       updatedAt: t,
@@ -151,7 +165,7 @@ export function ManuscriptChatsPanel({
 
   function openSettings() {
     if (!activeConversation) return;
-    setSettingsIncludeActiveChapter(activeConversation.includeActiveChapter !== false);
+    setSettingsChapterContext(activeConversation.chapterContext);
     setSettingsOpen(true);
   }
 
@@ -159,7 +173,7 @@ export function ManuscriptChatsPanel({
     if (!activeConversation) return;
     onSaveConversation({
       ...activeConversation,
-      includeActiveChapter: settingsIncludeActiveChapter,
+      chapterContext: settingsChapterContext,
       updatedAt: timestamp(),
     });
     setSettingsOpen(false);
@@ -283,7 +297,7 @@ export function ManuscriptChatsPanel({
         manuscript,
         chapterId,
         characterIds: activeConversation.characterIds,
-        includeActiveChapter: activeConversation.includeActiveChapter !== false,
+        chapterContext: activeConversation.chapterContext,
         messages: history,
       }, (event) => {
         if (event.type === "start" && typeof event.speaker?.characterId === "string") {
@@ -474,9 +488,7 @@ export function ManuscriptChatsPanel({
             {!activeSession?.messages.length && !streaming && (
               <div className="py-8 text-sm leading-relaxed text-content-400">
                 Talk with {conversationTitle} while you work. This conversation’s members are fixed; start a new conversation for a different group.
-                {activeConversation.includeActiveChapter !== false
-                  ? " The active chapter is included in their context."
-                  : " The active chapter is not included in their context."}
+                {chapterContextNote(activeConversation.chapterContext)}
               </div>
             )}
             {activeSession?.messages.map((message, index) => (
@@ -571,7 +583,7 @@ export function ManuscriptChatsPanel({
           <>
             <Button variant="secondary" onClick={() => setSettingsOpen(false)}>Cancel</Button>
             <Button
-              disabled={settingsIncludeActiveChapter === (activeConversation?.includeActiveChapter !== false)}
+              disabled={settingsChapterContext === activeConversation?.chapterContext}
               onClick={saveSettings}
             >
               Save changes
@@ -597,18 +609,16 @@ export function ManuscriptChatsPanel({
             </div>
           </div>
           <div className="border-t border-base-400 pt-4">
-            <Checkbox
-              value={settingsIncludeActiveChapter}
-              onChange={setSettingsIncludeActiveChapter}
-              label={(
-                <span>
-                  <span className="block font-medium">Include active chapter</span>
-                  <span className="mt-0.5 block text-xs font-normal text-content-400">
-                    Give the characters the active chapter’s full text on future turns.
-                  </span>
-                </span>
-              )}
+            <div className="mb-2 text-xs uppercase tracking-wider text-content-400">Active chapter context</div>
+            <Select
+              className="w-full"
+              value={settingsChapterContext}
+              onChange={setSettingsChapterContext}
+              options={CHAPTER_CONTEXT_OPTIONS}
             />
+            <p className="mt-1.5 text-xs text-content-400">
+              Choose what the characters receive from the active chapter on future turns.
+            </p>
           </div>
         </div>
       </Dialog>
@@ -644,18 +654,16 @@ export function ManuscriptChatsPanel({
             </div>
           ))}
           <div className="mt-3 border-t border-base-400 px-2.5 pt-4">
-            <Checkbox
-              value={includeActiveChapter}
-              onChange={setIncludeActiveChapter}
-              label={(
-                <span>
-                  <span className="block font-medium">Include active chapter</span>
-                  <span className="mt-0.5 block text-xs font-normal text-content-400">
-                    Give the characters the active chapter’s full text as conversation context.
-                  </span>
-                </span>
-              )}
+            <div className="mb-2 text-xs uppercase tracking-wider text-content-400">Active chapter context</div>
+            <Select
+              className="w-full"
+              value={chapterContext}
+              onChange={setChapterContext}
+              options={CHAPTER_CONTEXT_OPTIONS}
             />
+            <p className="mt-1.5 text-xs text-content-400">
+              Choose what the characters receive from the active chapter.
+            </p>
           </div>
         </div>
       </Dialog>

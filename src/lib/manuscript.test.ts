@@ -56,7 +56,7 @@ describe("manuscript document", () => {
     expect(manuscript.sessions.map((session) => session.id)).toEqual(["assistant"]);
     expect(manuscript.sessions[0].scope).toBe("manuscript");
     expect(manuscript.conversations.map((conversation) => conversation.id)).toEqual(["keep"]);
-    expect(manuscript.conversations[0].includeActiveChapter).toBe(true);
+    expect(manuscript.conversations[0].chapterContext).toBe("none");
   });
 
   it("keeps assistant histories separated by manuscript workspace", () => {
@@ -95,14 +95,14 @@ describe("manuscript document", () => {
         { id: "kael", name: "Kael" },
       ] as never,
       conversations: [
-        { id: "first", characterIds: ["mira", "kael", "mira"], includeActiveChapter: false, sessions: [] },
+        { id: "first", characterIds: ["mira", "kael", "mira"], chapterContext: "summary", sessions: [] },
         { id: "duplicate", characterIds: ["kael", "mira"], sessions: [] },
       ] as never,
     });
     expect(manuscript.conversations).toHaveLength(1);
     expect(manuscript.conversations[0].id).toBe("first");
     expect(manuscript.conversations[0].characterIds).toEqual(["kael", "mira"]);
-    expect(manuscript.conversations[0].includeActiveChapter).toBe(false);
+    expect(manuscript.conversations[0].chapterContext).toBe("summary");
   });
 
   it("keeps only author messages and individually attributed cast replies", () => {
@@ -111,7 +111,7 @@ describe("manuscript document", () => {
       conversations: [{
         id: "conversation",
         characterIds: ["mira"],
-        includeActiveChapter: true,
+        chapterContext: "full",
         sessions: [{
           id: "session",
           messages: [
@@ -139,7 +139,7 @@ describe("manuscript document", () => {
     const latest = latestManuscriptConversationSession({
       id: "conversation",
       characterIds: ["mira"],
-      includeActiveChapter: true,
+      chapterContext: "full",
       sessions: [
         { id: "older", title: "Older", messages: [], createdAt: 1, updatedAt: 20 },
         { id: "newer", title: "Newer", messages: [], createdAt: 10, updatedAt: 30 },

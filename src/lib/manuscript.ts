@@ -159,7 +159,9 @@ export function normalizeManuscriptConversation(
   return {
     id: text(value.id) || uid(),
     characterIds,
-    includeActiveChapter: value.includeActiveChapter !== false,
+    chapterContext: CHAPTER_CONTEXTS.has(value.chapterContext as ManuscriptChapterContext)
+      ? value.chapterContext as ManuscriptChapterContext
+      : "none",
     sessions: (Array.isArray(value.sessions) ? value.sessions : []).map(
       (session) => normalizeManuscriptConversationSession(session, new Set(characterIds))
     ),
