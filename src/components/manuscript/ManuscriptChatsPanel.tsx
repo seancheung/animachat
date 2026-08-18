@@ -21,6 +21,7 @@ import Checkbox from "@/components/ui/checkbox";
 import Dialog from "@/components/ui/dialog";
 import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
+import { truncateManuscriptConversationAtUserMessage } from "@/lib/ai/manuscriptConversation";
 import {
   latestManuscriptConversationSession,
   manuscriptConversationKey,
@@ -167,6 +168,28 @@ export function ManuscriptChatsPanel({
       setActiveSessionId(latestManuscriptConversationSession({ ...activeConversation, sessions })?.id ?? null);
     }
     onSaveConversation({ ...activeConversation, sessions, updatedAt: timestamp() });
+  }
+
+  async function deleteUserMessage(index: number) {
+    if (!activeConversation || !activeSession || busy) return;
+    const messages = truncateManuscriptConversationAtUserMessage(activeSession.messages, index);
+    if (messages === activeSession.messages) return;
+    const following = activeSession.messages.length - index - 1;
+    if (!(await confirmDialog({
+      title: "Delete author message",
+      message: following
+        ? `Delete this message and the ${following.toLocaleString()} message${following === 1 ? "" : "s"} after it?`
+        : "Delete this message?",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
+    const firstUser = messages.find((message) => message.role === "user")?.content.trim();
+    saveSession(activeConversation, {
+      ...activeSession,
+      title: firstUser ? mentionsToPlain(firstUser).slice(0, 42) : "New session",
+      messages,
+      updatedAt: timestamp(),
+    });
   }
 
   function persistMessages(
@@ -420,8 +443,21 @@ export function ManuscriptChatsPanel({
             )}
             {activeSession?.messages.map((message, index) => (
               message.role === "user" ? (
-                <div key={`${message.createdAt}-${index}`} className="ml-8 text-sm">
-                  <div className="mb-0.5 text-right text-[11px] text-content-400">Author</div>
+                <div key={`${message.createdAt}-${index}`} className="group ml-8 text-sm">
+                  <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] text-content-400">
+                    <span>Author</span>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      shape="square"
+                      className="size-5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      title="Delete this message and all messages after it"
+                      disabled={busy}
+                      onClick={() => void deleteUserMessage(index)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
                   <div className="rounded-lg bg-primary-500/15 px-3 py-2">
                     <MessageText text={message.content} />
                   </div>

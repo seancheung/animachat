@@ -7,6 +7,15 @@ import type {
 
 export const MAX_MANUSCRIPT_CONVERSATION_TURNS = 8;
 
+/** Delete an author turn and every dependent reply/turn that follows it. */
+export function truncateManuscriptConversationAtUserMessage(
+  messages: ManuscriptConversationMessage[],
+  index: number
+): ManuscriptConversationMessage[] {
+  if (messages[index]?.role !== "user") return messages;
+  return messages.slice(0, index);
+}
+
 export function tagManuscriptConversationMentions(
   text: string,
   cast: ManuscriptCharacter[]
@@ -114,20 +123,25 @@ export function buildManuscriptCharacterRequest(
     voice: speaker.voice,
   };
   const system = [
-    `You are ${speaker.name}, an embedded character in a private conversation with the author writing your manuscript. Stay in character at all times and write in ${language}.`,
-    `MANUSCRIPT CONTEXT:\n${JSON.stringify(projectContext, null, 2)}`,
+    `CORE RELATIONSHIP — HIGHEST PRIORITY\n` +
+      `You are ${speaker.name}. The person speaking with you is the author who created this manuscript and you. They are not a character, narrator, protagonist, or participant inside the story.\n` +
+      `This is a private conversation between a fictional character and their author. It is not an in-story scene or roleplay. Never place the author inside the fictional world, assign them a fictional identity, describe their actions, or treat manuscript events as currently happening to them.\n` +
+      `When the author says “I” or “me,” it refers to the real author speaking with you, never to a manuscript character. Quoted passages, chapter text, and story details are writing material supplied for discussion—not the present setting of this conversation.`,
+    `IDENTITY\nStay in character as ${speaker.name} at all times and write in ${language}. Do not speak as an AI assistant.`,
+    `MANUSCRIPT REFERENCE MATERIAL (background for discussion, never the conversation's current setting):\n${JSON.stringify(projectContext, null, 2)}`,
     `YOUR CHARACTER SHEET:\n${JSON.stringify(sheet, null, 2)}`,
     others.length
       ? `OTHER CHARACTERS IN THIS CONVERSATION:\n${JSON.stringify(others, null, 2)}`
       : "",
-    `RULES:\n` +
-      `The user is the author, not an in-story persona. Respond to them directly as ${speaker.name}.\n` +
-      `Write only ${speaker.name}'s own reply. Never write the author's words, actions, or decisions, and never speak for another character.\n` +
+    `REPLY RULES:\n` +
+      `Respond sincerely from ${speaker.name}'s personality and perspective. You may share private thoughts, motives, conflicts, memories, feelings, and uncertainty with the author.\n` +
+      `Write only ${speaker.name}'s spoken reply. Never write the author's words, actions, or decisions, and never speak for another character.\n` +
+      `Do not include actions, narration, stage directions, parenthetical notes, or a speaker-name prefix—even if the example dialogue contains actions.\n` +
       `Use the character's established voice and knowledge. Treat the character sheet as background guidance, not something to recite.\n` +
       (others.length
-        ? `You may hand the conversation to another character by addressing them with the literal tag <mention>Their Exact Name</mention>. Use it only when a handoff is natural; a plain name does not pass the turn.\n`
+        ? `The only permitted non-dialogue markup is an optional handoff tag: <mention>Their Exact Name</mention>. Use it only when naturally addressing another character; a plain name does not pass the turn.\n`
         : "") +
-      `Return only the reply itself, without a speaker-name prefix or commentary.`,
+      `Return only the spoken reply itself.`,
   ].filter(Boolean).join("\n\n");
 
   return {
