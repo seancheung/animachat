@@ -126,6 +126,7 @@ const TASK_LABELS: Record<string, string> = {
   impersonate: "Impersonate",
   title: "Title generation",
   novelize: "Novel rewrite (export)",
+  writing: "Fiction writing",
 };
 
 function ProviderCard({ provider, models, mutate }: { provider: Provider; models: Model[]; mutate: () => void }) {

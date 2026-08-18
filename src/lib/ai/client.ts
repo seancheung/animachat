@@ -38,12 +38,18 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Resolution order: per-character model (group chats) -> per-chat model
- * -> task's assigned model -> global default.
+ * Resolution order: explicit project model -> per-character model (group chats)
+ * -> per-chat model -> task's assigned model -> global default.
  */
-export async function resolveModel(task: AiTask, chat?: Chat | null, characterId?: string | null): Promise<ResolvedModel> {
+export async function resolveModel(
+  task: AiTask,
+  chat?: Chat | null,
+  characterId?: string | null,
+  projectModelId?: string | null
+): Promise<ResolvedModel> {
   const settings = await getSettings();
   const candidates: (string | null | undefined)[] = [
+    projectModelId,
     task === "chat" && characterId ? chat?.charModels?.[characterId] : null,
     task === "chat" || task === "narrator" ? chat?.modelId : null,
     settings.taskModels[task],

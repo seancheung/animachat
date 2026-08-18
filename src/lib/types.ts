@@ -489,6 +489,65 @@ export interface StoryBondsRecord {
   updatedAt: number;
 }
 
+/* ---------------- fiction writing ---------------- */
+
+export type WritingPerspective = "first" | "third-limited" | "third-omniscient" | "second";
+
+export interface FictionChapter {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Character sheets are embedded in a fiction project and never appear in Library. */
+export interface FictionCharacter {
+  id: string;
+  name: string;
+  description: string;
+  personality: string;
+  appearance: string;
+  voice: string;
+}
+
+export interface FictionMessage {
+  role: "user" | "assistant" | "character";
+  content: string;
+  createdAt: number;
+}
+
+export type FictionAssistantScope = "manuscript" | "characters" | "settings";
+
+/** Assistant and in-character conversations deliberately keep independent histories. */
+export interface FictionSession {
+  id: string;
+  title: string;
+  kind: "assistant" | "character";
+  /** Older assistant sessions without a scope are treated as manuscript sessions. */
+  scope?: FictionAssistantScope;
+  characterId: string | null;
+  messages: FictionMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Fiction {
+  id: string;
+  name: string;
+  synopsis: string;
+  perspective: WritingPerspective;
+  writingStyle: string;
+  /** null inherits Settings → Fiction writing → global default. */
+  modelId: string | null;
+  chapters: FictionChapter[];
+  characters: FictionCharacter[];
+  sessions: FictionSession[];
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** The director's remembered read of the current scene's exit condition. */
 export type ExitRead = "unmet" | "near" | "met";
 
@@ -525,7 +584,8 @@ export type AiTask =
   | "assist"
   | "impersonate"
   | "title"
-  | "novelize";
+  | "novelize"
+  | "writing";
 
 export const AI_TASKS: AiTask[] = [
   "chat",
@@ -538,6 +598,7 @@ export const AI_TASKS: AiTask[] = [
   "impersonate",
   "title",
   "novelize",
+  "writing",
 ];
 
 /** Built-in response-token caps for the prose-sized tasks — the only ones a user

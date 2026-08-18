@@ -63,7 +63,9 @@ export function AssistPanel({
   // the server stops generating and nothing keeps writing into a form nobody can see
   useEffect(() => () => abortRef.current?.abort(), []);
   const fieldsRef = useRef(fields);
-  fieldsRef.current = fields;
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
   // draft state as it was BEFORE the user message at that index was sent — rewinds
   // restore the forms along with the conversation (session drafts only, nothing saved)
   const snapshotsRef = useRef(new Map<number, Record<string, unknown>>());

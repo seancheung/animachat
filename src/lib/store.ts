@@ -7,6 +7,7 @@ import type {
   DirectorRead,
   ExitRead,
   Fact,
+  Fiction,
   Lorebook,
   Location,
   Message,
@@ -26,6 +27,7 @@ import type {
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
+import { normalizeFiction } from "./writing";
 
 export { inTransaction };
 
@@ -561,6 +563,65 @@ export async function deleteStory(id: string): Promise<void> {
   });
 }
 
+/* ---------------- fiction writing ---------------- */
+
+const fictionFromRow = (r: Row): Fiction => ({
+  id: r.id,
+  name: r.name,
+  synopsis: r.synopsis ?? "",
+  perspective: r.perspective ?? "third-limited",
+  writingStyle: r.writing_style ?? "",
+  modelId: r.model_id ?? null,
+  chapters: J.parse(r.chapters, []),
+  characters: J.parse(r.characters, []),
+  sessions: J.parse(r.sessions, []),
+  tags: J.parse(r.tags, []),
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function listFictions(): Promise<Fiction[]> {
+  return (await all("SELECT * FROM writings ORDER BY name")).map(fictionFromRow);
+}
+
+export async function getFiction(id: string): Promise<Fiction | null> {
+  const r = await get("SELECT * FROM writings WHERE id=?", [id]);
+  return r ? fictionFromRow(r) : null;
+}
+
+export async function saveFiction(x: Partial<Fiction> & { id?: string }): Promise<Fiction> {
+  const existing = x.id ? await getFiction(x.id) : null;
+  const doc = normalizeFiction(x, existing);
+  const m: Fiction = {
+    id: existing?.id ?? x.id ?? uid(),
+    ...doc,
+    createdAt: existing?.createdAt ?? now(),
+    updatedAt: now(),
+  };
+  await run(
+    `INSERT INTO writings (id,name,synopsis,perspective,writing_style,model_id,chapters,characters,sessions,tags,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, synopsis=excluded.synopsis, perspective=excluded.perspective,
+       writing_style=excluded.writing_style, model_id=excluded.model_id, chapters=excluded.chapters,
+       characters=excluded.characters, sessions=excluded.sessions, tags=excluded.tags, updated_at=excluded.updated_at`,
+    [
+      m.id, m.name, m.synopsis, m.perspective, m.writingStyle, m.modelId,
+      J.str(m.chapters), J.str(m.characters), J.str(m.sessions), J.str(m.tags),
+      m.createdAt, m.updatedAt,
+    ]
+  );
+  return (await getFiction(m.id))!;
+}
+
+/** Id-preserving import. Existing projects with the same id are replaced. */
+export async function upsertFiction(x: Partial<Fiction> & { id: string }): Promise<Fiction> {
+  return saveFiction(x);
+}
+
+export async function deleteFiction(id: string): Promise<void> {
+  await run("DELETE FROM writings WHERE id=?", [id]);
+}
+
 /* ---------------- library integrity ---------------- */
 
 /**
@@ -1013,6 +1074,7 @@ export const pagePersonas = (o: PageOpts = {}) => pageLibrary("personas", person
 export const pageLocations = (o: PageOpts = {}) => pageLibrary("locations", locationFromRow, o);
 export const pageScenes = (o: PageOpts = {}) => pageLibrary("scenes", sceneFromRow, o);
 export const pageStories = (o: PageOpts = {}) => pageLibrary("stories", storyFromRow, o);
+export const pageFictions = (o: PageOpts = {}) => pageLibrary("writings", fictionFromRow, o);
 export const pageLorebooks = (o: PageOpts = {}) => pageLibrary("lorebooks", lorebookFromRow, o);
 
 export interface ChatListRow extends Chat {

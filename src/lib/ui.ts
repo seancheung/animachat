@@ -72,6 +72,11 @@ export function uid(): string {
   return uuidv4();
 }
 
+/** Client timestamp helper kept outside React component evaluation. */
+export function timestamp(): number {
+  return Date.now();
+}
+
 export function assetUrl(id: string | null | undefined): string | null {
   return id ? `/api/assets/${id}` : null;
 }

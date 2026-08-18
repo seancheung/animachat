@@ -1,0 +1,582 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { motion, useReducedMotion } from "motion/react";
+import {
+  ArrowLeft,
+  BookOpenText,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  LoaderCircle,
+  MessageCircle,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Settings2,
+  Trash2,
+  Users,
+} from "lucide-react";
+import { Field } from "@/components/app";
+import { ModelPicker } from "@/components/ModelPicker";
+import {
+  FictionAssistant,
+  type CharacterDesignUpdate,
+  type ManuscriptQuote,
+  type SettingsAssistantUpdate,
+} from "@/components/writing/FictionAssistant";
+import Button from "@/components/ui/button";
+import Collapsible from "@/components/ui/collapsible";
+import Input from "@/components/ui/input";
+import Select from "@/components/ui/select";
+import Textarea from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
+import { confirmDialog } from "@/components/confirm";
+import { confirmNavigation, registerNavigationGuard } from "@/lib/navigationGuard";
+import { useGet, useInvalidate } from "@/lib/queries";
+import { api, timestamp } from "@/lib/ui";
+import { emptyFiction, normalizeFictionCharacter, normalizeFictionChapter, WRITING_PERSPECTIVE_LABELS } from "@/lib/writing";
+import type { Fiction, FictionAssistantScope, FictionSession, WritingPerspective } from "@/lib/types";
+
+type EditorTab = FictionAssistantScope;
+type AutoSaveState = "pristine" | "pending" | "saving" | "saved" | "error";
+
+function fictionSnapshot(fiction: Fiction): string {
+  return JSON.stringify({
+    name: fiction.name,
+    synopsis: fiction.synopsis,
+    perspective: fiction.perspective,
+    writingStyle: fiction.writingStyle,
+    modelId: fiction.modelId,
+    chapters: fiction.chapters,
+    characters: fiction.characters,
+    sessions: fiction.sessions,
+    tags: fiction.tags,
+  });
+}
+
+export default function FictionEditorPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidate();
+  const isNew = id === "new";
+  const { data } = useGet<Fiction>(`/api/writings/${id}`, { enabled: !isNew });
+  const [form, setForm] = useState<Fiction | null>(null);
+  const formRef = useRef<Fiction | null>(null);
+  const [tab, setTab] = useState<EditorTab>("manuscript");
+  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  const [quote, setQuote] = useState<ManuscriptQuote | null>(null);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [saveState, setSaveState] = useState<AutoSaveState>("pristine");
+  const lastSavedSnapshotRef = useRef<string | null>(null);
+  const createdIdRef = useRef<string | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const mountedRef = useRef(true);
+  const reduceMotion = useReducedMotion();
+  const undoRef = useRef<Fiction[]>([]);
+  const redoRef = useRef<Fiction[]>([]);
+  const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 });
+
+  useEffect(() => {
+    formRef.current = form;
+  }, [form]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const hasUnsavedFiction = () => {
+      const current = formRef.current;
+      return current !== null && (
+        !createdIdRef.current
+        || lastSavedSnapshotRef.current !== fictionSnapshot(current)
+      );
+    };
+
+    const unregister = registerNavigationGuard(async () => {
+      if (!hasUnsavedFiction()) return true;
+      return confirmDialog({
+        title: "Leave without saving?",
+        message: "This fiction is not saved yet. If you leave now, your latest changes may be lost.",
+        confirmLabel: "Leave",
+        danger: true,
+      });
+    });
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedFiction()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      unregister();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isNew) {
+      if (formRef.current) return;
+      const blank = emptyFiction();
+      const t = blank.chapters[0].createdAt;
+      const draft: Fiction = { id: "", ...blank, createdAt: t, updatedAt: t };
+      formRef.current = draft;
+      lastSavedSnapshotRef.current = fictionSnapshot(draft);
+      createdIdRef.current = null;
+      setSaveState("pristine");
+      setForm(draft);
+      return;
+    }
+    if (!data) return;
+
+    const current = formRef.current;
+    if (current) {
+      const baseline = lastSavedSnapshotRef.current;
+      const hasLocalChanges = baseline !== null && fictionSnapshot(current) !== baseline;
+      if (hasLocalChanges || data.updatedAt <= current.updatedAt) return;
+    }
+
+    formRef.current = data;
+    lastSavedSnapshotRef.current = fictionSnapshot(data);
+    createdIdRef.current = data.id;
+    setSaveState("saved");
+    setForm(data);
+  }, [data, isNew]);
+
+  useEffect(() => {
+    if (!form) return;
+    const snapshot = fictionSnapshot(form);
+
+    if (lastSavedSnapshotRef.current === null) {
+      lastSavedSnapshotRef.current = snapshot;
+      createdIdRef.current = form.id || null;
+      setSaveState(form.id ? "saved" : "pristine");
+      return;
+    }
+    if (snapshot === lastSavedSnapshotRef.current) {
+      setSaveState(createdIdRef.current ? "saved" : "pristine");
+      return;
+    }
+
+    setSaveState("pending");
+    const timer = window.setTimeout(() => {
+      const draft = structuredClone(form);
+      const requestedSnapshot = fictionSnapshot(draft);
+
+      saveQueueRef.current = saveQueueRef.current.then(async () => {
+        setSaveState("saving");
+        const existingId = draft.id || createdIdRef.current;
+        const payload = existingId ? { ...draft, id: existingId } : draft;
+        try {
+          const saved = existingId
+            ? await api.put<Fiction>(`/api/writings/${existingId}`, payload)
+            : await api.post<Fiction>("/api/writings", payload);
+          if (!mountedRef.current) return;
+          const savedSnapshot = fictionSnapshot(saved);
+          lastSavedSnapshotRef.current = savedSnapshot;
+          createdIdRef.current = saved.id;
+          queryClient.setQueryData([`/api/writings/${saved.id}`], saved);
+
+          setForm((current) => {
+            if (!current) return current;
+            const currentWithIdentity = current.id ? current : {
+              ...current,
+              id: saved.id,
+              createdAt: saved.createdAt,
+              updatedAt: saved.updatedAt,
+            };
+            if (fictionSnapshot(currentWithIdentity) === requestedSnapshot) {
+              formRef.current = saved;
+              return saved;
+            }
+            formRef.current = currentWithIdentity;
+            return currentWithIdentity;
+          });
+
+          if (!existingId) router.replace(`/writing/${saved.id}`);
+          void invalidate("/api/writings");
+          setSaveState(fictionSnapshot(formRef.current ?? saved) === savedSnapshot ? "saved" : "pending");
+        } catch (error) {
+          setSaveState("error");
+          toast.error(error instanceof Error ? error.message : String(error));
+        }
+      });
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [form, invalidate, isNew, queryClient, router]);
+
+  if (!form) return <div className="p-8 text-content-300">Loading…</div>;
+  const currentForm = form;
+
+  const activeChapter = currentForm.chapters.find((c) => c.id === activeChapterId) ?? currentForm.chapters[0];
+  if (activeChapter && activeChapterId !== activeChapter.id) setActiveChapterId(activeChapter.id);
+
+  const patch = (partial: Partial<Fiction>) => setForm((current) => {
+    if (!current) return current;
+    const next = { ...current, ...partial };
+    formRef.current = next;
+    return next;
+  });
+  const commitAi = (next: Fiction, previous: Fiction) => {
+    undoRef.current.push(structuredClone(previous));
+    redoRef.current = [];
+    formRef.current = next;
+    setForm(next);
+    setHistoryState({ undo: undoRef.current.length, redo: 0 });
+  };
+
+  function applyAi(
+    action: "continue" | "rewrite" | "settings" | "character",
+    value: string | SettingsAssistantUpdate | CharacterDesignUpdate,
+    selected?: ManuscriptQuote | null
+  ) {
+    const previous = formRef.current ?? currentForm;
+    const next = structuredClone(previous);
+    const targetChapter = next.chapters.find((chapter) => chapter.id === activeChapter?.id) ?? next.chapters[0];
+    if (action === "continue" && targetChapter && typeof value === "string") {
+      next.chapters = next.chapters.map((c) => c.id === targetChapter.id ? {
+        ...c,
+        content: `${c.content}${c.content && !c.content.endsWith("\n") ? "\n\n" : ""}${value}`,
+        updatedAt: Date.now(),
+      } : c);
+    } else if (action === "rewrite" && targetChapter && typeof value === "string" && selected) {
+      const chapter = next.chapters.find((c) => c.id === targetChapter.id)!;
+      let { start, end } = selected;
+      if (chapter.content.slice(start, end) !== selected.text) {
+        start = chapter.content.indexOf(selected.text);
+        end = start < 0 ? -1 : start + selected.text.length;
+      }
+      if (start < 0 || end < 0) return toast.error("The selected text changed before the rewrite finished.");
+      chapter.content = chapter.content.slice(0, start) + value + chapter.content.slice(end);
+      chapter.updatedAt = timestamp();
+    } else if (action === "settings" && typeof value === "object") {
+      const update = value as SettingsAssistantUpdate;
+      if (typeof update.synopsis === "string") next.synopsis = update.synopsis;
+      if (typeof update.writingStyle === "string") next.writingStyle = update.writingStyle;
+    } else if (action === "character" && typeof value === "object") {
+      const update = value as CharacterDesignUpdate;
+      const index = update.characterId
+        ? next.characters.findIndex((character) => character.id === update.characterId)
+        : -1;
+      if (index >= 0) {
+        const existing = next.characters[index];
+        next.characters[index] = normalizeFictionCharacter({ ...existing, ...update.character, id: existing.id });
+      } else {
+        next.characters.push(normalizeFictionCharacter(update.character));
+      }
+    } else return;
+    commitAi(next, previous);
+  }
+
+  const undo = () => {
+    const previous = undoRef.current.pop();
+    if (!previous) return;
+    redoRef.current.push(structuredClone(formRef.current ?? currentForm));
+    formRef.current = previous;
+    setForm(previous);
+    setHistoryState({ undo: undoRef.current.length, redo: redoRef.current.length });
+  };
+  const redo = () => {
+    const next = redoRef.current.pop();
+    if (!next) return;
+    undoRef.current.push(structuredClone(formRef.current ?? currentForm));
+    formRef.current = next;
+    setForm(next);
+    setHistoryState({ undo: undoRef.current.length, redo: redoRef.current.length });
+  };
+
+  const saveSessions = async (sessions: FictionSession[]) => {
+    const next = { ...(formRef.current ?? currentForm), sessions };
+    formRef.current = next;
+    setForm(next);
+  };
+
+  const navigateAway = async (href: string) => {
+    if (await confirmNavigation()) router.push(href);
+  };
+
+  const removeChapter = async (chapterId: string) => {
+    if (form.chapters.length === 1) return toast.warning("A fiction needs at least one chapter.");
+    const chapter = form.chapters.find((c) => c.id === chapterId);
+    if (!(await confirmDialog({ title: "Delete chapter", message: `Delete “${chapter?.title}” and all its content?`, confirmLabel: "Delete", danger: true }))) return;
+    const chapters = form.chapters.filter((c) => c.id !== chapterId);
+    patch({ chapters });
+    setActiveChapterId(chapters[0]?.id ?? null);
+    setQuote(null);
+  };
+
+  const moveChapter = (chapterId: string, direction: number) => {
+    const chapters = [...form.chapters];
+    const i = chapters.findIndex((c) => c.id === chapterId);
+    const j = i + direction;
+    if (i < 0 || j < 0 || j >= chapters.length) return;
+    [chapters[i], chapters[j]] = [chapters[j], chapters[i]];
+    patch({ chapters });
+  };
+
+  return (
+    <div className="h-full min-h-0 flex flex-col">
+      <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
+        <Button variant="ghost" size="sm" shape="square" title="Back to Writing" onClick={() => void navigateAway("/writing")}><ArrowLeft /></Button>
+        <input
+          className="min-w-0 max-w-2xl flex-1 bg-transparent px-1 text-xl font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400 focus-visible:text-primary-500"
+          value={form.name}
+          onChange={(e) => patch({ name: e.target.value })}
+          placeholder="Untitled fiction"
+          aria-label="Fiction title"
+        />
+        <span className="flex-1" />
+        <div
+          className={`flex items-center gap-1.5 px-2 text-xs ${saveState === "error" ? "text-error" : "text-content-400"}`}
+          role="status"
+          aria-live="polite"
+        >
+          {saveState === "saving" ? <LoaderCircle size={13} className="animate-spin" /> : saveState === "saved" ? <Check size={13} /> : null}
+          {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : saveState === "pristine" ? "Not saved yet" : "Unsaved changes"}
+        </div>
+        <Button
+          variant="ghost" shape="square"
+          title={panelOpen ? "Fold assistant panel" : "Open assistant panel"}
+          aria-expanded={panelOpen}
+          onClick={() => setPanelOpen(!panelOpen)}
+        >{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</Button>
+      </header>
+
+      <motion.div
+        className="flex-1 min-h-0 grid grid-cols-[220px_minmax(0,1fr)_auto] px-4 pt-4"
+      >
+        <aside className="min-h-0 overflow-y-auto border-r border-base-400 pr-3 mr-4">
+          <div className="space-y-1 pb-3 border-b border-base-400">
+            <button
+              type="button"
+              aria-pressed={tab === "settings"}
+              onClick={() => setTab("settings")}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "settings" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
+            >
+              <Settings2 size={15} /> Settings
+            </button>
+            <button
+              type="button"
+              aria-pressed={tab === "manuscript"}
+              onClick={() => setTab("manuscript")}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "manuscript" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
+            >
+              <BookOpenText size={15} /> Manuscript
+              <span className="ml-auto text-xs text-content-400">{form.chapters.length}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={tab === "characters"}
+              onClick={() => setTab("characters")}
+              className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "characters" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
+            >
+              <Users size={15} /> Characters
+              <span className="ml-auto text-xs text-content-400">{form.characters.length}</span>
+            </button>
+          </div>
+
+          {tab === "manuscript" && <>
+            <div className="flex items-center mt-4 mb-2">
+              <span className="text-[11px] uppercase tracking-wider text-content-400">Chapters</span>
+              <span className="flex-1" />
+              <Button
+                variant="ghost" size="sm" shape="square" title="Add chapter"
+                onClick={() => {
+                  const chapter = normalizeFictionChapter({ title: `Chapter ${form.chapters.length + 1}` });
+                  patch({ chapters: [...form.chapters, chapter] });
+                  setActiveChapterId(chapter.id);
+                  setQuote(null);
+                }}
+              ><Plus /></Button>
+            </div>
+            <div className="space-y-1">
+              {form.chapters.map((chapter, i) => (
+                <div key={chapter.id} className={`group rounded-md p-2 cursor-pointer ${activeChapter?.id === chapter.id ? "bg-primary-500/8 text-content-100" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`} onClick={() => { setActiveChapterId(chapter.id); setQuote(null); }}>
+                  <div className="text-sm truncate">{chapter.title}</div>
+                  <div className="text-[11px] text-content-400 mt-1 flex items-center">
+                    {chapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                    <span className="flex-1" />
+                    <span className="opacity-0 group-hover:opacity-100 flex" onClick={(e) => e.stopPropagation()}>
+                      <button className="p-0.5 cursor-pointer hover:text-content-100" title="Move up" onClick={() => moveChapter(chapter.id, -1)} disabled={i === 0}><ChevronUp size={13} /></button>
+                      <button className="p-0.5 cursor-pointer hover:text-content-100" title="Move down" onClick={() => moveChapter(chapter.id, 1)} disabled={i === form.chapters.length - 1}><ChevronDown size={13} /></button>
+                      <button className="p-0.5 cursor-pointer hover:text-error" title="Delete" onClick={() => removeChapter(chapter.id)}><Trash2 size={13} /></button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>}
+        </aside>
+
+        {tab === "settings" ? (
+          <main className="min-h-0 overflow-y-auto w-full max-w-4xl mx-auto pr-2">
+            <div className="space-y-8 pb-10">
+              <div>
+                <h2 className="text-lg font-semibold">Project settings</h2>
+                <p className="text-sm text-content-400 mt-1">Story guidance and AI defaults used throughout this fiction.</p>
+              </div>
+
+              <section className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium">Writing direction</h3>
+                  <p className="text-xs text-content-400 mt-0.5">Set the narrative viewpoint and model for this project.</p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <Field label="Perspective">
+                    <Select
+                      className="w-full"
+                      value={form.perspective}
+                      onChange={(perspective) => patch({ perspective: perspective as WritingPerspective })}
+                      options={Object.entries(WRITING_PERSPECTIVE_LABELS).map(([value, label]) => ({ value, label }))}
+                    />
+                  </Field>
+                  <Field label="AI model" hint="Overrides the Fiction writing model from system settings for this project only.">
+                    <ModelPicker value={form.modelId} onChange={(modelId) => patch({ modelId })} placeholder="(Writing default model)" />
+                  </Field>
+                </div>
+              </section>
+
+              <section className="space-y-4 border-t border-base-400 pt-6">
+                <div>
+                  <h3 className="text-sm font-medium">Story foundation</h3>
+                  <p className="text-xs text-content-400 mt-0.5">Edit these directly or describe the change to the settings assistant.</p>
+                </div>
+                <Field label="Synopsis" hint="The assistant uses this as the project’s story compass.">
+                  <Textarea className="w-full min-h-44" value={form.synopsis} onChange={(synopsis) => patch({ synopsis })} placeholder="What is this fiction about?" />
+                </Field>
+                <Field label="Writing style" hint="Voice, diction, rhythm, imagery, dialogue, and constraints.">
+                  <Textarea className="w-full min-h-48" value={form.writingStyle} onChange={(writingStyle) => patch({ writingStyle })} placeholder="Describe the prose style…" />
+                </Field>
+              </section>
+
+              <section className="space-y-4 border-t border-base-400 pt-6">
+                <div>
+                  <h3 className="text-sm font-medium">Organization</h3>
+                  <p className="text-xs text-content-400 mt-0.5">Tags are used to organize the Writing page.</p>
+                </div>
+                <Field label="Tags" hint="Comma-separated">
+                  <Input className="w-full" value={form.tags.join(", ")} onChange={(value) => patch({ tags: value.split(",").map((item) => item.trim()).filter(Boolean) })} />
+                </Field>
+              </section>
+            </div>
+          </main>
+        ) : tab === "manuscript" ? (
+            <main className="min-h-0 h-full w-full overflow-hidden">
+              {activeChapter && (
+                <div className="h-full min-h-0 flex flex-col">
+                  <div className="mx-auto w-full max-w-[72ch] shrink-0 px-7 pt-7 pb-5">
+                    <input
+                      className="w-full bg-transparent text-[26px] leading-tight font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400"
+                      value={activeChapter.title}
+                      aria-label="Chapter title"
+                      placeholder="Untitled chapter"
+                      onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, title: e.target.value, updatedAt: Date.now() } : c) })}
+                    />
+                  </div>
+                  <textarea
+                    className="mx-auto block h-full min-h-0 w-full max-w-[72ch] flex-1 resize-none overflow-y-auto border-0 bg-transparent px-7 pb-16 text-[17px] leading-8 text-content-100 outline-none font-[Georgia,serif] placeholder:text-content-400/70 selection:bg-primary-500/20"
+                    value={activeChapter.content}
+                    aria-label="Chapter content"
+                    placeholder="Begin writing…"
+                    spellCheck
+                    onChange={(e) => patch({ chapters: form.chapters.map((c) => c.id === activeChapter.id ? { ...c, content: e.target.value, updatedAt: Date.now() } : c) })}
+                    onSelect={(e) => {
+                      const target = e.currentTarget;
+                      if (target.selectionEnd > target.selectionStart) setQuote({
+                        text: target.value.slice(target.selectionStart, target.selectionEnd),
+                        start: target.selectionStart,
+                        end: target.selectionEnd,
+                      });
+                    }}
+                  />
+                  <div className="mx-auto w-full max-w-[72ch] shrink-0 px-7 py-2 text-right text-[11px] tabular-nums text-content-400">
+                    {activeChapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
+                  </div>
+                </div>
+              )}
+            </main>
+        ) : (
+          <main className="min-h-0 overflow-y-auto max-w-4xl w-full mx-auto pr-2">
+              <div className="space-y-3 pb-8">
+                <div className="flex items-center">
+                  <div>
+                    <h2 className="font-semibold">Embedded characters</h2>
+                    <p className="text-xs text-content-400 mt-0.5">These character sheets belong only to this fiction and can be interviewed in private sessions.</p>
+                  </div>
+                  <span className="flex-1" />
+                  <Button onClick={() => patch({ characters: [...form.characters, normalizeFictionCharacter()] })}><Plus /> Add character</Button>
+                </div>
+                {!form.characters.length && <div className="border border-dashed border-base-400 rounded-md text-center text-sm text-content-400 p-10">No embedded characters yet. Add one here or ask the assistant to create one.</div>}
+                {form.characters.map((character, i) => (
+                  <Collapsible
+                    key={character.id}
+                    bordered
+                    defaultValue={i === 0}
+                    title={<span className="flex-1 truncate">{character.name}</span>}
+                    chevron={() => <span className="flex items-center pr-2 gap-1">
+                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => void navigateAway(`/writing/${form.id}/characters/${character.id}/chat`)}><MessageCircle /> Chat</Button>}
+                      <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => patch({ characters: form.characters.filter((c) => c.id !== character.id), sessions: form.sessions.filter((s) => s.characterId !== character.id) })}><Trash2 /></Button>
+                    </span>}
+                  >
+                    <div className="grid md:grid-cols-2 gap-3 pt-2">
+                      <Field label="Name"><Input className="w-full" value={character.name} onChange={(name) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, name } : c) })} /></Field>
+                      <Field label="Voice"><Input className="w-full" value={character.voice} onChange={(voice) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, voice } : c) })} placeholder="Speech patterns, diction, cadence…" /></Field>
+                      <Field label="Description"><Textarea className="w-full" value={character.description} onChange={(description) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, description } : c) })} /></Field>
+                      <Field label="Personality"><Textarea className="w-full" value={character.personality} onChange={(personality) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, personality } : c) })} /></Field>
+                      <Field label="Appearance" className="md:col-span-2"><Textarea className="w-full" value={character.appearance} onChange={(appearance) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, appearance } : c) })} /></Field>
+                    </div>
+                  </Collapsible>
+                ))}
+              </div>
+          </main>
+        )}
+
+        <motion.div
+          className="h-full min-h-0 overflow-hidden"
+          initial={false}
+          animate={{
+            width: panelOpen ? 380 : 0,
+            marginLeft: panelOpen ? 16 : 0,
+            opacity: panelOpen ? 1 : 0,
+            x: panelOpen ? 0 : 24,
+          }}
+          transition={{
+            duration: reduceMotion ? 0 : 0.28,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+          aria-hidden={!panelOpen}
+          inert={!panelOpen}
+          style={{ pointerEvents: panelOpen ? "auto" : "none" }}
+        >
+          <div className="h-full min-h-0 w-[380px]">
+            <FictionAssistant
+              key={tab}
+              scope={tab}
+              fiction={form}
+              chapterId={activeChapter?.id ?? ""}
+              quote={tab === "manuscript" ? quote : null}
+              onClearQuote={() => setQuote(null)}
+              onApply={applyAi}
+              onSaveSessions={saveSessions}
+              canUndo={historyState.undo > 0}
+              canRedo={historyState.redo > 0}
+              onUndo={undo}
+              onRedo={redo}
+            />
+          </div>
+        </motion.div>
+      </motion.div>
+
+    </div>
+  );
+}
