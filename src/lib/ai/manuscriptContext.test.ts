@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import {
   manuscriptInputBudget,
+  manuscriptResponseTokens,
   packManuscriptPrompt,
   type ManuscriptContextState,
 } from "./manuscriptContext";
@@ -17,6 +18,26 @@ const build = (state: ManuscriptContextState<LlmMessage>) => ({
 });
 
 describe("manuscript context packing", () => {
+  it("routes each manuscript feature to the intended response cap", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      taskMaxTokens: { chat: 111, assist: 222, manuscriptWrite: 333 },
+    };
+    for (const action of [
+      "assistant",
+      "settings-assistant",
+      "character-design",
+      "synopsis",
+      "style",
+      "character",
+    ] as const) {
+      expect(manuscriptResponseTokens(settings, action)).toBe(222);
+    }
+    expect(manuscriptResponseTokens(settings, "continue")).toBe(333);
+    expect(manuscriptResponseTokens(settings, "rewrite")).toBe(333);
+    expect(manuscriptResponseTokens(settings, "conversation-chat")).toBe(111);
+  });
+
   it("uses the model window, configured cap, and response reserve", () => {
     const model = {
       model: { contextWindow: 10_000 },

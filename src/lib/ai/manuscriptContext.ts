@@ -1,5 +1,28 @@
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
-import type { Settings } from "@/lib/types";
+import { taskMaxTokens, type Settings } from "@/lib/types";
+
+export type ManuscriptGenerationAction =
+  | "continue"
+  | "rewrite"
+  | "assistant"
+  | "settings-assistant"
+  | "character-design"
+  | "synopsis"
+  | "style"
+  | "character"
+  | "conversation-chat";
+
+/** Route manuscript features to the reply-length control matching their output. */
+export function manuscriptResponseTokens(
+  settings: Settings,
+  action: ManuscriptGenerationAction
+): number {
+  if (action === "conversation-chat") return taskMaxTokens(settings, "chat");
+  if (action === "continue" || action === "rewrite") {
+    return taskMaxTokens(settings, "manuscriptWrite");
+  }
+  return taskMaxTokens(settings, "assist");
+}
 
 export interface BuiltManuscriptPrompt {
   system: string;

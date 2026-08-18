@@ -126,7 +126,7 @@ const TASK_LABELS: Record<string, string> = {
   impersonate: "Impersonate",
   title: "Title generation",
   novelize: "Novel rewrite (export)",
-  manuscript: "Manuscript",
+  manuscriptWrite: "Manuscript writing",
 };
 
 function ProviderCard({ provider, models, mutate }: { provider: Provider; models: Model[]; mutate: () => void }) {
@@ -578,8 +578,10 @@ export default function SettingsPage() {
                 label={TASK_LABELS[t]}
                 hint={
                   t === "assist"
-                    ? "max response tokens for the batch modes (library Assistant, story co-writer)"
-                    : "max response tokens; empty = default"
+                    ? "library Assistant, story co-writer, and manuscript assistants/settings"
+                    : t === "manuscriptWrite"
+                      ? "Continue and Rewrite output; empty = default"
+                      : "max response tokens; empty = default"
                 }
               >
                 <InputNumber

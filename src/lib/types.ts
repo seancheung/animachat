@@ -632,15 +632,15 @@ export const AI_TASKS: AiTask[] = [
  *  may override (settings.taskMaxTokens). The plumbing tasks (orchestrator,
  *  director, title, memory, offscreen) keep fixed caps: theirs are protocol-sized —
  *  raising them buys nothing and lowering them truncates their JSON. For "assist"
- *  this is the big-batch cap (library Assistant, story co-writer); the
- *  single-entity panel keeps its small fixed cap. */
+ *  this is the big-batch cap (library Assistant, story co-writer, and manuscript
+ *  assistants); the single-entity panel keeps its small fixed cap. */
 export const TASK_MAX_TOKENS_DEFAULTS = {
   chat: 1400,
   narrator: 1000,
   impersonate: 400,
   assist: 32000,
   novelize: 6000,
-  manuscript: 1800,
+  manuscriptWrite: 32000,
 } as const;
 
 export type CappedTask = keyof typeof TASK_MAX_TOKENS_DEFAULTS;

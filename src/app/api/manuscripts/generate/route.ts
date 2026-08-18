@@ -15,23 +15,16 @@ import {
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
   manuscriptInputBudget,
+  manuscriptResponseTokens,
   packManuscriptPrompt,
+  type ManuscriptGenerationAction,
   type ManuscriptContextState,
 } from "@/lib/ai/manuscriptContext";
 import { getSettings } from "@/lib/store";
-import { taskMaxTokens, type Manuscript, type ManuscriptCharacter, type ManuscriptConversationMessage, type ManuscriptMessage, type Settings } from "@/lib/types";
+import { type Manuscript, type ManuscriptCharacter, type ManuscriptConversationMessage, type ManuscriptMessage, type Settings } from "@/lib/types";
 import { countWords } from "@/lib/wordCount";
 
-type Action =
-  | "continue"
-  | "rewrite"
-  | "assistant"
-  | "settings-assistant"
-  | "character-design"
-  | "synopsis"
-  | "style"
-  | "character"
-  | "conversation-chat";
+type Action = ManuscriptGenerationAction;
 
 interface Body {
   action: Action;
@@ -160,7 +153,7 @@ async function conversationResponse(
     const includeActiveChapter = body.includeActiveChapter !== false;
     const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
       ?? body.manuscript.chapters[0];
-    const responseTokens = taskMaxTokens(settings, "chat");
+    const responseTokens = manuscriptResponseTokens(settings, "conversation-chat");
     const inputBudget = manuscriptInputBudget(settings, chatModel, responseTokens);
     const encoder = new TextEncoder();
     const abort = new AbortController();
@@ -330,9 +323,7 @@ export const POST = handler(async (req: Request) => {
   }
   if (!history.length) return bad("message required");
 
-  const responseTokens = body.action === "character"
-    ? 900
-    : taskMaxTokens(settings, "manuscript");
+  const responseTokens = manuscriptResponseTokens(settings, body.action);
   const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
     ?? body.manuscript.chapters[0];
   const packed = packManuscriptPrompt({
