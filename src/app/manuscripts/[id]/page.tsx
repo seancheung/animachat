@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowLeft,
   BookOpenText,
@@ -27,6 +27,7 @@ import {
   type ManuscriptQuote,
   type SettingsAssistantUpdate,
 } from "@/components/manuscript/ManuscriptAssistant";
+import { CharacterChatPanel } from "@/components/manuscript/CharacterChatPanel";
 import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
@@ -70,11 +71,13 @@ export default function ManuscriptEditorPage() {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [quote, setQuote] = useState<ManuscriptQuote | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [chatCharacterId, setChatCharacterId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<AutoSaveState>("pristine");
   const lastSavedSnapshotRef = useRef<string | null>(null);
   const createdIdRef = useRef<string | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
+  const editorBoundsRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const undoRef = useRef<Manuscript[]>([]);
   const redoRef = useRef<Manuscript[]>([]);
@@ -301,6 +304,18 @@ export default function ManuscriptEditorPage() {
     setForm(next);
   };
 
+  const saveCharacterSession = (session: ManuscriptSession) => {
+    setForm((current) => {
+      if (!current) return current;
+      const sessions = current.sessions.some((item) => item.id === session.id)
+        ? current.sessions.map((item) => item.id === session.id ? session : item)
+        : [...current.sessions, session];
+      const next = { ...current, sessions };
+      formRef.current = next;
+      return next;
+    });
+  };
+
   const navigateAway = async (href: string) => {
     if (await confirmNavigation()) router.push(href);
   };
@@ -325,7 +340,7 @@ export default function ManuscriptEditorPage() {
   };
 
   return (
-    <div className="h-full min-h-0 flex flex-col">
+    <div ref={editorBoundsRef} className="relative h-full min-h-0 flex flex-col">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
         <Button variant="ghost" size="sm" shape="square" title="Back to Manuscripts" onClick={() => void navigateAway("/studio?type=manuscripts")}><ArrowLeft /></Button>
         <input
@@ -526,8 +541,8 @@ export default function ManuscriptEditorPage() {
                     defaultValue={i === 0}
                     title={<span className="flex-1 truncate">{character.name}</span>}
                     chevron={() => <span className="flex items-center pr-2 gap-1">
-                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => void navigateAway(`/manuscripts/${form.id}/characters/${character.id}/chat`)}><MessageCircle /> Chat</Button>}
-                      <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => patch({ characters: form.characters.filter((c) => c.id !== character.id), sessions: form.sessions.filter((s) => s.characterId !== character.id) })}><Trash2 /></Button>
+                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => { setChatCharacterId(character.id); setTab("manuscript"); setPanelOpen(false); }}><MessageCircle /> Chat</Button>}
+                      <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => { if (chatCharacterId === character.id) setChatCharacterId(null); patch({ characters: form.characters.filter((c) => c.id !== character.id), sessions: form.sessions.filter((s) => s.characterId !== character.id) }); }}><Trash2 /></Button>
                     </span>}
                   >
                     <div className="space-y-3 pt-2">
@@ -578,6 +593,19 @@ export default function ManuscriptEditorPage() {
           </div>
         </motion.div>
       </motion.div>
+
+      <AnimatePresence>
+        {chatCharacterId && form.characters.some((character) => character.id === chatCharacterId) && (
+          <CharacterChatPanel
+            key={chatCharacterId}
+            manuscript={form}
+            characterId={chatCharacterId}
+            dragConstraints={editorBoundsRef}
+            onSaveSession={saveCharacterSession}
+            onClose={() => setChatCharacterId(null)}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );
