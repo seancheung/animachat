@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   History,
@@ -43,6 +43,10 @@ export interface CharacterDesignUpdate {
   character: Partial<ManuscriptCharacter>;
 }
 
+export interface ManuscriptAssistantActivity {
+  stop: () => Promise<void>;
+}
+
 type ApplyAction = "continue" | "rewrite" | "settings" | "character";
 type ApplyValue = string | SettingsAssistantUpdate | CharacterDesignUpdate;
 type Action = "continue" | "rewrite" | "assistant" | "settings-assistant" | "character-design";
@@ -81,6 +85,7 @@ export function ManuscriptAssistant({
   canRedo,
   onUndo,
   onRedo,
+  onActivityChange,
 }: {
   scope: ManuscriptAssistantScope;
   manuscript: Manuscript;
@@ -93,6 +98,7 @@ export function ManuscriptAssistant({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onActivityChange?: (activity: ManuscriptAssistantActivity | null) => void;
 }) {
   const assistantSessions = useMemo(
     () => manuscript.sessions.filter(
@@ -108,7 +114,10 @@ export function ManuscriptAssistant({
   const active = assistantSessions.find((session) => session.id === activeId) ?? assistantSessions.at(-1) ?? null;
   const copy = PANEL_COPY[scope];
 
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   async function newSession() {
+    if (!active?.messages.length) return;
     const t = timestamp();
     const session: ManuscriptSession = {
       id: uid(),
@@ -179,6 +188,16 @@ export function ManuscriptAssistant({
     let characterUpdate: CharacterDesignUpdate | null = null;
     const abort = new AbortController();
     abortRef.current = abort;
+    let resolveStopped = () => {};
+    const stopped = new Promise<void>((resolve) => {
+      resolveStopped = resolve;
+    });
+    onActivityChange?.({
+      stop: async () => {
+        abort.abort();
+        await stopped;
+      },
+    });
 
     try {
       await streamSse("/api/manuscripts/generate", {
@@ -222,6 +241,8 @@ export function ManuscriptAssistant({
       abortRef.current = null;
       setBusy(false);
       setStreaming("");
+      onActivityChange?.(null);
+      resolveStopped();
     }
   }
 
@@ -250,7 +271,7 @@ export function ManuscriptAssistant({
                   size="sm"
                   title="New session"
                   onClick={() => { close(); void newSession(); }}
-                  disabled={busy}
+                  disabled={busy || !active?.messages.length}
                 >
                   <MessageSquarePlus /> New
                 </Button>
@@ -262,7 +283,8 @@ export function ManuscriptAssistant({
                 <button
                   key={session.id}
                   type="button"
-                  className={`w-full rounded-md px-2.5 py-2 text-left text-sm cursor-pointer truncate ${session.id === active?.id ? "bg-base-300 font-medium" : "hover:bg-base-300/60"}`}
+                  disabled={busy}
+                  className={`w-full rounded-md px-2.5 py-2 text-left text-sm truncate disabled:cursor-not-allowed disabled:opacity-50 ${busy ? "" : "cursor-pointer"} ${session.id === active?.id ? "bg-base-300 font-medium" : "hover:bg-base-300/60"}`}
                   onClick={() => { setActiveId(session.id); close(); }}
                 >
                   {session.title}

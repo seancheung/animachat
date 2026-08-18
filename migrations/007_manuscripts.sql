@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS manuscripts (
   chapters TEXT NOT NULL DEFAULT '[]',
   characters TEXT NOT NULL DEFAULT '[]',
   sessions TEXT NOT NULL DEFAULT '[]',
+  conversations TEXT NOT NULL DEFAULT '[]',
   tags TEXT NOT NULL DEFAULT '[]',
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL

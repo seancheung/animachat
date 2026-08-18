@@ -4,6 +4,9 @@ import type {
   ManuscriptAssistantScope,
   ManuscriptChapter,
   ManuscriptCharacter,
+  ManuscriptConversation,
+  ManuscriptConversationMessage,
+  ManuscriptConversationSession,
   ManuscriptMessage,
   ManuscriptPerspective,
   ManuscriptSession,
@@ -55,7 +58,7 @@ export function normalizeManuscriptCharacter(
 }
 
 function normalizeMessage(value: Partial<ManuscriptMessage>): ManuscriptMessage | null {
-  if (!value || !["user", "assistant", "character"].includes(String(value.role))) return null;
+  if (!value || !["user", "assistant"].includes(String(value.role))) return null;
   return {
     role: value.role!,
     content: text(value.content),
@@ -63,22 +66,88 @@ function normalizeMessage(value: Partial<ManuscriptMessage>): ManuscriptMessage 
   };
 }
 
-export function normalizeManuscriptSession(value: Partial<ManuscriptSession> = {}): ManuscriptSession {
+export function normalizeManuscriptSession(
+  value: Partial<ManuscriptSession> = {}
+): ManuscriptSession | null {
+  if (value.kind !== "assistant") return null;
   const t = now();
-  const kind = value.kind === "character" ? "character" : "assistant";
   return {
     id: text(value.id) || uid(),
     title: text(value.title, "New session"),
-    kind,
-    ...(kind === "assistant" ? {
-      scope: ASSISTANT_SCOPES.has(value.scope as ManuscriptAssistantScope)
-        ? value.scope as ManuscriptAssistantScope
-        : "manuscript",
-    } : {}),
-    characterId: kind === "character" ? text(value.characterId) || null : null,
+    kind: "assistant",
+    scope: ASSISTANT_SCOPES.has(value.scope as ManuscriptAssistantScope)
+      ? value.scope as ManuscriptAssistantScope
+      : "manuscript",
+    characterId: null,
     messages: (Array.isArray(value.messages) ? value.messages : [])
       .map(normalizeMessage)
       .filter((m): m is ManuscriptMessage => !!m),
+    createdAt: timestamp(value.createdAt, t),
+    updatedAt: timestamp(value.updatedAt, t),
+  };
+}
+
+export function normalizeManuscriptConversationSession(
+  value: Partial<ManuscriptConversationSession> = {},
+  validCharacterIds = new Set<string>()
+): ManuscriptConversationSession {
+  const t = now();
+  return {
+    id: text(value.id) || uid(),
+    title: text(value.title, "New session"),
+    messages: (Array.isArray(value.messages) ? value.messages : [])
+      .map((message): ManuscriptConversationMessage | null => {
+        if (!message || !["user", "character"].includes(String(message.role))) return null;
+        const characterId = text(message.characterId) || null;
+        if (message.role === "user" && characterId !== null) return null;
+        if (message.role === "character" && (!characterId || !validCharacterIds.has(characterId))) return null;
+        return {
+          role: message.role,
+          characterId,
+          content: text(message.content),
+          createdAt: timestamp(message.createdAt, t),
+        };
+      })
+      .filter((message): message is ManuscriptConversationMessage => !!message),
+    createdAt: timestamp(value.createdAt, t),
+    updatedAt: timestamp(value.updatedAt, t),
+  };
+}
+
+export function manuscriptConversationKey(characterIds: string[]): string {
+  return [...new Set(characterIds)].sort().join("\u0000");
+}
+
+export function latestManuscriptConversationSession(
+  conversation: ManuscriptConversation
+): ManuscriptConversationSession | null {
+  return conversation.sessions.reduce<ManuscriptConversationSession | null>(
+    (latest, session) => !latest || session.updatedAt > latest.updatedAt ? session : latest,
+    null
+  );
+}
+
+export function normalizeManuscriptConversation(
+  value: Partial<ManuscriptConversation> = {},
+  validCharacterIds?: Set<string>
+): ManuscriptConversation | null {
+  const t = now();
+  const requestedCharacterIds = [...new Set(
+    (Array.isArray(value.characterIds) ? value.characterIds : [])
+      .filter((id): id is string => typeof id === "string" && !!id)
+  )];
+  if (
+    !requestedCharacterIds.length
+    || (validCharacterIds && requestedCharacterIds.some((id) => !validCharacterIds.has(id)))
+  ) return null;
+  const characterIds = requestedCharacterIds.sort();
+  return {
+    id: text(value.id) || uid(),
+    characterIds,
+    includeActiveChapter: value.includeActiveChapter !== false,
+    sessions: (Array.isArray(value.sessions) ? value.sessions : []).map(
+      (session) => normalizeManuscriptConversationSession(session, new Set(characterIds))
+    ),
     createdAt: timestamp(value.createdAt, t),
     updatedAt: timestamp(value.updatedAt, t),
   };
@@ -99,7 +168,17 @@ export function normalizeManuscript(
   const characterIds = new Set(characters.map((c) => c.id));
   const sessions = (Array.isArray(merged.sessions) ? merged.sessions : [])
     .map(normalizeManuscriptSession)
-    .filter((s) => s.kind === "assistant" || (!!s.characterId && characterIds.has(s.characterId)));
+    .filter((session): session is ManuscriptSession => !!session);
+  const conversationKeys = new Set<string>();
+  const conversations = (Array.isArray(merged.conversations) ? merged.conversations : [])
+    .map((conversation) => normalizeManuscriptConversation(conversation, characterIds))
+    .filter((conversation): conversation is ManuscriptConversation => {
+      if (!conversation) return false;
+      const key = manuscriptConversationKey(conversation.characterIds);
+      if (conversationKeys.has(key)) return false;
+      conversationKeys.add(key);
+      return true;
+    });
   return {
     name: text(merged.name, "Untitled manuscript"),
     synopsis: text(merged.synopsis),
@@ -111,6 +190,7 @@ export function normalizeManuscript(
     chapters: chapters.length ? chapters : [normalizeManuscriptChapter({ title: "Chapter 1" })],
     characters,
     sessions,
+    conversations,
     tags: (Array.isArray(merged.tags) ? merged.tags : []).filter(
       (tag): tag is string => typeof tag === "string" && !!tag.trim()
     ),

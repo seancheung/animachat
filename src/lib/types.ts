@@ -512,22 +512,46 @@ export interface ManuscriptCharacter {
 }
 
 export interface ManuscriptMessage {
-  role: "user" | "assistant" | "character";
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+}
+
+export interface ManuscriptConversationMessage {
+  role: "user" | "character";
+  characterId: string | null;
   content: string;
   createdAt: number;
 }
 
 export type ManuscriptAssistantScope = "manuscript" | "characters" | "settings";
 
-/** Assistant and in-character conversations deliberately keep independent histories. */
+/** Assistant sessions are separate from fixed-member character conversations. */
 export interface ManuscriptSession {
   id: string;
   title: string;
-  kind: "assistant" | "character";
-  /** Older assistant sessions without a scope are treated as manuscript sessions. */
-  scope?: ManuscriptAssistantScope;
-  characterId: string | null;
+  kind: "assistant";
+  scope: ManuscriptAssistantScope;
+  characterId: null;
   messages: ManuscriptMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ManuscriptConversationSession {
+  id: string;
+  title: string;
+  messages: ManuscriptConversationMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A fixed set of embedded characters. Membership never changes after creation. */
+export interface ManuscriptConversation {
+  id: string;
+  characterIds: string[];
+  includeActiveChapter: boolean;
+  sessions: ManuscriptConversationSession[];
   createdAt: number;
   updatedAt: number;
 }
@@ -543,6 +567,7 @@ export interface Manuscript {
   chapters: ManuscriptChapter[];
   characters: ManuscriptCharacter[];
   sessions: ManuscriptSession[];
+  conversations: ManuscriptConversation[];
   tags: string[];
   createdAt: number;
   updatedAt: number;

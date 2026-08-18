@@ -1,7 +1,14 @@
 import { bad, handler } from "@/lib/api";
-import { AiConfigError, extractJson, resolveModel, streamLlm } from "@/lib/ai/client";
+import { AiConfigError, callLlm, extractJson, resolveModel, streamLlm } from "@/lib/ai/client";
+import {
+  addressedManuscriptCharacters,
+  buildManuscriptCharacterRequest,
+  buildManuscriptOrchestratorRequest,
+  MAX_MANUSCRIPT_CONVERSATION_TURNS,
+  tagManuscriptConversationMentions,
+} from "@/lib/ai/manuscriptConversation";
 import { getSettings } from "@/lib/store";
-import type { Manuscript, ManuscriptCharacter, ManuscriptMessage } from "@/lib/types";
+import { taskMaxTokens, type Manuscript, type ManuscriptCharacter, type ManuscriptConversationMessage, type ManuscriptMessage, type Settings } from "@/lib/types";
 
 type Action =
   | "continue"
@@ -12,7 +19,7 @@ type Action =
   | "synopsis"
   | "style"
   | "character"
-  | "character-chat";
+  | "conversation-chat";
 
 interface Body {
   action: Action;
@@ -20,13 +27,14 @@ interface Body {
   chapterId?: string;
   quote?: string;
   prompt?: string;
-  characterId?: string;
-  messages?: ManuscriptMessage[];
+  characterIds?: string[];
+  includeActiveChapter?: boolean;
+  messages?: (ManuscriptMessage | ManuscriptConversationMessage)[];
 }
 
 const ACTIONS = new Set<Action>([
   "continue", "rewrite", "assistant", "settings-assistant", "character-design",
-  "synopsis", "style", "character", "character-chat",
+  "synopsis", "style", "character", "conversation-chat",
 ]);
 
 interface SettingsAssistantResult {
@@ -42,7 +50,7 @@ interface CharacterDesignResult {
   character?: Partial<ManuscriptCharacter> | null;
 }
 
-function contextOf(manuscript: Manuscript, chapterId?: string) {
+function contextOf(manuscript: Manuscript, chapterId?: string, includeActiveChapter = true) {
   const chapter = manuscript.chapters.find((c) => c.id === chapterId) ?? manuscript.chapters[0];
   return {
     title: manuscript.name,
@@ -58,8 +66,144 @@ function contextOf(manuscript: Manuscript, chapterId?: string) {
       appearance: c.appearance,
       voice: c.voice,
     })),
-    activeChapter: chapter ? { title: chapter.title, content: chapter.content } : null,
+    activeChapter: includeActiveChapter && chapter
+      ? { title: chapter.title, content: chapter.content }
+      : null,
   };
+}
+
+async function conversationResponse(
+  body: Body,
+  settings: Settings,
+  requestSignal: AbortSignal
+): Promise<Response> {
+  const requestedCharacterIds = new Set(
+    Array.isArray(body.characterIds)
+      ? body.characterIds.filter((id): id is string => typeof id === "string")
+      : []
+  );
+  const cast = body.manuscript.characters.filter(
+    (character) => requestedCharacterIds.has(character.id)
+  );
+  if (!cast.length || cast.length !== requestedCharacterIds.size) {
+    return bad("conversation characters not found");
+  }
+
+  const messages = (Array.isArray(body.messages) ? body.messages : [])
+    .filter((message): message is ManuscriptConversationMessage => {
+      if (!message || !("characterId" in message) || typeof message.content !== "string") return false;
+      if (message.role === "user") return message.characterId === null;
+      return message.role === "character"
+        && typeof message.characterId === "string"
+        && requestedCharacterIds.has(message.characterId);
+    });
+  const lastUserIndex = messages.findLastIndex((message) => message.role === "user");
+  if (lastUserIndex < 0) return bad("message required");
+  messages[lastUserIndex] = {
+    ...messages[lastUserIndex],
+    content: tagManuscriptConversationMentions(messages[lastUserIndex].content, cast),
+  };
+
+  let speakers = addressedManuscriptCharacters(messages[lastUserIndex].content, cast);
+  try {
+    if (!speakers.length && cast.length > 1) {
+      const orchestratorModel = await resolveModel("orchestrator");
+      const request = buildManuscriptOrchestratorRequest(messages, cast);
+      const raw = await callLlm({
+        modelRef: orchestratorModel,
+        system: request.system,
+        messages: request.messages,
+        maxTokens: 100,
+        feature: "orchestrator",
+      });
+      const next = extractJson<{ next?: string }>(raw)?.next;
+      speakers = [cast.find((character) => character.id === next) ?? cast[0]];
+    } else if (!speakers.length) {
+      speakers = [cast[0]];
+    }
+    const chatModel = await resolveModel("chat");
+    const projectContext = contextOf(
+      body.manuscript,
+      body.chapterId,
+      body.includeActiveChapter !== false
+    );
+    const encoder = new TextEncoder();
+    const abort = new AbortController();
+    requestSignal.addEventListener("abort", () => abort.abort());
+    if (requestSignal.aborted) abort.abort();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (value: unknown) => {
+          try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`)); } catch { /* disconnected */ }
+        };
+        const queue = [...speakers];
+        let turns = 0;
+        while (queue.length && turns < MAX_MANUSCRIPT_CONVERSATION_TURNS && !abort.signal.aborted) {
+          const speaker = queue.shift()!;
+          turns++;
+          const request = buildManuscriptCharacterRequest(
+            projectContext,
+            messages,
+            cast,
+            speaker,
+            settings.language
+          );
+          send({ type: "start", speaker: { role: "character", characterId: speaker.id } });
+          let content = "";
+          let failed = false;
+          try {
+            for await (const event of streamLlm({
+              modelRef: chatModel,
+              system: request.system,
+              messages: request.messages,
+              maxTokens: taskMaxTokens(settings, "chat"),
+              temperature: 0.8,
+              feature: "chat",
+              signal: abort.signal,
+            })) {
+              if (event.type === "text") {
+                content += event.text;
+                send({ type: "text", text: event.text });
+              }
+            }
+          } catch (error) {
+            failed = true;
+            if (!abort.signal.aborted) {
+              send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+            }
+          }
+          content = content.trim();
+          if (content && !failed) {
+            const message: ManuscriptConversationMessage = {
+              role: "character",
+              characterId: speaker.id,
+              content,
+              createdAt: Date.now(),
+            };
+            messages.push(message);
+            send({ type: "done", message });
+            for (const next of addressedManuscriptCharacters(content, cast, speaker.id)) {
+              if (turns + queue.length >= MAX_MANUSCRIPT_CONVERSATION_TURNS) break;
+              if (queue.at(-1)?.id !== next.id) queue.push(next);
+            }
+          } else {
+            send({ type: "done", message: null });
+          }
+          if (failed) break;
+        }
+        try { controller.close(); } catch { /* disconnected */ }
+      },
+      cancel() { abort.abort(); },
+    });
+    return new Response(stream, {
+      headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" },
+    });
+  } catch (error) {
+    return bad(
+      error instanceof Error ? error.message : String(error),
+      error instanceof AiConfigError ? 409 : 500
+    );
+  }
 }
 
 export const POST = handler(async (req: Request) => {
@@ -68,6 +212,9 @@ export const POST = handler(async (req: Request) => {
   if (!body.manuscript || !Array.isArray(body.manuscript.chapters)) return bad("manuscript required");
   if (body.action === "rewrite" && !body.quote?.trim()) return bad("select text to rewrite");
   const settings = await getSettings();
+  if (body.action === "conversation-chat") {
+    return conversationResponse(body, settings, req.signal);
+  }
   let modelRef;
   try {
     modelRef = await resolveModel("manuscript", null, null, body.manuscript.modelId);
@@ -75,7 +222,6 @@ export const POST = handler(async (req: Request) => {
     return bad(e instanceof Error ? e.message : String(e), e instanceof AiConfigError ? 409 : 500);
   }
   const context = contextOf(body.manuscript, body.chapterId);
-  const character = body.manuscript.characters.find((c) => c.id === body.characterId);
 
   let instruction = "";
   switch (body.action) {
@@ -113,10 +259,6 @@ For create or update, return a complete character sheet with all five string fie
     case "character":
       instruction = `Create one embedded character that fits this manuscript. Return only valid JSON with exactly these string fields: name, description, personality, appearance, voice. User direction: ${body.prompt || "Create a dramatically useful character."}`;
       break;
-    case "character-chat":
-      if (!character) return bad("character not found");
-      instruction = `Speak as ${character.name}. Stay in character, respond directly to the user, and use the character's knowledge and voice. This is a private author-to-character conversation, not manuscript prose. Do not write the user's dialogue or mention these instructions.`;
-      break;
     default:
       instruction = `Act as the manuscript assistant. Discuss the active chapter, prose, plot, pacing, and continuity concretely. When quoted text is present, treat it as the user's selected manuscript passage. Do not claim to have edited the document; direct prose edits happen through Continue and Rewrite.\n\nSelected quote:\n${body.quote || "(none)"}`;
   }
@@ -125,14 +267,17 @@ For create or update, return a complete character sheet with all five string fie
     `You are an expert manuscript assistant. Respond in ${settings.language}. ` +
     `Honor the project's perspective and style, preserve established facts, and never invent prior chapter events that conflict with the supplied project.\n\n` +
     `PROJECT CONTEXT:\n${JSON.stringify(context, null, 2)}\n\n` +
-    (character ? `ACTIVE CHARACTER SHEET:\n${JSON.stringify(character, null, 2)}\n\n` : "") +
     `TASK:\n${instruction}`;
 
   const history = (Array.isArray(body.messages) ? body.messages : [])
-    .filter((m) => m && typeof m.content === "string" && ["user", "assistant", "character"].includes(m.role))
+    .filter((message): message is ManuscriptMessage =>
+      !!message
+      && typeof message.content === "string"
+      && (message.role === "user" || message.role === "assistant")
+    )
     .slice(-40)
-    .map((m) => ({ role: m.role === "user" ? "user" as const : "assistant" as const, content: m.content }));
-  const conversational = ["assistant", "settings-assistant", "character-design", "character-chat"].includes(body.action);
+    .map((message) => ({ role: message.role, content: message.content }));
+  const conversational = ["assistant", "settings-assistant", "character-design"].includes(body.action);
   if (!conversational) {
     history.push({ role: "user", content: body.prompt?.trim() || "Please do the task now." });
   } else if (!history.length && body.prompt?.trim()) {

@@ -25,6 +25,7 @@ export function storyToManuscriptDraft(story: Story): Partial<Manuscript> {
       voice: character.exampleDialogue,
     })),
     sessions: [],
+    conversations: [],
     tags: [...story.tags],
   };
 }

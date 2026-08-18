@@ -3,17 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   ArrowLeft,
   BookOpenText,
+  Bot,
   Check,
   ChevronDown,
   ChevronUp,
   LoaderCircle,
-  MessageCircle,
-  PanelRightClose,
-  PanelRightOpen,
+  MessagesSquare,
   Plus,
   Settings2,
   Trash2,
@@ -24,10 +23,11 @@ import { ModelPicker } from "@/components/ModelPicker";
 import {
   ManuscriptAssistant,
   type CharacterDesignUpdate,
+  type ManuscriptAssistantActivity,
   type ManuscriptQuote,
   type SettingsAssistantUpdate,
 } from "@/components/manuscript/ManuscriptAssistant";
-import { CharacterChatPanel } from "@/components/manuscript/CharacterChatPanel";
+import { ManuscriptChatsPanel } from "@/components/manuscript/ManuscriptChatsPanel";
 import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
 import Input from "@/components/ui/input";
@@ -39,7 +39,7 @@ import { confirmNavigation, registerNavigationGuard } from "@/lib/navigationGuar
 import { useGet, useInvalidate } from "@/lib/queries";
 import { api, timestamp } from "@/lib/ui";
 import { emptyManuscript, MANUSCRIPT_PERSPECTIVE_LABELS, normalizeManuscriptChapter, normalizeManuscriptCharacter } from "@/lib/manuscript";
-import type { Manuscript, ManuscriptAssistantScope, ManuscriptPerspective, ManuscriptSession } from "@/lib/types";
+import type { Manuscript, ManuscriptAssistantScope, ManuscriptConversation, ManuscriptPerspective, ManuscriptSession } from "@/lib/types";
 
 type EditorTab = ManuscriptAssistantScope;
 type AutoSaveState = "pristine" | "pending" | "saving" | "saved" | "error";
@@ -54,6 +54,7 @@ function manuscriptSnapshot(manuscript: Manuscript): string {
     chapters: manuscript.chapters,
     characters: manuscript.characters,
     sessions: manuscript.sessions,
+    conversations: manuscript.conversations,
     tags: manuscript.tags,
   });
 }
@@ -70,14 +71,13 @@ export default function ManuscriptEditorPage() {
   const [tab, setTab] = useState<EditorTab>("manuscript");
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
   const [quote, setQuote] = useState<ManuscriptQuote | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
-  const [chatCharacterId, setChatCharacterId] = useState<string | null>(null);
+  const [rightPanel, setRightPanel] = useState<"assistant" | "chats" | null>("assistant");
   const [saveState, setSaveState] = useState<AutoSaveState>("pristine");
   const lastSavedSnapshotRef = useRef<string | null>(null);
   const createdIdRef = useRef<string | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const assistantActivityRef = useRef<ManuscriptAssistantActivity | null>(null);
   const mountedRef = useRef(true);
-  const editorBoundsRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const undoRef = useRef<Manuscript[]>([]);
   const redoRef = useRef<Manuscript[]>([]);
@@ -304,13 +304,15 @@ export default function ManuscriptEditorPage() {
     setForm(next);
   };
 
-  const saveCharacterSession = (session: ManuscriptSession) => {
+  const saveConversation = (conversation: ManuscriptConversation, create = false) => {
     setForm((current) => {
       if (!current) return current;
-      const sessions = current.sessions.some((item) => item.id === session.id)
-        ? current.sessions.map((item) => item.id === session.id ? session : item)
-        : [...current.sessions, session];
-      const next = { ...current, sessions };
+      const exists = current.conversations.some((item) => item.id === conversation.id);
+      if (!exists && !create) return current;
+      const conversations = exists
+        ? current.conversations.map((item) => item.id === conversation.id ? conversation : item)
+        : [...current.conversations, conversation];
+      const next = { ...current, conversations };
       formRef.current = next;
       return next;
     });
@@ -320,13 +322,61 @@ export default function ManuscriptEditorPage() {
     if (await confirmNavigation()) router.push(href);
   };
 
+  const confirmAssistantTransition = async (destination: "tabs" | "chapters" | "panels") => {
+    const activity = assistantActivityRef.current;
+    if (!activity) return true;
+    const confirmed = await confirmDialog({
+      title: "Assistant is still working",
+      message: `Switching ${destination} will stop the current response. The unfinished response won’t be applied.`,
+      confirmLabel: "Stop and switch",
+      danger: true,
+    });
+    if (!confirmed) return false;
+    await activity.stop();
+    return true;
+  };
+
+  const switchTab = async (nextTab: EditorTab) => {
+    if (nextTab === tab || !(await confirmAssistantTransition("tabs"))) return;
+    setTab(nextTab);
+  };
+
+  const switchChapter = async (chapterId: string) => {
+    if (chapterId === activeChapter?.id || !(await confirmAssistantTransition("chapters"))) return;
+    setActiveChapterId(chapterId);
+    setQuote(null);
+  };
+
+  const switchRightPanel = async (nextPanel: "assistant" | "chats" | null) => {
+    if (
+      nextPanel === rightPanel
+      || (rightPanel === "assistant" && !(await confirmAssistantTransition("panels")))
+    ) return;
+    setRightPanel(nextPanel);
+  };
+
+  const addChapter = async () => {
+    if (!(await confirmAssistantTransition("chapters"))) return;
+    const chapter = normalizeManuscriptChapter({ title: `Chapter ${form.chapters.length + 1}` });
+    patch({ chapters: [...form.chapters, chapter] });
+    setActiveChapterId(chapter.id);
+    setQuote(null);
+  };
+
   const removeChapter = async (chapterId: string) => {
     if (form.chapters.length === 1) return toast.warning("A manuscript needs at least one chapter.");
     const chapter = form.chapters.find((c) => c.id === chapterId);
     if (!(await confirmDialog({ title: "Delete chapter", message: `Delete “${chapter?.title}” and all its content?`, confirmLabel: "Delete", danger: true }))) return;
     const chapters = form.chapters.filter((c) => c.id !== chapterId);
+    const nextActiveChapterId = activeChapter?.id === chapterId
+      ? chapters[0]?.id ?? null
+      : activeChapter?.id ?? chapters[0]?.id ?? null;
+    if (
+      nextActiveChapterId !== activeChapter?.id
+      && !(await confirmAssistantTransition("chapters"))
+    ) return;
     patch({ chapters });
-    setActiveChapterId(chapters[0]?.id ?? null);
+    setActiveChapterId(nextActiveChapterId);
     setQuote(null);
   };
 
@@ -340,7 +390,7 @@ export default function ManuscriptEditorPage() {
   };
 
   return (
-    <div ref={editorBoundsRef} className="relative h-full min-h-0 flex flex-col">
+    <div className="h-full min-h-0 flex flex-col">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
         <Button variant="ghost" size="sm" shape="square" title="Back to Manuscripts" onClick={() => void navigateAway("/studio?type=manuscripts")}><ArrowLeft /></Button>
         <input
@@ -360,11 +410,19 @@ export default function ManuscriptEditorPage() {
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : saveState === "pristine" ? "Not saved yet" : "Unsaved changes"}
         </div>
         <Button
-          variant="ghost" shape="square"
-          title={panelOpen ? "Fold assistant panel" : "Open assistant panel"}
-          aria-expanded={panelOpen}
-          onClick={() => setPanelOpen(!panelOpen)}
-        >{panelOpen ? <PanelRightClose /> : <PanelRightOpen />}</Button>
+          variant={rightPanel === "assistant" ? "secondary" : "ghost"}
+          shape="square"
+          title={rightPanel === "assistant" ? "Close assistant panel" : "Open assistant panel"}
+          aria-pressed={rightPanel === "assistant"}
+          onClick={() => void switchRightPanel(rightPanel === "assistant" ? null : "assistant")}
+        ><Bot /></Button>
+        <Button
+          variant={rightPanel === "chats" ? "secondary" : "ghost"}
+          shape="square"
+          title={rightPanel === "chats" ? "Close chat panel" : "Open chat panel"}
+          aria-pressed={rightPanel === "chats"}
+          onClick={() => void switchRightPanel(rightPanel === "chats" ? null : "chats")}
+        ><MessagesSquare /></Button>
       </header>
 
       <motion.div
@@ -375,7 +433,7 @@ export default function ManuscriptEditorPage() {
             <button
               type="button"
               aria-pressed={tab === "settings"}
-              onClick={() => setTab("settings")}
+              onClick={() => void switchTab("settings")}
               className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "settings" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
             >
               <Settings2 size={15} /> Settings
@@ -383,7 +441,7 @@ export default function ManuscriptEditorPage() {
             <button
               type="button"
               aria-pressed={tab === "manuscript"}
-              onClick={() => setTab("manuscript")}
+              onClick={() => void switchTab("manuscript")}
               className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "manuscript" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
             >
               <BookOpenText size={15} /> Manuscript
@@ -392,7 +450,7 @@ export default function ManuscriptEditorPage() {
             <button
               type="button"
               aria-pressed={tab === "characters"}
-              onClick={() => setTab("characters")}
+              onClick={() => void switchTab("characters")}
               className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm cursor-pointer transition-colors ${tab === "characters" ? "bg-base-300 text-content-100 font-medium" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`}
             >
               <Users size={15} /> Characters
@@ -406,17 +464,12 @@ export default function ManuscriptEditorPage() {
               <span className="flex-1" />
               <Button
                 variant="ghost" size="sm" shape="square" title="Add chapter"
-                onClick={() => {
-                  const chapter = normalizeManuscriptChapter({ title: `Chapter ${form.chapters.length + 1}` });
-                  patch({ chapters: [...form.chapters, chapter] });
-                  setActiveChapterId(chapter.id);
-                  setQuote(null);
-                }}
+                onClick={() => void addChapter()}
               ><Plus /></Button>
             </div>
             <div className="space-y-1">
               {form.chapters.map((chapter, i) => (
-                <div key={chapter.id} className={`group rounded-md p-2 cursor-pointer ${activeChapter?.id === chapter.id ? "bg-primary-500/8 text-content-100" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`} onClick={() => { setActiveChapterId(chapter.id); setQuote(null); }}>
+                <div key={chapter.id} className={`group rounded-md p-2 cursor-pointer ${activeChapter?.id === chapter.id ? "bg-primary-500/8 text-content-100" : "text-content-300 hover:bg-base-300/60 hover:text-content-100"}`} onClick={() => void switchChapter(chapter.id)}>
                   <div className="text-sm truncate">{chapter.title}</div>
                   <div className="text-[11px] text-content-400 mt-1 flex items-center">
                     {chapter.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString()} words
@@ -541,8 +594,7 @@ export default function ManuscriptEditorPage() {
                     defaultValue={i === 0}
                     title={<span className="flex-1 truncate">{character.name}</span>}
                     chevron={() => <span className="flex items-center pr-2 gap-1">
-                      {form.id && <Button variant="ghost" size="sm" title={`Chat with ${character.name}`} onClick={() => { setChatCharacterId(character.id); setTab("manuscript"); setPanelOpen(false); }}><MessageCircle /> Chat</Button>}
-                      <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => { if (chatCharacterId === character.id) setChatCharacterId(null); patch({ characters: form.characters.filter((c) => c.id !== character.id), sessions: form.sessions.filter((s) => s.characterId !== character.id) }); }}><Trash2 /></Button>
+                      <Button variant="ghost" size="sm" shape="square" title="Remove character" onClick={() => patch({ characters: form.characters.filter((c) => c.id !== character.id), conversations: form.conversations.filter((conversation) => !conversation.characterIds.includes(character.id)) })}><Trash2 /></Button>
                     </span>}
                   >
                     <div className="space-y-3 pt-2">
@@ -562,50 +614,49 @@ export default function ManuscriptEditorPage() {
           className="h-full min-h-0 overflow-hidden"
           initial={false}
           animate={{
-            width: panelOpen ? 380 : 0,
-            marginLeft: panelOpen ? 16 : 0,
-            opacity: panelOpen ? 1 : 0,
-            x: panelOpen ? 0 : 24,
+            width: rightPanel ? 380 : 0,
+            marginLeft: rightPanel ? 16 : 0,
+            opacity: rightPanel ? 1 : 0,
+            x: rightPanel ? 0 : 24,
           }}
           transition={{
             duration: reduceMotion ? 0 : 0.28,
             ease: [0.22, 1, 0.36, 1],
           }}
-          aria-hidden={!panelOpen}
-          inert={!panelOpen}
-          style={{ pointerEvents: panelOpen ? "auto" : "none" }}
+          aria-hidden={!rightPanel}
+          inert={!rightPanel}
+          style={{ pointerEvents: rightPanel ? "auto" : "none" }}
         >
           <div className="h-full min-h-0 w-[380px]">
-            <ManuscriptAssistant
-              key={tab}
-              scope={tab}
-              manuscript={form}
-              chapterId={activeChapter?.id ?? ""}
-              quote={tab === "manuscript" ? quote : null}
-              onClearQuote={() => setQuote(null)}
-              onApply={applyAi}
-              onSaveSessions={saveSessions}
-              canUndo={historyState.undo > 0}
-              canRedo={historyState.redo > 0}
-              onUndo={undo}
-              onRedo={redo}
-            />
+            {rightPanel === "assistant" && (
+              <ManuscriptAssistant
+                key={tab}
+                scope={tab}
+                manuscript={form}
+                chapterId={activeChapter?.id ?? ""}
+                quote={tab === "manuscript" ? quote : null}
+                onClearQuote={() => setQuote(null)}
+                onApply={applyAi}
+                onSaveSessions={saveSessions}
+                canUndo={historyState.undo > 0}
+                canRedo={historyState.redo > 0}
+                onUndo={undo}
+                onRedo={redo}
+                onActivityChange={(activity) => {
+                  assistantActivityRef.current = activity;
+                }}
+              />
+            )}
+            <div className={rightPanel === "chats" ? "h-full min-h-0" : "hidden"}>
+              <ManuscriptChatsPanel
+                manuscript={form}
+                chapterId={activeChapter?.id ?? ""}
+                onSaveConversation={saveConversation}
+              />
+            </div>
           </div>
         </motion.div>
       </motion.div>
-
-      <AnimatePresence>
-        {chatCharacterId && form.characters.some((character) => character.id === chatCharacterId) && (
-          <CharacterChatPanel
-            key={chatCharacterId}
-            manuscript={form}
-            characterId={chatCharacterId}
-            dragConstraints={editorBoundsRef}
-            onSaveSession={saveCharacterSession}
-            onClose={() => setChatCharacterId(null)}
-          />
-        )}
-      </AnimatePresence>
 
     </div>
   );
