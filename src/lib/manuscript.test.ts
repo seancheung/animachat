@@ -46,6 +46,25 @@ describe("manuscript document", () => {
     expect(manuscript.sessions.map((session) => session.scope)).toEqual(["settings", "characters"]);
   });
 
+  it("preserves whether an assistant reply applied streamed fields", () => {
+    const manuscript = normalizeManuscript({
+      sessions: [{
+        id: "settings",
+        kind: "assistant",
+        scope: "settings",
+        messages: [
+          { role: "assistant", content: "Updated the style.", applied: true },
+          { role: "assistant", content: "Let's discuss it.", applied: false },
+        ],
+      }] as never,
+    });
+    expect(manuscript.sessions[0].messages).toMatchObject([
+      { content: "Updated the style.", applied: true },
+      { content: "Let's discuss it." },
+    ]);
+    expect(manuscript.sessions[0].messages[1]).not.toHaveProperty("applied");
+  });
+
   it("canonicalizes fixed conversation members and drops duplicate member sets", () => {
     const manuscript = normalizeManuscript({
       characters: [

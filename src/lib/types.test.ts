@@ -47,6 +47,7 @@ describe("taskMaxTokens", () => {
 
   it("falls back to the built-in default when unset", () => {
     expect(taskMaxTokens(DEFAULT_SETTINGS, "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
+    expect(taskMaxTokens(DEFAULT_SETTINGS, "manuscript")).toBe(1800);
     expect(taskMaxTokens(withOverrides({ narrator: 2500 }), "chat")).toBe(
       TASK_MAX_TOKENS_DEFAULTS.chat
     );
@@ -54,6 +55,7 @@ describe("taskMaxTokens", () => {
 
   it("uses the override when set, ignoring non-positive garbage", () => {
     expect(taskMaxTokens(withOverrides({ chat: 2500 }), "chat")).toBe(2500);
+    expect(taskMaxTokens(withOverrides({ manuscript: 4000 }), "manuscript")).toBe(4000);
     expect(taskMaxTokens(withOverrides({ chat: 0 }), "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
     expect(taskMaxTokens(withOverrides({ chat: -5 }), "chat")).toBe(TASK_MAX_TOKENS_DEFAULTS.chat);
   });

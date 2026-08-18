@@ -10,10 +10,12 @@ import {
   SendHorizontal,
   Settings2,
   Square,
+  Trash2,
   UsersRound,
 } from "lucide-react";
 import { MentionInputBox } from "@/components/chat/MentionInputBox";
 import { MessageText } from "@/components/MessageText";
+import { confirmDialog } from "@/components/confirm";
 import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
 import Dialog from "@/components/ui/dialog";
@@ -153,6 +155,20 @@ export function ManuscriptChatsPanel({
     saveSession(activeConversation, session);
   }
 
+  async function deleteChatSession(session: ManuscriptConversationSession) {
+    if (!activeConversation || busy || !(await confirmDialog({
+      title: "Delete chat session",
+      message: `Delete “${session.title}”? Its ${session.messages.length.toLocaleString()} message${session.messages.length === 1 ? "" : "s"} will be removed.`,
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
+    const sessions = activeConversation.sessions.filter((item) => item.id !== session.id);
+    if (activeSession?.id === session.id) {
+      setActiveSessionId(latestManuscriptConversationSession({ ...activeConversation, sessions })?.id ?? null);
+    }
+    onSaveConversation({ ...activeConversation, sessions, updatedAt: timestamp() });
+  }
+
   function persistMessages(
     conversation: ManuscriptConversation,
     session: ManuscriptConversationSession,
@@ -215,6 +231,17 @@ export function ManuscriptChatsPanel({
       }, (event) => {
         if (event.type === "start" && typeof event.speaker?.characterId === "string") {
           setStreaming({ characterId: event.speaker.characterId, text: "" });
+        } else if (event.type === "context-limit") {
+          const details = [];
+          if (event.chapter) {
+            details.push(
+              `Using about ${Number(event.chapter.includedTokens).toLocaleString()} of ${Number(event.chapter.originalTokens).toLocaleString()} active-chapter tokens.`
+            );
+          }
+          if (event.omittedHistoryMessages) {
+            details.push(`${Number(event.omittedHistoryMessages).toLocaleString()} older chat messages omitted.`);
+          }
+          toast.warning(details.join(" "));
         } else if (event.type === "text") {
           setStreaming((current) => current
             ? { ...current, text: current.text + event.text }
@@ -344,15 +371,29 @@ export function ManuscriptChatsPanel({
                   {[...activeConversation.sessions]
                     .sort((a, b) => b.updatedAt - a.updatedAt)
                     .map((session) => (
-                      <button
+                      <div
                         key={session.id}
-                        type="button"
-                        disabled={busy}
-                        className={`w-full cursor-pointer truncate rounded-md px-2.5 py-2 text-left text-sm ${session.id === activeSession?.id ? "bg-base-300 font-medium" : "hover:bg-base-300/60"}`}
-                        onClick={() => { setActiveSessionId(session.id); close(); }}
+                        className={`flex items-center gap-1 rounded-md pr-1 ${session.id === activeSession?.id ? "bg-base-300 font-medium" : "hover:bg-base-300/60"}`}
                       >
-                        {session.title}
-                      </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="min-w-0 flex-1 cursor-pointer truncate rounded-md px-2.5 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => { setActiveSessionId(session.id); close(); }}
+                        >
+                          {session.title}
+                        </button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          shape="square"
+                          title={`Delete session “${session.title}”`}
+                          disabled={busy}
+                          onClick={() => { close(); void deleteChatSession(session); }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
                     ))}
                 </>
               )}

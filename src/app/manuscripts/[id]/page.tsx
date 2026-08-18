@@ -82,6 +82,9 @@ export default function ManuscriptEditorPage() {
   const reduceMotion = useReducedMotion();
   const undoRef = useRef<Manuscript[]>([]);
   const redoRef = useRef<Manuscript[]>([]);
+  const aiPreviewActiveRef = useRef(false);
+  const aiPreviewBaselineRef = useRef<Manuscript | null>(null);
+  const aiPreviewCreatedIdsRef = useRef<string[]>([]);
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 });
 
   useEffect(() => {
@@ -158,6 +161,9 @@ export default function ManuscriptEditorPage() {
 
   useEffect(() => {
     if (!form) return;
+    // Structured assistant fields render as an in-memory preview while the JSON
+    // block streams. Persist only after the final validated payload is committed.
+    if (aiPreviewActiveRef.current) return;
     const snapshot = manuscriptSnapshot(form);
 
     if (lastSavedSnapshotRef.current === null) {
@@ -239,9 +245,101 @@ export default function ManuscriptEditorPage() {
     setHistoryState({ undo: undoRef.current.length, redo: 0 });
   };
 
+  function structuredAiNext(
+    previous: Manuscript,
+    action: "settings" | "character",
+    value: SettingsAssistantUpdate | CharacterDesignUpdate[],
+    createdIds?: string[]
+  ): Manuscript | null {
+    const next = structuredClone(previous);
+    if (action === "settings" && !Array.isArray(value)) {
+      if (typeof value.synopsis === "string") next.synopsis = value.synopsis;
+      if (typeof value.style === "string") next.style = value.style;
+      return next;
+    }
+    if (action !== "character" || !Array.isArray(value)) return null;
+    const missingUpdate = value.find(
+      (update) => update.characterId
+        && !next.characters.some((character) => character.id === update.characterId)
+    );
+    if (missingUpdate) return null;
+    let createIndex = 0;
+    for (const update of value) {
+      const index = update.characterId
+        ? next.characters.findIndex((character) => character.id === update.characterId)
+        : -1;
+      if (index >= 0) {
+        const existing = next.characters[index];
+        next.characters[index] = normalizeManuscriptCharacter({ ...existing, ...update.character, id: existing.id });
+      } else {
+        const generated = normalizeManuscriptCharacter({
+          ...update.character,
+          id: createdIds?.[createIndex],
+        });
+        if (createdIds && !createdIds[createIndex]) createdIds[createIndex] = generated.id;
+        next.characters.push(generated);
+        createIndex++;
+      }
+    }
+    return next;
+  }
+
+  function previewStructuredAi(
+    action: "settings" | "character",
+    value: SettingsAssistantUpdate | CharacterDesignUpdate[]
+  ) {
+    const current = formRef.current ?? currentForm;
+    if (!aiPreviewBaselineRef.current) {
+      aiPreviewBaselineRef.current = structuredClone(current);
+      aiPreviewCreatedIdsRef.current = [];
+      aiPreviewActiveRef.current = true;
+    }
+    const next = structuredAiNext(
+      aiPreviewBaselineRef.current,
+      action,
+      value,
+      aiPreviewCreatedIdsRef.current
+    );
+    if (!next) return false;
+    formRef.current = next;
+    setForm(next);
+    return true;
+  }
+
+  function commitStructuredAiPreview() {
+    const baseline = aiPreviewBaselineRef.current;
+    const current = formRef.current;
+    aiPreviewBaselineRef.current = null;
+    aiPreviewCreatedIdsRef.current = [];
+    aiPreviewActiveRef.current = false;
+    if (!baseline || !current || manuscriptSnapshot(baseline) === manuscriptSnapshot(current)) return;
+    const baselineWithIdentity = !baseline.id && current.id
+      ? { ...baseline, id: current.id, createdAt: current.createdAt, updatedAt: current.updatedAt }
+      : baseline;
+    undoRef.current.push(structuredClone(baselineWithIdentity));
+    redoRef.current = [];
+    setHistoryState({ undo: undoRef.current.length, redo: 0 });
+    // A fresh object retriggers autosave now that preview suppression is lifted.
+    setForm({ ...current });
+  }
+
+  function discardStructuredAiPreview() {
+    const baseline = aiPreviewBaselineRef.current;
+    const current = formRef.current;
+    aiPreviewBaselineRef.current = null;
+    aiPreviewCreatedIdsRef.current = [];
+    aiPreviewActiveRef.current = false;
+    if (!baseline) return;
+    const baselineWithIdentity = !baseline.id && current?.id
+      ? { ...baseline, id: current.id, createdAt: current.createdAt, updatedAt: current.updatedAt }
+      : baseline;
+    formRef.current = baselineWithIdentity;
+    setForm(baselineWithIdentity);
+  }
+
   function applyAi(
     action: "continue" | "rewrite" | "settings" | "character",
-    value: string | SettingsAssistantUpdate | CharacterDesignUpdate,
+    value: string | SettingsAssistantUpdate | CharacterDesignUpdate[],
     selected?: ManuscriptQuote | null
   ) {
     const previous = formRef.current ?? currentForm;
@@ -263,21 +361,15 @@ export default function ManuscriptEditorPage() {
       if (start < 0 || end < 0) return toast.error("The selected text changed before the rewrite finished.");
       chapter.content = chapter.content.slice(0, start) + value + chapter.content.slice(end);
       chapter.updatedAt = timestamp();
-    } else if (action === "settings" && typeof value === "object") {
-      const update = value as SettingsAssistantUpdate;
-      if (typeof update.synopsis === "string") next.synopsis = update.synopsis;
-      if (typeof update.style === "string") next.style = update.style;
-    } else if (action === "character" && typeof value === "object") {
-      const update = value as CharacterDesignUpdate;
-      const index = update.characterId
-        ? next.characters.findIndex((character) => character.id === update.characterId)
-        : -1;
-      if (index >= 0) {
-        const existing = next.characters[index];
-        next.characters[index] = normalizeManuscriptCharacter({ ...existing, ...update.character, id: existing.id });
-      } else {
-        next.characters.push(normalizeManuscriptCharacter(update.character));
-      }
+    } else if ((action === "settings" || action === "character") && typeof value === "object") {
+      const structured = structuredAiNext(
+        previous,
+        action,
+        value as SettingsAssistantUpdate | CharacterDesignUpdate[]
+      );
+      if (!structured) return toast.error("The manuscript changed before the assistant finished. No assistant changes were applied.");
+      commitAi(structured, previous);
+      return;
     } else return;
     commitAi(next, previous);
   }
@@ -602,7 +694,7 @@ export default function ManuscriptEditorPage() {
                       <Field label="Name"><Input className="w-full" value={character.name} onChange={(name) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, name } : c) })} /></Field>
                       <Field label="Description"><Textarea className="w-full" value={character.description} onChange={(description) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, description } : c) })} /></Field>
                       <Field label="Personality"><Textarea className="w-full" value={character.personality} onChange={(personality) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, personality } : c) })} /></Field>
-                      <Field label="Voice"><Textarea className="w-full" value={character.voice} onChange={(voice) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, voice } : c) })} placeholder="Speech patterns, diction, cadence, and example dialogue…" /></Field>
+                      <Field label="Example dialogue"><Textarea className="w-full" value={character.voice} onChange={(voice) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, voice } : c) })} placeholder={'*brief action* "A representative line of dialogue."'} /></Field>
                       <Field label="Appearance"><Textarea className="w-full" value={character.appearance} onChange={(appearance) => patch({ characters: form.characters.map((c) => c.id === character.id ? { ...c, appearance } : c) })} /></Field>
                     </div>
                   </Collapsible>
@@ -638,6 +730,9 @@ export default function ManuscriptEditorPage() {
                 quote={tab === "manuscript" ? quote : null}
                 onClearQuote={() => setQuote(null)}
                 onApply={applyAi}
+                onPreview={previewStructuredAi}
+                onCommitPreview={commitStructuredAiPreview}
+                onDiscardPreview={discardStructuredAiPreview}
                 onSaveSessions={saveSessions}
                 canUndo={historyState.undo > 0}
                 canRedo={historyState.redo > 0}

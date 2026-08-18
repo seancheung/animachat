@@ -79,7 +79,7 @@ function historyForCharacter(
     else history.push({ role, content });
   };
 
-  for (const message of messages.slice(-40)) {
+  for (const message of messages) {
     if (message.role === "character" && message.characterId === speaker.id) {
       push("assistant", message.content);
       continue;

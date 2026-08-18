@@ -514,6 +514,8 @@ export interface ManuscriptCharacter {
 export interface ManuscriptMessage {
   role: "user" | "assistant";
   content: string;
+  /** This assistant reply streamed structured changes into the manuscript form. */
+  applied?: boolean;
   createdAt: number;
 }
 
@@ -638,6 +640,7 @@ export const TASK_MAX_TOKENS_DEFAULTS = {
   impersonate: 400,
   assist: 32000,
   novelize: 6000,
+  manuscript: 1800,
 } as const;
 
 export type CappedTask = keyof typeof TASK_MAX_TOKENS_DEFAULTS;
