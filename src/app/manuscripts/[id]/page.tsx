@@ -752,7 +752,7 @@ export default function ManuscriptEditorPage() {
                     </div>
                   </div>
                   <textarea
-                    className="block min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent pb-10 text-justify text-base leading-[1.35] text-content-100 outline-none font-[Georgia,serif] placeholder:text-content-400/70 selection:bg-primary-500/20"
+                    className="block min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent pb-10 text-justify text-[15px] leading-[1.625] font-default text-content-100 outline-none placeholder:text-content-400/70 selection:bg-primary-500/20"
                     value={activeChapter.content}
                     aria-label="Chapter content"
                     placeholder="Begin the chapter…"
