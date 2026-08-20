@@ -733,11 +733,11 @@ export default function ManuscriptEditorPage() {
         ) : tab === "manuscript" ? (
             <main className="min-h-0 h-full w-full overflow-hidden">
               {activeChapter && (
-                <div className="h-full min-h-0 flex flex-col">
-                  <div className="mx-auto w-full max-w-[72ch] shrink-0 px-7 pt-7 pb-5">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col px-5 lg:px-6 xl:max-w-5xl 2xl:max-w-6xl">
+                  <div className="shrink-0 pt-4 pb-3">
                     <div className="flex items-baseline gap-4">
                       <input
-                        className="min-w-0 flex-1 bg-transparent text-[26px] leading-tight font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400"
+                        className="min-w-0 flex-1 bg-transparent text-2xl leading-tight font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400"
                         value={activeChapter.title}
                         aria-label="Chapter title"
                         placeholder="Untitled chapter"
@@ -749,7 +749,7 @@ export default function ManuscriptEditorPage() {
                     </div>
                   </div>
                   <textarea
-                    className="mx-auto block h-full min-h-0 w-full max-w-[72ch] flex-1 resize-none overflow-y-auto border-0 bg-transparent px-7 pb-16 text-[17px] leading-8 text-content-100 outline-none font-[Georgia,serif] placeholder:text-content-400/70 selection:bg-primary-500/20"
+                    className="block min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent pb-10 text-justify text-base leading-[1.35] text-content-100 outline-none font-[Georgia,serif] placeholder:text-content-400/70 selection:bg-primary-500/20"
                     value={activeChapter.content}
                     aria-label="Chapter content"
                     placeholder="Begin the chapter…"
