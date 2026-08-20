@@ -33,13 +33,25 @@ describe("manuscript structured assistant fields", () => {
       "assistant",
       JSON.stringify({
         summary: "Tighten a phrase",
-        edits: [{ operation: "replace", oldText: "very dark", text: "lightless" }],
+        edits: [{
+          operation: "replace",
+          oldText: "very dark",
+          text: "lightless",
+          beforeContext: "The room was ",
+          afterContext: ".\n\n",
+        }],
       }),
       manuscript
     )).toEqual({
       type: "manuscript-edit",
       summary: "Tighten a phrase",
-      edits: [{ operation: "replace", oldText: "very dark", text: "lightless" }],
+      edits: [{
+        operation: "replace",
+        oldText: "very dark",
+        text: "lightless",
+        beforeContext: "The room was ",
+        afterContext: ".\n\n",
+      }],
     });
     expect(parseManuscriptAssistantFields(
       "assistant",
@@ -118,6 +130,62 @@ describe("manuscript structured assistant fields", () => {
       [{ operation: "replace-selection", text: "New text." }],
       { text: "Old text.", start: 0, end: 9 }
     )).toThrow("no longer matches");
+  });
+
+  it("uses exact adjacent context to disambiguate repeated text", () => {
+    expect(applyManuscriptChapterEdits(
+      {
+        title: "Opening",
+        content: "Mira opened the door.\n\nKael closed the door.",
+      },
+      [{
+        operation: "replace",
+        oldText: "the door",
+        beforeContext: "Mira opened ",
+        afterContext: ".",
+        text: "the iron gate",
+      }]
+    )).toEqual({
+      title: "Opening",
+      content: "Mira opened the iron gate.\n\nKael closed the door.",
+    });
+
+    expect(applyManuscriptChapterEdits(
+      {
+        title: "Opening",
+        content: "Mira waited. The bell rang.\n\nKael waited. The bell rang.",
+      },
+      [{
+        operation: "insert-before",
+        anchor: "The bell rang.",
+        beforeContext: "Mira waited. ",
+        text: "She held her breath. ",
+      }]
+    )).toMatchObject({
+      content: "Mira waited. She held her breath. The bell rang.\n\nKael waited. The bell rang.",
+    });
+  });
+
+  it("rejects stale or still-ambiguous hunk context", () => {
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Opening", content: "Mira opened the door." },
+      [{
+        operation: "replace",
+        oldText: "the door",
+        beforeContext: "Kael opened ",
+        text: "the gate",
+      }]
+    )).toThrow("surrounding context does not match");
+
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Opening", content: "Again: the door. Again: the door." },
+      [{
+        operation: "replace",
+        oldText: "the door",
+        beforeContext: "Again: ",
+        text: "the gate",
+      }]
+    )).toThrow("include more beforeContext or afterContext");
   });
 
   it("renames the active chapter atomically with optional prose edits", () => {

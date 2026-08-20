@@ -90,6 +90,12 @@ function ChapterEditDiff({ proposal }: { proposal: PendingChapterEdit }) {
                 : edit.operation === "insert-before" ? "Insert before text" : "Insert after text";
         const insertedBefore = edit.operation === "insert-before";
         const insertedAfter = edit.operation === "insert-after";
+        const beforeContext = edit.operation === "replace" || insertedBefore || insertedAfter
+          ? edit.beforeContext ?? ""
+          : "";
+        const afterContext = edit.operation === "replace" || insertedBefore || insertedAfter
+          ? edit.afterContext ?? ""
+          : "";
         return (
           <section key={index} className="overflow-hidden rounded-md border border-base-400">
             <div className="bg-base-300 px-3 py-1.5 text-xs font-medium text-content-300">
@@ -101,9 +107,11 @@ function ChapterEditDiff({ proposal }: { proposal: PendingChapterEdit }) {
                   Before
                 </div>
                 <pre className="max-h-56 min-h-20 overflow-auto whitespace-pre-wrap bg-base-100 px-3 py-2 font-mono text-xs">
+                  {beforeContext && <span className="text-content-300">{beforeContext}</span>}
                   {before
                     ? <span className={insertedBefore || insertedAfter ? "text-content-300" : "text-error"}>{before}</span>
                     : <span className="italic text-content-400">Chapter end</span>}
+                  {afterContext && <span className="text-content-300">{afterContext}</span>}
                 </pre>
               </div>
               <div className="min-w-0">
@@ -111,12 +119,14 @@ function ChapterEditDiff({ proposal }: { proposal: PendingChapterEdit }) {
                   After
                 </div>
                 <pre className="max-h-56 min-h-20 overflow-auto whitespace-pre-wrap bg-base-100 px-3 py-2 font-mono text-xs">
+                  {beforeContext && <span className="text-content-300">{beforeContext}</span>}
                   {insertedBefore && <span className="text-success">{after}</span>}
                   {(insertedBefore || insertedAfter) && <span className="text-content-300">{before}</span>}
                   {insertedAfter && <span className="text-success">{after}</span>}
                   {!insertedBefore && !insertedAfter && (after
                     ? <span className="text-success">{after}</span>
                     : <span className="italic text-content-400">Deleted</span>)}
+                  {afterContext && <span className="text-content-300">{afterContext}</span>}
                 </pre>
               </div>
             </div>

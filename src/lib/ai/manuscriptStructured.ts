@@ -13,8 +13,20 @@ export type ManuscriptChapterEdit =
   | { operation: "rename-chapter"; title: string }
   | { operation: "append"; text: string }
   | { operation: "replace-selection"; text: string }
-  | { operation: "replace"; oldText: string; text: string }
-  | { operation: "insert-before" | "insert-after"; anchor: string; text: string };
+  | {
+      operation: "replace";
+      oldText: string;
+      text: string;
+      beforeContext?: string;
+      afterContext?: string;
+    }
+  | {
+      operation: "insert-before" | "insert-after";
+      anchor: string;
+      text: string;
+      beforeContext?: string;
+      afterContext?: string;
+    };
 
 export type StructuredAssistantResult =
   | { type: "manuscript-edit"; summary: string; edits: ManuscriptChapterEdit[] }
@@ -46,6 +58,18 @@ export function parseManuscriptAssistantFields(
       }
       const edit = candidate as Record<string, unknown>;
       const operation = edit.operation;
+      const contexts = () => {
+        if (edit.beforeContext !== undefined && typeof edit.beforeContext !== "string") {
+          throw new Error(`Edit ${index + 1} beforeContext must be a string.`);
+        }
+        if (edit.afterContext !== undefined && typeof edit.afterContext !== "string") {
+          throw new Error(`Edit ${index + 1} afterContext must be a string.`);
+        }
+        return {
+          ...(edit.beforeContext ? { beforeContext: edit.beforeContext } : {}),
+          ...(edit.afterContext ? { afterContext: edit.afterContext } : {}),
+        };
+      };
       if (operation === "rename-chapter") {
         if (typeof edit.title !== "string" || !edit.title.trim()) {
           throw new Error(`Edit ${index + 1} must contain a non-empty title.`);
@@ -65,7 +89,7 @@ export function parseManuscriptAssistantFields(
         if (typeof edit.text !== "string") {
           throw new Error(`Edit ${index + 1} must contain string text.`);
         }
-        return { operation, oldText: edit.oldText, text: edit.text };
+        return { operation, oldText: edit.oldText, text: edit.text, ...contexts() };
       }
       if (operation === "insert-before" || operation === "insert-after") {
         if (typeof edit.anchor !== "string" || !edit.anchor) {
@@ -74,7 +98,7 @@ export function parseManuscriptAssistantFields(
         if (typeof edit.text !== "string" || !edit.text) {
           throw new Error(`Edit ${index + 1} must contain non-empty text.`);
         }
-        return { operation, anchor: edit.anchor, text: edit.text };
+        return { operation, anchor: edit.anchor, text: edit.text, ...contexts() };
       }
       throw new Error(`Edit ${index + 1} has an unsupported operation.`);
     });
@@ -104,13 +128,38 @@ export function parseManuscriptAssistantFields(
     : { type: "none" };
 }
 
-function uniqueMatch(value: string, needle: string, label: string): number {
-  const index = value.indexOf(needle);
-  if (index < 0) throw new Error(`${label} was not found in the active chapter.`);
-  if (value.indexOf(needle, index + 1) >= 0) {
-    throw new Error(`${label} is not unique in the active chapter; include more surrounding text.`);
+function contextualMatch(
+  value: string,
+  needle: string,
+  beforeContext: string | undefined,
+  afterContext: string | undefined,
+  label: string
+): number {
+  const matches: number[] = [];
+  let from = 0;
+  while (from <= value.length - needle.length) {
+    const index = value.indexOf(needle, from);
+    if (index < 0) break;
+    matches.push(index);
+    from = index + 1;
   }
-  return index;
+  if (!matches.length) throw new Error(`${label} was not found in the active chapter.`);
+  const contextualMatches = matches.filter((index) => {
+    const beforeMatches = !beforeContext
+      || (index >= beforeContext.length
+        && value.slice(index - beforeContext.length, index) === beforeContext);
+    const afterStart = index + needle.length;
+    const afterMatches = !afterContext
+      || value.slice(afterStart, afterStart + afterContext.length) === afterContext;
+    return beforeMatches && afterMatches;
+  });
+  if (!contextualMatches.length) {
+    throw new Error(`${label} was found, but its surrounding context does not match.`);
+  }
+  if (contextualMatches.length > 1) {
+    throw new Error(`${label} hunk is not unique; include more beforeContext or afterContext.`);
+  }
+  return contextualMatches[0];
 }
 
 /** Apply a validated edit batch to one immutable chapter snapshot. */
@@ -151,11 +200,23 @@ export function applyManuscriptChapterEdits(
       continue;
     }
     if (edit.operation === "replace") {
-      const match = uniqueMatch(content, edit.oldText, `Edit ${index + 1} oldText`);
+      const match = contextualMatch(
+        content,
+        edit.oldText,
+        edit.beforeContext,
+        edit.afterContext,
+        `Edit ${index + 1} oldText`
+      );
       content = `${content.slice(0, match)}${edit.text}${content.slice(match + edit.oldText.length)}`;
       continue;
     }
-    const match = uniqueMatch(content, edit.anchor, `Edit ${index + 1} anchor`);
+    const match = contextualMatch(
+      content,
+      edit.anchor,
+      edit.beforeContext,
+      edit.afterContext,
+      `Edit ${index + 1} anchor`
+    );
     const insertionPoint = edit.operation === "insert-before"
       ? match
       : match + edit.anchor.length;
