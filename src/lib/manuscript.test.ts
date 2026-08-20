@@ -5,8 +5,11 @@ import {
   latestManuscriptConversationSession,
   manuscriptChapterContentHash,
   manuscriptConversationKey,
+  manuscriptSelectionMatches,
   normalizeManuscript,
   normalizeManuscriptChapter,
+  retryableManuscriptAssistantTurn,
+  truncateManuscriptAssistantAtUserMessage,
 } from "./manuscript";
 
 describe("manuscript document", () => {
@@ -115,6 +118,60 @@ describe("manuscript document", () => {
     expect(manuscript.sessions[0].messages[0].rejected).toBe(true);
     expect(manuscript.sessions[0].messages[1].applied).toBe(true);
     expect(manuscript.sessions[0].messages[1].rejected).toBeUndefined();
+  });
+
+  it("preserves retryable structured-data failures", () => {
+    const manuscript = normalizeManuscript({
+      sessions: [{
+        id: "settings",
+        kind: "assistant",
+        scope: "settings",
+        messages: [
+          { role: "assistant", content: "Try again", retryable: true },
+          { role: "assistant", content: "Applied", applied: true, retryable: true },
+        ],
+      }] as never,
+    });
+    expect(manuscript.sessions[0].messages[0].retryable).toBe(true);
+    expect(manuscript.sessions[0].messages[1].applied).toBe(true);
+    expect(manuscript.sessions[0].messages[1].retryable).toBeUndefined();
+  });
+
+  it("deletes an assistant user message and every message after it", () => {
+    const messages = [
+      { role: "user" as const, content: "First", createdAt: 1 },
+      { role: "assistant" as const, content: "First reply", createdAt: 2 },
+      { role: "user" as const, content: "Second", createdAt: 3 },
+      { role: "assistant" as const, content: "Second reply", createdAt: 4 },
+    ];
+    expect(truncateManuscriptAssistantAtUserMessage(messages, 2))
+      .toEqual(messages.slice(0, 2));
+    expect(truncateManuscriptAssistantAtUserMessage(messages, 1)).toBe(messages);
+  });
+
+  it("retries only a retryable failure at the end without duplicating its user turn", () => {
+    const messages = [
+      { role: "user" as const, content: "First", createdAt: 1 },
+      { role: "assistant" as const, content: "First reply", createdAt: 2 },
+      { role: "user" as const, content: "Make the change", createdAt: 3 },
+      { role: "assistant" as const, content: "Invalid data", retryable: true, createdAt: 4 },
+    ];
+    expect(retryableManuscriptAssistantTurn(messages)).toEqual({
+      prompt: "Make the change",
+      history: messages.slice(0, -1),
+    });
+    expect(retryableManuscriptAssistantTurn(messages.slice(0, -1))).toBeNull();
+    expect(retryableManuscriptAssistantTurn([
+      ...messages,
+      { role: "user", content: "Later turn", createdAt: 5 },
+    ])).toBeNull();
+  });
+
+  it("detects when a captured chapter selection became stale", () => {
+    const selection = { text: "selected", start: 7, end: 15 };
+    expect(manuscriptSelectionMatches("Before selected after.", selection)).toBe(true);
+    expect(manuscriptSelectionMatches("Before revised after.", selection)).toBe(false);
+    expect(manuscriptSelectionMatches("Inserted Before selected after.", selection)).toBe(false);
   });
 
   it("canonicalizes fixed conversation members and drops duplicate member sets", () => {

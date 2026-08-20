@@ -522,6 +522,8 @@ export interface ManuscriptMessage {
   applied?: boolean;
   /** This assistant edit proposal was explicitly rejected by the author. */
   rejected?: boolean;
+  /** This assistant reply ended with unusable structured data and can be regenerated. */
+  retryable?: boolean;
   createdAt: number;
 }
 

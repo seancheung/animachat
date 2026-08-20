@@ -58,6 +58,36 @@ export function isManuscriptChapterSummaryStale(chapter: ManuscriptChapter): boo
     && chapter.summaryContentHash !== manuscriptChapterContentHash(chapter.content);
 }
 
+/** Delete a user turn and every assistant turn or later user turn that depends on it. */
+export function truncateManuscriptAssistantAtUserMessage(
+  messages: ManuscriptMessage[],
+  index: number
+): ManuscriptMessage[] {
+  if (messages[index]?.role !== "user") return messages;
+  return messages.slice(0, index);
+}
+
+/** Resolve a retry only from a retryable assistant failure at the current timeline end. */
+export function retryableManuscriptAssistantTurn(
+  messages: ManuscriptMessage[]
+): { prompt: string; history: ManuscriptMessage[] } | null {
+  const failure = messages.at(-1);
+  const user = messages.at(-2);
+  if (failure?.role !== "assistant" || !failure.retryable || user?.role !== "user") return null;
+  return { prompt: user.content, history: messages.slice(0, -1) };
+}
+
+/** Whether a captured editor selection still points to the same passage. */
+export function manuscriptSelectionMatches(
+  content: string,
+  selection: { text: string; start: number; end: number }
+): boolean {
+  return selection.start >= 0
+    && selection.end >= selection.start
+    && selection.end <= content.length
+    && content.slice(selection.start, selection.end) === selection.text;
+}
+
 export function normalizeManuscriptCharacter(
   value: Partial<ManuscriptCharacter> = {}
 ): ManuscriptCharacter {
@@ -78,6 +108,9 @@ function normalizeMessage(value: Partial<ManuscriptMessage>): ManuscriptMessage 
     content: text(value.content),
     ...(value.applied === true ? { applied: true } : {}),
     ...(value.rejected === true && value.applied !== true ? { rejected: true } : {}),
+    ...(value.retryable === true && value.applied !== true && value.rejected !== true
+      ? { retryable: true }
+      : {}),
     createdAt: timestamp(value.createdAt, now()),
   };
 }

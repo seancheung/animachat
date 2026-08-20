@@ -10,6 +10,7 @@ import {
   MessageSquarePlus,
   Quote,
   Redo2,
+  RefreshCw,
   SendHorizontal,
   Square,
   Trash2,
@@ -25,6 +26,11 @@ import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import type { CharacterDesignUpdate as CharacterDesignUpdatePayload } from "@/lib/ai/manuscriptCharacterDesign";
 import type { ManuscriptChapterEdit } from "@/lib/ai/manuscriptStructured";
+import {
+  manuscriptSelectionMatches,
+  retryableManuscriptAssistantTurn,
+  truncateManuscriptAssistantAtUserMessage,
+} from "@/lib/manuscript";
 import { streamSse, timestamp, uid } from "@/lib/ui";
 import type {
   Manuscript,
@@ -267,6 +273,31 @@ export function ManuscriptAssistant({
     await onSaveSessions(sessions);
   }
 
+  async function deleteUserMessage(index: number) {
+    if (!active || busy || pendingProposal) return;
+    const messages = truncateManuscriptAssistantAtUserMessage(active.messages, index);
+    if (messages === active.messages) return;
+    const following = active.messages.length - index - 1;
+    if (!(await confirmDialog({
+      title: "Delete user message",
+      message: following
+        ? `Delete this message and the ${following.toLocaleString()} message${following === 1 ? "" : "s"} after it?`
+        : "Delete this message?",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
+    const firstUser = messages.find((message) => message.role === "user")?.content.trim();
+    const next = {
+      ...active,
+      title: firstUser ? firstUser.slice(0, 42) : "New session",
+      messages,
+      updatedAt: timestamp(),
+    };
+    await onSaveSessions(manuscript.sessions.map(
+      (session) => session.id === active.id ? next : session
+    ));
+  }
+
   async function persistMessages(session: ManuscriptSession, messages: ManuscriptMessage[]) {
     const firstUser = messages.find((message) => message.role === "user")?.content.trim();
     const next = {
@@ -303,7 +334,11 @@ export function ManuscriptAssistant({
     setChapterPickerOpen(false);
   }
 
-  async function run(action: Action, prompt = input.trim()) {
+  async function run(
+    action: Action,
+    prompt = input.trim(),
+    retryHistory?: ManuscriptMessage[]
+  ) {
     if (busy || pendingProposal) return;
     if (!prompt) return;
 
@@ -325,10 +360,11 @@ export function ManuscriptAssistant({
       await onSaveSessions([...manuscript.sessions, session]);
     }
 
-    const userMessage: ManuscriptMessage = { role: "user", content: prompt, createdAt: timestamp() };
-    const history = session ? [...session.messages, userMessage] : [];
+    const history = retryHistory ?? (session
+      ? [...session.messages, { role: "user" as const, content: prompt, createdAt: timestamp() }]
+      : []);
     if (session) await persistMessages(session, history);
-    setInput("");
+    if (!retryHistory) setInput("");
 
     setBusy(true);
     setStreaming("");
@@ -338,6 +374,7 @@ export function ManuscriptAssistant({
     let previewLanded = false;
     let finalStructuredLanded = false;
     let previewCommitted = false;
+    let retryableFailure = false;
     const abort = new AbortController();
     abortRef.current = abort;
     let resolveStopped = () => {};
@@ -436,6 +473,13 @@ export function ManuscriptAssistant({
         } else if (event.type === "error") {
           acc += `\n⚠ ${event.message}`;
           setStreaming(acc);
+        } else if (event.type === "structured-error") {
+          const message = typeof event.message === "string"
+            ? event.message
+            : "I produced malformed structured data, so no changes were applied.";
+          acc += `${acc.trim() ? "\n\n" : ""}${message}`;
+          retryableFailure = true;
+          setStreaming(acc);
         }
       }, abort.signal);
 
@@ -458,6 +502,7 @@ export function ManuscriptAssistant({
           role: "assistant",
           content: acc.trim() || proposal?.summary || "Proposed chapter edits.",
           ...(finalStructuredLanded ? { applied: true } : {}),
+          ...(retryableFailure ? { retryable: true } : {}),
           createdAt: replyCreatedAt,
         };
         await persistMessages(session, [...history, reply]);
@@ -477,6 +522,13 @@ export function ManuscriptAssistant({
       onActivityChange?.(null);
       resolveStopped();
     }
+  }
+
+  function retryLastMessage() {
+    if (!active || busy || pendingProposal) return;
+    const retry = retryableManuscriptAssistantTurn(active.messages);
+    if (!retry) return;
+    void run(sendAction, retry.prompt, retry.history);
   }
 
   async function markProposalDecision(
@@ -513,7 +565,13 @@ export function ManuscriptAssistant({
       pendingProposal.proposedTitle,
       pendingProposal.proposedContent
     )) return;
-    if (pendingProposal.edits.some((edit) => edit.operation === "replace-selection")) {
+    if (
+      pendingProposal.selection
+      && !manuscriptSelectionMatches(
+        pendingProposal.proposedContent,
+        pendingProposal.selection
+      )
+    ) {
       onClearQuote();
     }
     await markProposalDecision(pendingProposal, "accepted");
@@ -605,9 +663,29 @@ export function ManuscriptAssistant({
         {!messages.length && !streaming && (
           <div className="text-xs text-content-400 leading-relaxed py-3">{copy.empty}</div>
         )}
-        {messages.map((message, index) => (
-          <div key={`${message.createdAt}-${index}`} className={message.role === "user" ? "text-sm bg-base-300 rounded-md px-3 py-2 ml-6 whitespace-pre-wrap" : "text-sm px-1"}>
-            {message.role === "user" ? message.content : <Markdown text={message.content} />}
+        {messages.map((message, index) => message.role === "user" ? (
+          <div key={`${message.createdAt}-${index}`} className="group ml-6 text-sm">
+            <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] text-content-400">
+              <span>You</span>
+              <Button
+                variant="danger"
+                size="sm"
+                shape="square"
+                className="size-5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                title="Delete this message and all messages after it"
+                disabled={busy || !!pendingProposal}
+                onClick={() => void deleteUserMessage(index)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+            <div className="rounded-md bg-base-300 px-3 py-2 whitespace-pre-wrap">
+              {message.content}
+            </div>
+          </div>
+        ) : (
+          <div key={`${message.createdAt}-${index}`} className="text-sm px-1">
+            <Markdown text={message.content} />
             {message.applied && (
               <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-primary-400/90">
                 <Check /> Applied to the manuscript
@@ -617,6 +695,17 @@ export function ManuscriptAssistant({
               <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-content-400">
                 <CircleX /> Rejected
               </div>
+            )}
+            {message.retryable && index === messages.length - 1 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-2"
+                disabled={busy || !!pendingProposal}
+                onClick={retryLastMessage}
+              >
+                <RefreshCw /> Retry
+              </Button>
             )}
           </div>
         ))}

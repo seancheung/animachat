@@ -677,12 +677,12 @@ ${body.quote || "(none)"}`;
             } else {
               console.error("manuscript assistant: fields block remained invalid:", parseError);
               send({
-                type: "text",
-                text: truncated
-                  ? "\n(My response limit was reached before the changes were complete. No incomplete changes were applied.)"
+                type: "structured-error",
+                message: truncated
+                  ? "My response limit was reached before the changes were complete. No incomplete changes were applied."
                   : lastPartialJson
-                    ? "\n(Some structured data was malformed. The streamed preview was discarded.)"
-                    : "\n(I produced malformed structured data, so no changes were applied.)",
+                    ? "Some structured data was malformed. The streamed preview was discarded."
+                    : "I produced malformed structured data, so no changes were applied.",
               });
             }
           } else if (truncated) {
