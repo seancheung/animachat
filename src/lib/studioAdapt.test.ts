@@ -19,7 +19,7 @@ const manuscriptFixture = (value: Partial<Manuscript>): Manuscript => ({
   updatedAt: 1,
 });
 
-describe("Studio adaptations", () => {
+describe("Library adaptations", () => {
   it("creates a manuscript scaffold from an interactive story", () => {
     const source = storyFixture({
       name: "The Crossing",

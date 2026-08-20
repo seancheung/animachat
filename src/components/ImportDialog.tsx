@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Upload } from "lucide-react";
 import { Modal } from "@/components/app";
 import { LIBRARY_TYPES, libraryTypeIcon } from "@/components/LibraryPicker";
@@ -11,23 +11,38 @@ import { toast } from "@/components/ui/toast";
 import { useInvalidate } from "@/lib/queries";
 import type { BundlePreviewItem } from "@/lib/bundle";
 
-const TYPE_ORDER = ["character", "persona", "location", "scene", "story", "lorebook"] as const;
+const TYPE_ORDER = [
+  "character",
+  "persona",
+  "location",
+  "scene",
+  "lorebook",
+  "story",
+  "manuscript",
+] as const;
 
 /**
  * The whole bundle-import flow behind one button: pick a zip, preview its contents,
- * select in the dialog, import. Page-agnostic — a bundle can hold library items and
- * stories alike, whichever page it is opened from, so it invalidates every list.
+ * select in the dialog, import. A bundle can hold every Library tab, including
+ * self-contained stories and manuscripts, so importing invalidates every list.
  */
-export function BundleImportButton() {
+export function BundleImportButton({
+  renderTrigger,
+}: {
+  renderTrigger?: (openPicker: () => void) => ReactNode;
+}) {
   const [preview, setPreview] = useState<{ file: File; items: BundlePreviewItem[] } | null>(null);
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const invalidate = useInvalidate();
+  const openPicker = () => fileRef.current?.click();
   return (
     <>
-      <Button variant="secondary" onClick={() => fileRef.current?.click()}>
-        <Upload /> Import
-      </Button>
+      {renderTrigger ? renderTrigger(openPicker) : (
+        <Button variant="secondary" onClick={openPicker}>
+          <Upload /> Import
+        </Button>
+      )}
       <input
         ref={fileRef}
         type="file"
@@ -81,8 +96,8 @@ export function BundleImportButton() {
 
 /**
  * Bundle import selection: pick what to import. Checking an item locks its
- * dependencies checked (a story brings its cast, scenes and lorebooks; a
- * scene its location) — the server enforces the same closure on import.
+ * dependencies checked (a library scene brings its location) — the server
+ * enforces the same closure on import. Stories and manuscripts are self-contained.
  */
 export function ImportDialog({
   open,

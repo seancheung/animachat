@@ -528,7 +528,7 @@ export default function ManuscriptEditorPage() {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <header className="px-5 py-3 border-b border-base-400 flex items-center gap-2 shrink-0">
-        <Button variant="ghost" size="sm" shape="square" title="Back to Manuscripts" onClick={() => void navigateAway("/studio?type=manuscripts")}><ArrowLeft /></Button>
+        <Button variant="ghost" size="sm" shape="square" title="Back to Manuscripts" onClick={() => void navigateAway("/library?type=manuscript")}><ArrowLeft /></Button>
         <input
           className="min-w-0 max-w-2xl flex-1 bg-transparent px-1 text-xl font-semibold tracking-tight text-content-100 outline-none placeholder:text-content-400 focus-visible:text-primary-500"
           value={form.name}
@@ -722,7 +722,7 @@ export default function ManuscriptEditorPage() {
               <section className="space-y-4 border-t border-base-400 pt-6">
                 <div>
                   <h3 className="text-sm font-medium">Organization</h3>
-                  <p className="text-xs text-content-400 mt-0.5">Tags are used to organize manuscripts in Studio.</p>
+                  <p className="text-xs text-content-400 mt-0.5">Tags are used to organize manuscripts in Library.</p>
                 </div>
                 <Field label="Tags" hint="Comma-separated">
                   <Input className="w-full" value={form.tags.join(", ")} onChange={(value) => patch({ tags: value.split(",").map((item) => item.trim()).filter(Boolean) })} />

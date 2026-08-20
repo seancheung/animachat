@@ -165,7 +165,7 @@ export function AssistantDialog({ open, onClose }: { open: boolean; onClose: () 
                   <li>
                     Attach .txt/.md files with the file button and extract from them: &quot;create
                     the main characters and locations from this novel&quot;. (Stories are authored
-                    on the Stories page, whose co-writer builds the whole story in one go.)
+                    on Library&apos;s Stories tab, whose co-writer builds the whole story in one go.)
                   </li>
                   <li>
                     Refine through chat or edit any field directly; remove items you don&apos;t

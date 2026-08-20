@@ -2,6 +2,7 @@ import { all, get, run, inTransaction, lockChat, now, uid, type Row } from "./db
 import type {
   Chat,
   Character,
+  ChatMode,
   CharRelationship,
   DirectorBeat,
   DirectorRead,
@@ -1094,21 +1095,22 @@ export interface ChatListRow extends Chat {
 
 /** Chat list page, newest-updated first, with the row decorations computed in SQL
  *  (the message subqueries ride idx_messages_chat) instead of hydrating timelines.
- *  `kind` splits the two surfaces: the Chats page lists casual/immersive only,
- *  the Stories page lists playthroughs. */
+ *  `mode` powers the Chats page's casual / immersive / playthrough segments. */
 export async function pageChats(
   opts: {
     limit?: number;
     cursor?: string | null;
     q?: string;
     folder?: string;
-    kind?: "chats" | "playthroughs";
+    mode?: ChatMode;
   } = {}
 ): Promise<Page<ChatListRow>> {
   const where: string[] = [];
   const args: unknown[] = [];
-  if (opts.kind === "playthroughs") where.push("c.mode = 'story'");
-  else if (opts.kind === "chats") where.push("c.mode <> 'story'");
+  if (opts.mode) {
+    where.push("c.mode = ?");
+    args.push(opts.mode);
+  }
   if (opts.folder) {
     where.push("c.folder = ?");
     args.push(opts.folder);

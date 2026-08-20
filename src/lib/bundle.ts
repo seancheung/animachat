@@ -5,6 +5,7 @@ import {
   getCharacter,
   getLocation,
   getLorebook,
+  getManuscript,
   getPersona,
   getScene,
   getStory,
@@ -12,6 +13,7 @@ import {
   listCharacters,
   listLocations,
   listLorebooks,
+  listManuscripts,
   listPersonas,
   listScenes,
   listStories,
@@ -19,16 +21,24 @@ import {
   saveCharacter,
   saveLocation,
   saveLorebook,
+  saveManuscript,
   savePersona,
   saveScene,
   saveStory,
 } from "./store";
 import { assetIdsOf, normalizeStoryDoc, remintStoryDoc } from "./storyDoc";
-import type { Character, Location, Lorebook, Persona, Scene, Story } from "./types";
+import type { Character, Location, Lorebook, Manuscript, Persona, Scene, Story } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export type BundleItemType = "character" | "persona" | "location" | "scene" | "story" | "lorebook";
+export type BundleItemType =
+  | "character"
+  | "persona"
+  | "location"
+  | "scene"
+  | "story"
+  | "manuscript"
+  | "lorebook";
 
 interface ManifestItem {
   type: BundleItemType;
@@ -48,11 +58,12 @@ const getters: Record<BundleItemType, (id: string) => Promise<any>> = {
   location: getLocation,
   scene: getScene,
   story: getStory,
+  manuscript: getManuscript,
   lorebook: getLorebook,
 };
 
-/** Build a zip bundle for the given items. A story is self-contained (its items
- *  are embedded in the document); library scenes pull in their locations. */
+/** Build a zip bundle for the given items. Stories and manuscripts are
+ *  self-contained documents; reusable library scenes pull in their locations. */
 export async function exportBundle(items: { type: BundleItemType; id: string }[]): Promise<Buffer> {
   const expanded = new Map<string, ManifestItem>();
   const add = async (type: BundleItemType, id: string) => {
@@ -95,7 +106,7 @@ function dedupeName(name: string, existing: Set<string>): string {
 const keyOf = (i: ManifestItem) => `${i.type}:${i.data.id}`;
 
 /** Bundle-internal dependencies of an item, as `type:id` keys (only ones present in
- *  the bundle). Stories are self-contained and depend on nothing. */
+ *  the bundle). Stories and manuscripts are self-contained and depend on nothing. */
 function requiresOf(item: ManifestItem, present: Set<string>): string[] {
   const req: string[] = [];
   if (item.type === "scene" && item.data.locationId) req.push(`location:${item.data.locationId}`);
@@ -176,6 +187,7 @@ export async function importBundle(
       location: new Set((await listLocations()).map((x) => x.name.toLowerCase())),
       scene: new Set((await listScenes()).map((x) => x.name.toLowerCase())),
       story: new Set((await listStories()).map((x) => x.name.toLowerCase())),
+      manuscript: new Set((await listManuscripts()).map((x) => x.name.toLowerCase())),
       lorebook: new Set((await listLorebooks()).map((x) => x.name.toLowerCase())),
     };
     const idMap = new Map<string, string>(); // old id -> new id
@@ -184,7 +196,10 @@ export async function importBundle(
     const byType = (t: BundleItemType) => manifest.items.filter((i) => i.type === t);
 
     const prep = (type: BundleItemType, data: any) => {
-      const { id: _oldId, createdAt: _c, updatedAt: _u, ...fields } = data;
+      const fields = { ...data };
+      delete fields.id;
+      delete fields.createdAt;
+      delete fields.updatedAt;
       fields.name = dedupeName(String(fields.name ?? "Imported"), existingNames[type]);
       existingNames[type].add(fields.name.toLowerCase());
       return fields;
@@ -217,6 +232,13 @@ export async function importBundle(
       const reminted = remintStoryDoc(normalizeStoryDoc(fields));
       idMap.set(it.data.id, (await saveStory({ ...fields, ...reminted })).id);
       count("story");
+    }
+    for (const it of byType("manuscript")) {
+      idMap.set(
+        it.data.id,
+        (await saveManuscript(prep("manuscript", it.data) as Partial<Manuscript>)).id
+      );
+      count("manuscript");
     }
     for (const it of byType("persona")) {
       idMap.set(it.data.id, (await savePersona(prep("persona", it.data) as Partial<Persona>)).id);

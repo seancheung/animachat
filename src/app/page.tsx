@@ -21,6 +21,7 @@ import {
   VenetianMask,
 } from "lucide-react";
 import { ModelPicker } from "@/components/ModelPicker";
+import { NewPlaythroughDialog } from "@/components/PlayStoryDialog";
 import { EmptyState, Field, Modal } from "@/components/app";
 import { confirmDialog } from "@/components/confirm";
 import Badge from "@/components/ui/badge";
@@ -34,29 +35,12 @@ import Select from "@/components/ui/select";
 import Switch from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import Toggle, { ToggleGroup } from "@/components/ui/toggle";
-import Tooltip from "@/components/ui/tooltip";
 import { useComboboxSearch, useDebouncedValue, useGet, useInvalidate, usePagedList } from "@/lib/queries";
 import { api, assetUrl, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { POV_LABELS, type ChatMode } from "@/lib/types";
+import { POV_LABELS } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-const MODES: { key: ChatMode; label: string; icon: React.ReactNode; hint: string }[] = [
-  {
-    key: "casual",
-    label: "Casual",
-    icon: <Coffee size={14} />,
-    hint: "pure chat — text the characters like real people online, no roleplay conventions",
-  },
-  {
-    key: "immersive",
-    label: "Immersive",
-    icon: <MapPin size={14} />,
-    hint: "roleplay on the VN stage — optional scene or location, narrator, POV",
-  },
-];
-// playthroughs are started from the Stories page — the wizard offers casual/immersive only
 
 const MODE_ICONS: Record<string, React.ReactNode> = {
   casual: <Coffee size={14} />,
@@ -66,6 +50,23 @@ const MODE_ICONS: Record<string, React.ReactNode> = {
   scene: <Clapperboard size={14} />,
   location: <MapPin size={14} />,
 };
+
+type ChatListSection = "casual" | "immersive" | "playthrough";
+
+const CHAT_LIST_SECTIONS: { value: ChatListSection; label: React.ReactNode }[] = [
+  {
+    value: "casual",
+    label: <span className="flex items-center justify-center gap-1.5"><Coffee size={14} /> Casual</span>,
+  },
+  {
+    value: "immersive",
+    label: <span className="flex items-center justify-center gap-1.5"><MapPin size={14} /> Immersive</span>,
+  },
+  {
+    value: "playthrough",
+    label: <span className="flex items-center justify-center gap-1.5"><BookOpen size={14} /> Playthrough</span>,
+  },
+];
 
 /** Chat-list timestamp: time for today, month+day this year, short date otherwise. */
 function fmtWhen(ts: number): string {
@@ -79,11 +80,21 @@ function fmtWhen(ts: number): string {
 }
 
 
-function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
+type NewChatMode = "casual" | "immersive";
+
+function NewChatDialog({
+  mode,
+  open,
+  onClose,
+}: {
+  mode: NewChatMode;
+  open: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const invalidate = useInvalidate();
   const [form, setForm] = useState<any>({
-    mode: "casual",
+    mode,
     characterIds: [],
     personaId: null,
     sceneId: null,
@@ -120,11 +131,11 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     selected: form.personaId ? { value: form.personaId, label: labels[form.personaId] ?? "…" } : null,
   });
   const sceneSearch = useComboboxSearch("/api/scenes", {
-    enabled: open && form.mode === "immersive",
+    enabled: open && mode === "immersive",
     toOption: (s: any) => ({ value: `scene:${s.id}`, label: s.name }),
   });
   const locSearch = useComboboxSearch("/api/locations", {
-    enabled: open && form.mode === "immersive",
+    enabled: open && mode === "immersive",
     toOption: (l: any) => ({ value: `location:${l.id}`, label: l.name }),
   });
   const loreSearch = useComboboxSearch("/api/lorebooks", { enabled: open });
@@ -192,7 +203,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
 
   // casual is pure chat: no narrator (nobody to carry a chat but the characters),
   // no narrator seat, no POV, no setting, no chat layout — the messenger view is the mode
-  const pure = form.mode === "casual";
+  const pure = mode === "casual";
   const playAsNarrator = !pure && form.playAsNarrator;
   const narrator = pure || playAsNarrator ? false : form.narratorEnabled;
   const modeValid = pure ? form.characterIds.length > 0 : form.characterIds.length > 0 || narrator;
@@ -201,28 +212,8 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
     form.characterIds.length === 1 && (pure || (!narrator && !playAsNarrator));
 
   return (
-    <Modal open={open} onClose={onClose} title="New chat" wide>
+    <Modal open={open} onClose={onClose} title={`New ${mode} chat`} wide>
       <div className="space-y-4">
-        <Field label="Chat mode">
-          <SegmentedControl<ChatMode>
-            value={form.mode}
-            className="w-full"
-            onChange={(v) => setForm({ ...form, mode: v, sceneId: null, locationId: null })}
-            items={MODES.map((m) => ({
-              value: m.key,
-              // the tooltip previews a mode before it's picked; the line below explains the picked one
-              label: (
-                <Tooltip content={m.hint}>
-                  <span className="inline-flex items-center gap-1.5">
-                    {m.icon} {m.label}
-                  </span>
-                </Tooltip>
-              ),
-            }))}
-          />
-          <div className="text-xs text-content-400 mt-1">{MODES.find((m) => m.key === form.mode)?.hint}</div>
-        </Field>
-
         <Field
             label={pure || !narrator ? "Characters (required)" : "Characters"}
             hint="pick in speaking order — multiple = group chat with orchestrated turns; [char_name] resolves to #1, [char2_name] to #2… — fixed once the chat is created"
@@ -296,7 +287,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
           </Field>
 
         <div className="grid md:grid-cols-3 gap-3">
-          {form.mode === "immersive" && (
+          {mode === "immersive" && (
             <Field label="Setting" hint="optional, fixed for the whole chat — empty keeps the default backdrop">
               <Combobox
                 className="w-full"
@@ -471,6 +462,7 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
             try {
               const chat = await api.post("/api/chats", {
                 ...form,
+                mode,
                 narratorEnabled: narrator,
                 playAsNarrator,
                 // casual has no POV (pure chat); narrator-play pins third person (narration has no "you")
@@ -494,24 +486,34 @@ function NewChatWizard({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
+function NewCasualChatDialog(props: { open: boolean; onClose: () => void }) {
+  return <NewChatDialog {...props} mode="casual" />;
+}
+
+function NewImmersiveChatDialog(props: { open: boolean; onClose: () => void }) {
+  return <NewChatDialog {...props} mode="immersive" />;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [wizard, setWizard] = useState(false);
+  const [section, setSection] = useState<ChatListSection>("casual");
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("");
   const importRef = useRef<HTMLInputElement>(null);
   const invalidate = useInvalidate();
 
-  // search & folder filter are server-side (title, tags, character/persona names);
-  // playthroughs live on the Stories page — this list is casual/immersive only
+  // Search, mode, and folder filters are server-side so every segment paginates
+  // independently. Playthroughs are organized by story rather than folders.
   const needle = useDebouncedValue(q.trim());
+  const playthrough = section === "playthrough";
   const list = usePagedList<any>("/api/chats", {
     q: needle || undefined,
-    folder: folder || undefined,
-    kind: "chats",
+    folder: !playthrough && folder ? folder : undefined,
+    mode: playthrough ? "story" : section,
   });
   const visible = list.items;
-  const filtered = !!(needle || folder);
+  const filtered = !!(needle || (!playthrough && folder));
   const { data: folderData } = useGet<{ folders: string[] }>("/api/chats/folders");
   const folders = folderData?.folders ?? [];
   const refresh = () => invalidate("/api/chats", "/api/chats/folders");
@@ -523,7 +525,7 @@ export default function HomePage() {
           <Input
             className="flex-1"
             icon={<Search />}
-            placeholder="Search all chats…"
+            placeholder={`Search ${section} chats…`}
             value={q}
             onChange={setQ}
           />
@@ -536,9 +538,20 @@ export default function HomePage() {
             <Upload /> Import
           </Button>
           <Button className="whitespace-nowrap" onClick={() => setWizard(true)}>
-            <Plus /> New chat
+            <Plus /> New
           </Button>
         </div>
+
+        <SegmentedControl<ChatListSection>
+          variant="secondary"
+          className="w-full"
+          value={section}
+          items={CHAT_LIST_SECTIONS}
+          onChange={(next) => {
+            setSection(next);
+            setFolder("");
+          }}
+        />
 
         <input
           ref={importRef}
@@ -559,7 +572,7 @@ export default function HomePage() {
           }}
         />
 
-        {folders.length > 0 && (
+        {!playthrough && folders.length > 0 && (
           <ToggleGroup className="gap-1.5" value={folder} onChange={(v) => setFolder(v ?? "")}>
             <Toggle value="">
               all
@@ -575,8 +588,11 @@ export default function HomePage() {
         <div className="space-y-2">
           {!list.isLoading && visible.length === 0 && !filtered && (
             <EmptyState>
-              Welcome to AnimaChat ✦ Set up a provider in Settings, create a character in the
-              Library, then start your first chat.
+              {section === "casual"
+                ? "Welcome to AnimaChat ✦ Set up a provider in Settings, create a character in the Library, then start your first casual chat."
+                : section === "immersive"
+                  ? "No immersive chats yet — start one with a character, scene, location, or narrator."
+                  : "No playthroughs yet — open the Stories tab in Library and press Play to begin one."}
             </EmptyState>
           )}
           {!list.isLoading && visible.length === 0 && filtered && <EmptyState>No matches.</EmptyState>}
@@ -592,6 +608,11 @@ export default function HomePage() {
                   {c.ended && (
                     <Badge size="sm" rounded className="shrink-0">
                       The End
+                    </Badge>
+                  )}
+                  {c.storyName && (
+                    <Badge variant="secondary" size="sm" rounded className="ml-auto shrink-0">
+                      {c.storyName}
                     </Badge>
                   )}
                 </div>
@@ -640,10 +661,15 @@ export default function HomePage() {
                     variant="ghost"
                     size="sm"
                     shape="square"
-                    title="Delete chat"
+                    title={playthrough ? "Delete playthrough" : "Delete chat"}
                     onClick={async (e) => {
                       e.stopPropagation();
-                      if (await confirmDialog({ title: "Delete chat", message: `Delete chat "${c.title}"?`, confirmLabel: "Delete", danger: true })) {
+                      if (await confirmDialog({
+                        title: playthrough ? "Delete playthrough" : "Delete chat",
+                        message: `Delete ${playthrough ? "playthrough" : "chat"} "${c.title}"?`,
+                        confirmLabel: "Delete",
+                        danger: true,
+                      })) {
                         await api.del(`/api/chats/${c.id}`);
                         refresh();
                       }
@@ -662,7 +688,15 @@ export default function HomePage() {
           />
         </div>
       </div>
-      <NewChatWizard open={wizard} onClose={() => setWizard(false)} />
+      {section === "casual" && (
+        <NewCasualChatDialog open={wizard} onClose={() => setWizard(false)} />
+      )}
+      {section === "immersive" && (
+        <NewImmersiveChatDialog open={wizard} onClose={() => setWizard(false)} />
+      )}
+      {section === "playthrough" && (
+        <NewPlaythroughDialog open={wizard} onClose={() => setWizard(false)} />
+      )}
     </div>
   );
 }

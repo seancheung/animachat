@@ -17,11 +17,11 @@ import type { ChatMode, StorySnapshot } from "@/lib/types";
 
 export const GET = handler(async (req: Request) => {
   const sp = new URL(req.url).searchParams;
-  const kind = sp.get("kind");
+  const mode = sp.get("mode");
   const page = await pageChats({
     q: sp.get("q") ?? undefined,
     folder: sp.get("folder") ?? undefined,
-    kind: kind === "chats" || kind === "playthroughs" ? kind : undefined,
+    mode: mode === "casual" || mode === "immersive" || mode === "story" ? mode : undefined,
     limit: clampLimit(sp.get("limit")),
     cursor: sp.get("cursor"),
   });

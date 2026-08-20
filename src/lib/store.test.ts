@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { dropTestSchema, initTestSchema } from "./testDb";
 import { all, execRaw, get, run } from "./db";
+import { exportBundle, importBundle, previewBundle } from "./bundle";
 import { normalizeStoryDoc } from "./storyDoc";
 import {
   PageError,
@@ -30,6 +31,7 @@ import {
   getStoryBonds,
   listChatFolders,
   listDistinctTags,
+  listManuscripts,
   listReferencedAssetIds,
   listStoryBonds,
   pageCharacters,
@@ -42,6 +44,7 @@ import {
   resetSettings,
   saveChat,
   saveCharacter,
+  saveManuscript,
   registerAsset,
   savePersona,
   saveScene,
@@ -385,7 +388,45 @@ describe("pageCharacters", () => {
   });
 });
 
+describe("content bundles", () => {
+  it("exports and imports manuscripts through the unified bundle", async () => {
+    const source = await saveManuscript({
+      name: "pgbundle-manuscript",
+      synopsis: "A bundle round trip.",
+      chapters: [{ title: "Opening", content: "The first page." }] as never,
+      tags: ["bundle-test"],
+    });
+
+    const archive = await exportBundle([{ type: "manuscript", id: source.id }]);
+    expect(await previewBundle(archive)).toEqual({
+      items: [{
+        type: "manuscript",
+        id: source.id,
+        name: source.name,
+        requires: [],
+      }],
+    });
+
+    expect(await importBundle(archive)).toEqual({ imported: { manuscript: 1 } });
+    const copies = (await listManuscripts()).filter((item) =>
+      item.name.startsWith("pgbundle-manuscript")
+    );
+    expect(copies).toHaveLength(2);
+    expect(copies.find((item) => item.id !== source.id)?.chapters[0].content).toBe("The first page.");
+  });
+});
+
 describe("pageChats", () => {
+  it("filters each chat-list segment by exact mode", async () => {
+    const casual = await saveChat({ title: "pgmode-casual", folder: "pgmode", mode: "casual" });
+    const immersive = await saveChat({ title: "pgmode-immersive", folder: "pgmode", mode: "immersive" });
+    const story = await saveChat({ title: "pgmode-story", folder: "pgmode", mode: "story" });
+
+    expect((await pageChats({ folder: "pgmode", mode: "casual" })).items.map((c) => c.id)).toEqual([casual.id]);
+    expect((await pageChats({ folder: "pgmode", mode: "immersive" })).items.map((c) => c.id)).toEqual([immersive.id]);
+    expect((await pageChats({ folder: "pgmode", mode: "story" })).items.map((c) => c.id)).toEqual([story.id]);
+  });
+
   it("computes decorations in SQL: count, active-variant last message, marker skip, ended", async () => {
     const chat = await saveChat({ title: "pgchat-deco", folder: "pgchat" });
     await appendMessage({ chatId: chat.id, role: "user", content: "first" });

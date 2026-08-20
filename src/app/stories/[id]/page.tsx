@@ -313,7 +313,7 @@ export default function StoryEditorPage() {
             size="sm"
             shape="square"
             title="Back to Interactive stories"
-            onClick={() => router.push("/studio?type=stories")}
+            onClick={() => router.push("/library?type=story")}
           >
             <ArrowLeft />
           </Button>

@@ -4,6 +4,7 @@ import {
   listCharacters,
   listLocations,
   listLorebooks,
+  listManuscripts,
   listPersonas,
   listScenes,
   listStories,
@@ -15,14 +16,13 @@ const LISTS: [BundleItemType, () => Promise<{ id: string }[]>][] = [
   ["location", listLocations],
   ["scene", listScenes],
   ["story", listStories],
+  ["manuscript", listManuscripts],
   ["lorebook", listLorebooks],
 ];
 
-// export-everything scopes: stories have their own section (and Export button), so
-// "all" is always all-of-one-side — the library's five types, or every story
+// The Library is the one content hub, so its all-mode includes every collection.
 const ALL_SCOPES: Record<string, BundleItemType[]> = {
-  library: ["character", "persona", "location", "scene", "lorebook"],
-  stories: ["story"],
+  library: ["character", "persona", "location", "scene", "story", "manuscript", "lorebook"],
 };
 
 export const POST = handler(async (req: Request) => {
@@ -39,9 +39,7 @@ export const POST = handler(async (req: Request) => {
       ).flat()
     : ((b.items ?? []) as { type: BundleItemType; id: string }[]);
   if (!items.length)
-    return bad(
-      b.all === "stories" ? "There are no stories" : b.all ? "The library is empty" : "items required"
-    );
+    return bad(b.all ? "The library is empty" : "items required");
   const types = new Set<string>(LISTS.map(([t]) => t));
   const badItem = items.find((it) => !types.has(it?.type) || typeof it?.id !== "string");
   if (badItem) return bad(`unknown item type: ${String(badItem?.type)}`);

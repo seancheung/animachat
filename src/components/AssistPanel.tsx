@@ -340,6 +340,7 @@ export function AssistPanel({
         hint="Attached items are sent to the co-writer as background context with every message."
         selection={refs}
         onChange={setRefs}
+        types={["character", "persona", "location", "scene", "story", "lorebook"]}
       />
       {allowFiles && (
         <input

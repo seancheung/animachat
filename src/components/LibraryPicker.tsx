@@ -30,13 +30,12 @@ export const LIBRARY_TYPES = [
   { type: "location", label: "Locations", url: "/api/locations", Icon: Mountain },
   { type: "scene", label: "Scenes", url: "/api/scenes", Icon: Clapperboard },
   { type: "story", label: "Stories", url: "/api/stories", Icon: BookOpen },
+  { type: "manuscript", label: "Manuscripts", url: "/api/manuscripts", Icon: FileText },
   { type: "lorebook", label: "Lorebooks", url: "/api/lorebooks", Icon: LibraryBig },
 ] as const;
 
 export const libraryTypeIcon = (type: string) =>
-  type === "manuscript"
-    ? FileText
-    : LIBRARY_TYPES.find((t) => t.type === type)?.Icon ?? Paperclip;
+  LIBRARY_TYPES.find((t) => t.type === type)?.Icon ?? Paperclip;
 
 /**
  * Multi-select dialog over the whole library (all entity types): a server-searched
