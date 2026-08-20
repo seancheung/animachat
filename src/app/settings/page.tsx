@@ -10,6 +10,7 @@ import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import InputNumber from "@/components/ui/input-number";
 import InputPassword from "@/components/ui/input-password";
+import PageLoader from "@/components/ui/page-loader";
 import Select from "@/components/ui/select";
 import Slider from "@/components/ui/slider";
 import Switch from "@/components/ui/switch";
@@ -394,7 +395,9 @@ export default function SettingsPage() {
     mutateSettings();
   }
 
-  if (!settings) return <div className="p-8 text-content-300">Loading…</div>;
+  if (!settings) {
+    return <PageLoader />;
+  }
 
   return (
     <div className="h-full overflow-y-auto">

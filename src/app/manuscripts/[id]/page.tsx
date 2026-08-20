@@ -35,6 +35,7 @@ import Button from "@/components/ui/button";
 import Collapsible from "@/components/ui/collapsible";
 import Dropdown from "@/components/ui/dropdown";
 import Input from "@/components/ui/input";
+import PageLoader from "@/components/ui/page-loader";
 import Select from "@/components/ui/select";
 import Textarea from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
@@ -245,7 +246,9 @@ export default function ManuscriptEditorPage() {
     return () => window.clearTimeout(timer);
   }, [form, invalidate, isNew, queryClient, router]);
 
-  if (!form) return <div className="p-8 text-content-300">Loading…</div>;
+  if (!form) {
+    return <PageLoader />;
+  }
   const currentForm = form;
 
   const activeChapter = currentForm.chapters.find((c) => c.id === activeChapterId) ?? currentForm.chapters[0];

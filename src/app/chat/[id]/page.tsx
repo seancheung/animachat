@@ -43,6 +43,7 @@ import Badge from "@/components/ui/badge";
 import Button from "@/components/ui/button";
 import Drawer from "@/components/ui/drawer";
 import Input from "@/components/ui/input";
+import PageLoader from "@/components/ui/page-loader";
 import Progress from "@/components/ui/progress";
 import SegmentedControl from "@/components/ui/segmented-control";
 import Slider from "@/components/ui/slider";
@@ -799,7 +800,9 @@ export default function ChatPage() {
       .catch(() => {}); // a return that fails is just a normal chat-open
   }, [chat, messages, busy, characters, id, generate]);
 
-  if (!data || !chat || messagesLoading) return <div className="p-8 text-content-300">Loading…</div>;
+  if (!data || !chat || messagesLoading) {
+    return <PageLoader />;
+  }
 
   const switchLayout = async (v: ChatLayout) => {
     await api.patch(`/api/chats/${id}`, { overrides: { ...chat.overrides, layout: v } });

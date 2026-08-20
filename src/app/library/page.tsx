@@ -21,6 +21,7 @@ import { Manuscripts } from "@/components/studio/Manuscripts";
 import Button from "@/components/ui/button";
 import Input from "@/components/ui/input";
 import LoadMoreSentinel from "@/components/ui/load-more";
+import PageLoader from "@/components/ui/page-loader";
 import Popover from "@/components/ui/popover";
 import SegmentedControl from "@/components/ui/segmented-control";
 import Select from "@/components/ui/select";
@@ -359,7 +360,7 @@ function LibraryContent() {
 
 export default function LibraryPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-content-400">Loading Library…</div>}>
+    <Suspense fallback={<PageLoader label="Loading Library…" />}>
       <LibraryContent />
     </Suspense>
   );
