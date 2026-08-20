@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  BookOpenText,
   History,
   MessageCircleMore,
   MessageSquarePlus,
   Plus,
   SendHorizontal,
-  Settings2,
   Square,
   Trash2,
   UsersRound,
@@ -20,7 +20,6 @@ import Button from "@/components/ui/button";
 import Checkbox from "@/components/ui/checkbox";
 import Dialog from "@/components/ui/dialog";
 import Popover from "@/components/ui/popover";
-import Select from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { truncateManuscriptConversationAtUserMessage } from "@/lib/ai/manuscriptConversation";
 import {
@@ -34,22 +33,15 @@ import {
 import { streamSse, timestamp, uid } from "@/lib/ui";
 import type {
   Manuscript,
-  ManuscriptChapterContext,
+  ManuscriptChapterContextMode,
   ManuscriptConversation,
   ManuscriptConversationMessage,
   ManuscriptConversationSession,
 } from "@/lib/types";
 
-const CHAPTER_CONTEXT_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "summary", label: "Summary" },
-  { value: "full", label: "Full content" },
-] satisfies { value: ManuscriptChapterContext; label: string }[];
-
-function chapterContextNote(value: ManuscriptChapterContext): string {
-  if (value === "summary") return " The active chapter summary is included in their context.";
-  if (value === "full") return " The active chapter’s full content is included in their context.";
-  return " The active chapter is not included in their context.";
+function chapterContextNote(count: number, mode: ManuscriptChapterContextMode): string {
+  if (!count) return " No chapters are attached.";
+  return ` ${count} chapter${count === 1 ? " is" : "s are"} attached as ${mode === "full" ? "full content" : "summaries"}.`;
 }
 
 function memberNames(manuscript: Manuscript, conversation: ManuscriptConversation) {
@@ -60,20 +52,17 @@ function memberNames(manuscript: Manuscript, conversation: ManuscriptConversatio
 
 export function ManuscriptChatsPanel({
   manuscript,
-  chapterId,
   onSaveConversation,
 }: {
   manuscript: Manuscript;
-  chapterId: string;
   onSaveConversation: (conversation: ManuscriptConversation, create?: boolean) => void;
 }) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
-  const [chapterContext, setChapterContext] = useState<ManuscriptChapterContext>("none");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsChapterContext, setSettingsChapterContext] = useState<ManuscriptChapterContext>("none");
+  const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  const [pickedChapterIds, setPickedChapterIds] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState<{ characterId: string; text: string } | null>(null);
@@ -133,7 +122,6 @@ export function ManuscriptChatsPanel({
 
   function openPicker() {
     setSelectedCharacterIds([]);
-    setChapterContext("none");
     setPickerOpen(true);
   }
 
@@ -153,7 +141,7 @@ export function ManuscriptChatsPanel({
     const conversation: ManuscriptConversation = {
       id: uid(),
       characterIds: [...selectedCharacterIds].sort(),
-      chapterContext,
+      chapterIds: [],
       sessions: [],
       createdAt: t,
       updatedAt: t,
@@ -163,20 +151,20 @@ export function ManuscriptChatsPanel({
     setActiveSessionId(null);
   }
 
-  function openSettings() {
+  function openChapterPicker() {
     if (!activeConversation) return;
-    setSettingsChapterContext(activeConversation.chapterContext);
-    setSettingsOpen(true);
+    setPickedChapterIds(activeConversation.chapterIds);
+    setChapterPickerOpen(true);
   }
 
-  function saveSettings() {
+  function savePickedChapters() {
     if (!activeConversation) return;
     onSaveConversation({
       ...activeConversation,
-      chapterContext: settingsChapterContext,
+      chapterIds: pickedChapterIds,
       updatedAt: timestamp(),
     });
-    setSettingsOpen(false);
+    setChapterPickerOpen(false);
   }
 
   function saveSession(
@@ -295,9 +283,8 @@ export function ManuscriptChatsPanel({
       await streamSse("/api/manuscripts/generate", {
         action: "conversation-chat",
         manuscript,
-        chapterId,
         characterIds: activeConversation.characterIds,
-        chapterContext: activeConversation.chapterContext,
+        chapterIds: activeConversation.chapterIds,
         messages: history,
       }, (event) => {
         if (event.type === "start" && typeof event.speaker?.characterId === "string") {
@@ -306,7 +293,7 @@ export function ManuscriptChatsPanel({
           const details = [];
           if (event.chapter) {
             details.push(
-              `Using about ${Number(event.chapter.includedTokens).toLocaleString()} of ${Number(event.chapter.originalTokens).toLocaleString()} active-chapter tokens.`
+              `Using about ${Number(event.chapter.includedTokens).toLocaleString()} of ${Number(event.chapter.originalTokens).toLocaleString()} attached-chapter tokens.`
             );
           }
           if (event.omittedHistoryMessages) {
@@ -407,16 +394,6 @@ export function ManuscriptChatsPanel({
               </div>
             </div>
             <span className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              shape="square"
-              title="Conversation settings"
-              disabled={busy}
-              onClick={openSettings}
-            >
-              <Settings2 />
-            </Button>
             <Popover
               side="bottom"
               align="end"
@@ -488,7 +465,7 @@ export function ManuscriptChatsPanel({
             {!activeSession?.messages.length && !streaming && (
               <div className="py-8 text-sm leading-relaxed text-content-400">
                 Talk with {conversationTitle} while you work. This conversation’s members are fixed; start a new conversation for a different group.
-                {chapterContextNote(activeConversation.chapterContext)}
+                {chapterContextNote(activeConversation.chapterIds.length, manuscript.chapterContextMode)}
               </div>
             )}
             {activeSession?.messages.map((message, index) => (
@@ -560,6 +537,16 @@ export function ManuscriptChatsPanel({
               }
             }}
           >
+            <Button
+              variant="ghost"
+              size="sm"
+              title={`Attach chapters${activeConversation.chapterIds.length ? ` (${activeConversation.chapterIds.length})` : ""}`}
+              disabled={busy}
+              onClick={openChapterPicker}
+            >
+              <BookOpenText />
+              {activeConversation.chapterIds.length || null}
+            </Button>
             <span className="flex-1" />
             {busy ? (
               <Button variant="danger" size="sm" shape="square" title="Stop" onClick={() => abortRef.current?.abort()}>
@@ -575,51 +562,30 @@ export function ManuscriptChatsPanel({
       )}
 
       <Dialog
-        open={settingsOpen && !!activeConversation}
-        onOpenChange={setSettingsOpen}
-        title="Conversation settings"
-        description="Conversation members are fixed after creation."
+        open={chapterPickerOpen && !!activeConversation}
+        onOpenChange={setChapterPickerOpen}
+        title="Attach chapters"
+        description={`Selected chapters are injected as ${manuscript.chapterContextMode === "full" ? "full content" : "summaries"}. Empty ${manuscript.chapterContextMode === "full" ? "chapters" : "summaries"} are skipped.`}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setSettingsOpen(false)}>Cancel</Button>
-            <Button
-              disabled={settingsChapterContext === activeConversation?.chapterContext}
-              onClick={saveSettings}
-            >
-              Save changes
-            </Button>
+            <Button variant="secondary" onClick={() => setChapterPickerOpen(false)}>Cancel</Button>
+            <Button onClick={savePickedChapters}>Save attachments</Button>
           </>
         }
       >
-        <div className="space-y-5">
-          <div>
-            <div className="mb-2 text-xs uppercase tracking-wider text-content-400">Members</div>
-            <div className="space-y-1">
-              {activeConversation?.characterIds.map((characterId) => {
-                const character = manuscript.characters.find((item) => item.id === characterId);
-                return (
-                  <div key={characterId} className="flex items-center gap-2.5 rounded-md bg-base-300/50 px-3 py-2.5">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary-500/10 text-xs font-semibold text-primary-500">
-                      {character?.name.slice(0, 1).toUpperCase() ?? "?"}
-                    </span>
-                    <span className="font-medium">{character?.name ?? "Unknown character"}</span>
-                  </div>
-                );
-              })}
+        <div className="space-y-1">
+          {manuscript.chapters.map((chapter) => (
+            <div key={chapter.id} className="rounded-md px-2.5 py-2 hover:bg-base-300/60">
+              <Checkbox
+                className="w-full"
+                value={pickedChapterIds.includes(chapter.id)}
+                onChange={(checked) => setPickedChapterIds((current) => checked
+                  ? [...current, chapter.id]
+                  : current.filter((id) => id !== chapter.id))}
+                label={<span className="font-medium">{chapter.title}</span>}
+              />
             </div>
-          </div>
-          <div className="border-t border-base-400 pt-4">
-            <div className="mb-2 text-xs uppercase tracking-wider text-content-400">Active chapter context</div>
-            <Select
-              className="w-full"
-              value={settingsChapterContext}
-              onChange={setSettingsChapterContext}
-              options={CHAPTER_CONTEXT_OPTIONS}
-            />
-            <p className="mt-1.5 text-xs text-content-400">
-              Choose what the characters receive from the active chapter on future turns.
-            </p>
-          </div>
+          ))}
         </div>
       </Dialog>
 
@@ -653,18 +619,6 @@ export function ManuscriptChatsPanel({
               />
             </div>
           ))}
-          <div className="mt-3 border-t border-base-400 px-2.5 pt-4">
-            <div className="mb-2 text-xs uppercase tracking-wider text-content-400">Active chapter context</div>
-            <Select
-              className="w-full"
-              value={chapterContext}
-              onChange={setChapterContext}
-              options={CHAPTER_CONTEXT_OPTIONS}
-            />
-            <p className="mt-1.5 text-xs text-content-400">
-              Choose what the characters receive from the active chapter.
-            </p>
-          </div>
         </div>
       </Dialog>
     </aside>

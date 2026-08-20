@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai/manuscriptCharacterDesign";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
+  manuscriptChapterAttachments,
   manuscriptChapterContextForAction,
   manuscriptGenerationModelTask,
   manuscriptInputBudget,
@@ -22,12 +23,10 @@ import {
   type ManuscriptGenerationAction,
   type ManuscriptContextState,
 } from "@/lib/ai/manuscriptContext";
-import { isManuscriptChapterSummaryStale } from "@/lib/manuscript";
 import { getSettings } from "@/lib/store";
 import {
   type Manuscript,
-  type ManuscriptChapter,
-  type ManuscriptChapterContext,
+  type ManuscriptChapterContextMode,
   type ManuscriptCharacter,
   type ManuscriptConversationMessage,
   type ManuscriptMessage,
@@ -46,7 +45,7 @@ interface Body {
   quoteEnd?: number;
   prompt?: string;
   characterIds?: string[];
-  chapterContext?: ManuscriptChapterContext;
+  chapterIds?: string[];
   messages?: (ManuscriptMessage | ManuscriptConversationMessage)[];
 }
 
@@ -60,14 +59,19 @@ const ELIDED_FIELDS = `${FIELDS_OPEN}(elided — applied to the manuscript form)
 
 function contextOf(
   manuscript: Manuscript,
-  chapterId?: string,
-  chapterContext: ManuscriptChapterContext = "full",
-  limits?: Pick<ManuscriptContextState<unknown>, "chapterContent" | "chapterTruncated" | "historyTruncated">
+  options: {
+    activeChapterId?: string;
+    attachedChapterIds?: string[];
+    attachmentMode?: ManuscriptChapterContextMode;
+    limits?: Pick<ManuscriptContextState<unknown>, "chapterContent" | "chapterTruncated" | "historyTruncated">;
+  } = {}
 ) {
-  const chapter = manuscript.chapters.find((c) => c.id === chapterId) ?? manuscript.chapters[0];
+  const { activeChapterId, attachedChapterIds, attachmentMode = "summary", limits } = options;
+  const chapter = manuscript.chapters.find((c) => c.id === activeChapterId) ?? manuscript.chapters[0];
+  const usesAttachments = attachedChapterIds !== undefined;
   const contextLimitNotices = [
     limits?.chapterTruncated
-      ? "Only an excerpt of the active chapter is present. Its middle was omitted to fit the selected model's context window."
+      ? `Only an excerpt of the ${usesAttachments ? "attached chapter material" : "active chapter"} is present. Some content was omitted to fit the selected model's context window.`
       : null,
     limits?.historyTruncated
       ? "Older conversation messages were omitted to fit the selected model's context window."
@@ -87,25 +91,33 @@ function contextOf(
       appearance: c.appearance,
       voice: c.voice,
     })),
-    activeChapter: !chapter || chapterContext === "none"
+    activeChapter: usesAttachments || !chapter
       ? null
-      : chapterContext === "summary"
-        ? {
-            title: chapter.title,
-            summary: limits?.chapterContent ?? chapter.summary,
-            summaryStale: isManuscriptChapterSummaryStale(chapter),
-          }
-        : { title: chapter.title, content: limits?.chapterContent ?? chapter.content },
+      : { title: chapter.title, content: limits?.chapterContent ?? chapter.content },
+    attachedChapters: usesAttachments
+      ? limits?.chapterContent ?? attachedChapterMaterial(manuscript, attachedChapterIds, attachmentMode)
+      : null,
     ...(contextLimitNotices.length ? { contextLimitNotices } : {}),
   };
 }
 
-function chapterAttachment(
-  chapter: ManuscriptChapter | undefined,
-  chapterContext: ManuscriptChapterContext
+function chapterContextModeOf(manuscript: Manuscript): ManuscriptChapterContextMode {
+  return manuscript.chapterContextMode === "full" ? "full" : "summary";
+}
+
+function attachedChapterMaterial(
+  manuscript: Manuscript,
+  chapterIds: string[],
+  mode: ManuscriptChapterContextMode
 ): string | null {
-  if (!chapter || chapterContext === "none") return null;
-  return chapterContext === "summary" ? chapter.summary : chapter.content;
+  const attachments = manuscriptChapterAttachments(manuscript.chapters, chapterIds, mode);
+  if (!attachments.length) return null;
+  return attachments.map((attachment) => {
+    const label = mode === "summary"
+      ? `Summary${attachment.summaryStale ? " (stale)" : ""}`
+      : "Full content";
+    return `## ${attachment.title}\n[${label}]\n${attachment.content}`;
+  }).join("\n\n");
 }
 
 function contextLimitEvent(packed: {
@@ -175,12 +187,11 @@ async function conversationResponse(
       speakers = [cast[0]];
     }
     const chatModel = await resolveModel("chat");
-    const chapterContext: ManuscriptChapterContext = body.chapterContext === "summary"
-      || body.chapterContext === "full"
-      ? body.chapterContext
-      : "none";
-    const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
-      ?? body.manuscript.chapters[0];
+    const chapterIds = Array.isArray(body.chapterIds)
+      ? body.chapterIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const attachmentMode = chapterContextModeOf(body.manuscript);
+    const chapterMaterial = attachedChapterMaterial(body.manuscript, chapterIds, attachmentMode);
     const responseTokens = manuscriptResponseTokens(settings, "conversation-chat");
     const inputBudget = manuscriptInputBudget(settings, chatModel, responseTokens);
     const encoder = new TextEncoder();
@@ -199,12 +210,16 @@ async function conversationResponse(
           const speaker = queue.shift()!;
           turns++;
           const packed = packManuscriptPrompt({
-            chapterContent: chapterAttachment(chapter, chapterContext),
+            chapterContent: chapterMaterial,
             history: messages,
             inputBudget,
             preserveHistoryItem: (_message, index) => index === lastUserIndex,
             build: (state) => buildManuscriptCharacterRequest(
-              contextOf(body.manuscript, body.chapterId, chapterContext, state),
+              contextOf(body.manuscript, {
+                attachedChapterIds: chapterIds,
+                attachmentMode,
+                limits: state,
+              }),
               state.history,
               cast,
               speaker,
@@ -361,21 +376,34 @@ export const POST = handler(async (req: Request) => {
   if (!history.length) return bad("message required");
 
   const responseTokens = manuscriptResponseTokens(settings, body.action);
-  const chapterContext = manuscriptChapterContextForAction(
+  const usesAttachments = body.action === "settings-assistant" || body.action === "character-design";
+  const attachmentMode = manuscriptChapterContextForAction(
     body.action,
-    body.chapterContext ?? body.manuscript.assistantChapterContext
+    chapterContextModeOf(body.manuscript)
   );
+  const attachedChapterIds = Array.isArray(body.chapterIds)
+    ? body.chapterIds.filter((id): id is string => typeof id === "string")
+    : [];
   const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
     ?? body.manuscript.chapters[0];
+  const chapterMaterial = usesAttachments
+    ? attachedChapterMaterial(body.manuscript, attachedChapterIds, attachmentMode)
+    : chapter?.content ?? null;
   const packed = packManuscriptPrompt({
-    chapterContent: chapterAttachment(chapter, chapterContext),
+    chapterContent: chapterMaterial,
     history,
     inputBudget: manuscriptInputBudget(settings, modelRef, responseTokens),
     chapterFocus: typeof body.quoteStart === "number" && typeof body.quoteEnd === "number"
       ? { start: body.quoteStart, end: body.quoteEnd }
       : undefined,
     build: (state) => {
-      const context = contextOf(body.manuscript, body.chapterId, chapterContext, state);
+      const context = usesAttachments
+        ? contextOf(body.manuscript, {
+            attachedChapterIds,
+            attachmentMode,
+            limits: state,
+          })
+        : contextOf(body.manuscript, { activeChapterId: body.chapterId, limits: state });
       return {
         system:
           `You are an expert manuscript assistant. Respond in ${settings.language}. ` +

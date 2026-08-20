@@ -14,17 +14,17 @@ describe("manuscript document", () => {
     const manuscript = emptyManuscript();
     expect(manuscript.name).toBe("Untitled manuscript");
     expect(manuscript.perspective).toBe("third-limited");
-    expect(manuscript.assistantChapterContext).toBe("none");
+    expect(manuscript.chapterContextMode).toBe("summary");
     expect(manuscript.chapters).toHaveLength(1);
     expect(manuscript.chapters[0].title).toBe("Chapter 1");
     expect(manuscript.conversations).toEqual([]);
   });
 
   it("normalizes the manuscript-level structured-assistant chapter context", () => {
-    expect(normalizeManuscript({ assistantChapterContext: "summary" })
-      .assistantChapterContext).toBe("summary");
-    expect(normalizeManuscript({ assistantChapterContext: "invalid" as never })
-      .assistantChapterContext).toBe("none");
+    expect(normalizeManuscript({ chapterContextMode: "full" })
+      .chapterContextMode).toBe("full");
+    expect(normalizeManuscript({ chapterContextMode: "invalid" as never })
+      .chapterContextMode).toBe("summary");
   });
 
   it("tracks chapter-summary staleness from the chapter content hash", () => {
@@ -55,18 +55,30 @@ describe("manuscript document", () => {
     expect(manuscript.perspective).toBe("third-limited");
     expect(manuscript.sessions.map((session) => session.id)).toEqual(["assistant"]);
     expect(manuscript.sessions[0].scope).toBe("manuscript");
+    expect(manuscript.sessions[0].chapterIds).toEqual([]);
     expect(manuscript.conversations.map((conversation) => conversation.id)).toEqual(["keep"]);
-    expect(manuscript.conversations[0].chapterContext).toBe("none");
+    expect(manuscript.conversations[0].chapterIds).toEqual([]);
   });
 
   it("keeps assistant histories separated by manuscript workspace", () => {
     const manuscript = normalizeManuscript({
+      chapters: [
+        { id: "keep", title: "Keep" },
+        { id: "also-keep", title: "Also keep" },
+      ] as never,
       sessions: [
-        { id: "settings", kind: "assistant", scope: "settings", messages: [] },
+        {
+          id: "settings",
+          kind: "assistant",
+          scope: "settings",
+          chapterIds: ["also-keep", "missing", "keep", "keep"],
+          messages: [],
+        },
         { id: "characters", kind: "assistant", scope: "characters", messages: [] },
       ] as never,
     });
     expect(manuscript.sessions.map((session) => session.scope)).toEqual(["settings", "characters"]);
+    expect(manuscript.sessions[0].chapterIds).toEqual(["also-keep", "keep"]);
   });
 
   it("preserves whether an assistant reply applied streamed fields", () => {
@@ -90,19 +102,25 @@ describe("manuscript document", () => {
 
   it("canonicalizes fixed conversation members and drops duplicate member sets", () => {
     const manuscript = normalizeManuscript({
+      chapters: [{ id: "chapter", title: "Chapter" }] as never,
       characters: [
         { id: "mira", name: "Mira" },
         { id: "kael", name: "Kael" },
       ] as never,
       conversations: [
-        { id: "first", characterIds: ["mira", "kael", "mira"], chapterContext: "summary", sessions: [] },
+        {
+          id: "first",
+          characterIds: ["mira", "kael", "mira"],
+          chapterIds: ["chapter", "missing", "chapter"],
+          sessions: [],
+        },
         { id: "duplicate", characterIds: ["kael", "mira"], sessions: [] },
       ] as never,
     });
     expect(manuscript.conversations).toHaveLength(1);
     expect(manuscript.conversations[0].id).toBe("first");
     expect(manuscript.conversations[0].characterIds).toEqual(["kael", "mira"]);
-    expect(manuscript.conversations[0].chapterContext).toBe("summary");
+    expect(manuscript.conversations[0].chapterIds).toEqual(["chapter"]);
   });
 
   it("keeps only author messages and individually attributed cast replies", () => {
@@ -111,7 +129,7 @@ describe("manuscript document", () => {
       conversations: [{
         id: "conversation",
         characterIds: ["mira"],
-        chapterContext: "full",
+        chapterIds: [],
         sessions: [{
           id: "session",
           messages: [
@@ -139,7 +157,7 @@ describe("manuscript document", () => {
     const latest = latestManuscriptConversationSession({
       id: "conversation",
       characterIds: ["mira"],
-      chapterContext: "full",
+      chapterIds: [],
       sessions: [
         { id: "older", title: "Older", messages: [], createdAt: 1, updatedAt: 20 },
         { id: "newer", title: "Newer", messages: [], createdAt: 10, updatedAt: 30 },

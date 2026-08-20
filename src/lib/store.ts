@@ -27,7 +27,7 @@ import type {
 } from "./types";
 import { DEFAULT_ALIVENESS, DEFAULT_SETTINGS } from "./types";
 import { assetIdsOf, normalizeStoryDoc, storyDocAssetIds } from "./storyDoc";
-import { normalizeManuscript, normalizeManuscriptChapter } from "./manuscript";
+import { normalizeManuscript } from "./manuscript";
 
 export { inTransaction };
 
@@ -567,20 +567,21 @@ export async function deleteStory(id: string): Promise<void> {
 
 const manuscriptFromRow = (r: Row): Manuscript => ({
   id: r.id,
-  name: r.name,
-  synopsis: r.synopsis ?? "",
-  perspective: r.perspective ?? "third-limited",
-  style: r.style ?? "",
-  modelId: r.model_id ?? null,
-  assistantChapterContext: ["none", "summary", "full"].includes(r.assistant_chapter_context)
-    ? r.assistant_chapter_context
-    : "none",
-  chapters: J.parse<Partial<Manuscript["chapters"][number]>[]>(r.chapters, [])
-    .map(normalizeManuscriptChapter),
-  characters: J.parse(r.characters, []),
-  sessions: J.parse(r.sessions, []),
-  conversations: J.parse(r.conversations, []),
-  tags: J.parse(r.tags, []),
+  ...normalizeManuscript({
+    name: r.name,
+    synopsis: r.synopsis ?? "",
+    perspective: r.perspective ?? "third-limited",
+    style: r.style ?? "",
+    modelId: r.model_id ?? null,
+    chapterContextMode: ["summary", "full"].includes(r.assistant_chapter_context)
+      ? r.assistant_chapter_context
+      : "summary",
+    chapters: J.parse(r.chapters, []),
+    characters: J.parse(r.characters, []),
+    sessions: J.parse(r.sessions, []),
+    conversations: J.parse(r.conversations, []),
+    tags: J.parse(r.tags, []),
+  }),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -612,7 +613,7 @@ export async function saveManuscript(x: Partial<Manuscript> & { id?: string }): 
        characters=excluded.characters, sessions=excluded.sessions, conversations=excluded.conversations,
        tags=excluded.tags, updated_at=excluded.updated_at`,
     [
-      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId, m.assistantChapterContext,
+      m.id, m.name, m.synopsis, m.perspective, m.style, m.modelId, m.chapterContextMode,
       J.str(m.chapters), J.str(m.characters), J.str(m.sessions), J.str(m.conversations), J.str(m.tags),
       m.createdAt, m.updatedAt,
     ]

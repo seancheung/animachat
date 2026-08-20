@@ -19,14 +19,43 @@ describe("manuscript assistant context preference", () => {
     expect(columns.map((column) => column.column_name)).not.toContain("assistant_include_active_chapter");
   });
 
-  it("defaults to none and persists independently per manuscript", async () => {
+  it("defaults to summaries and persists independently per manuscript", async () => {
     const first = await saveManuscript({ name: "Context preference one" });
     const second = await saveManuscript({ name: "Context preference two" });
-    expect(first.assistantChapterContext).toBe("none");
-    expect(second.assistantChapterContext).toBe("none");
+    expect(first.chapterContextMode).toBe("summary");
+    expect(second.chapterContextMode).toBe("summary");
 
-    await saveManuscript({ ...first, assistantChapterContext: "summary" });
-    expect((await getManuscript(first.id))?.assistantChapterContext).toBe("summary");
-    expect((await getManuscript(second.id))?.assistantChapterContext).toBe("none");
+    await saveManuscript({ ...first, chapterContextMode: "full" });
+    expect((await getManuscript(first.id))?.chapterContextMode).toBe("full");
+    expect((await getManuscript(second.id))?.chapterContextMode).toBe("summary");
+  });
+
+  it("persists chapter attachments for assistant sessions and conversations", async () => {
+    const manuscript = await saveManuscript({
+      name: "Attached chapters",
+      characters: [{ id: "mira", name: "Mira" }] as never,
+    });
+    const chapterId = manuscript.chapters[0].id;
+    await saveManuscript({
+      ...manuscript,
+      sessions: [{
+        id: "settings-session",
+        kind: "assistant",
+        scope: "settings",
+        characterId: null,
+        chapterIds: [chapterId],
+        messages: [],
+      }] as never,
+      conversations: [{
+        id: "conversation",
+        characterIds: ["mira"],
+        chapterIds: [chapterId],
+        sessions: [],
+      }] as never,
+    });
+
+    const saved = await getManuscript(manuscript.id);
+    expect(saved?.sessions[0].chapterIds).toEqual([chapterId]);
+    expect(saved?.conversations[0].chapterIds).toEqual([chapterId]);
   });
 });

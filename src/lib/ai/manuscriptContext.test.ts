@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import {
+  manuscriptChapterAttachments,
   manuscriptChapterContextForAction,
   manuscriptGenerationModelTask,
   manuscriptInputBudget,
@@ -27,13 +28,25 @@ describe("manuscript context packing", () => {
   });
 
   it("applies the selected chapter attachment to structured assistants", () => {
-    expect(manuscriptChapterContextForAction("settings-assistant")).toBe("none");
-    expect(manuscriptChapterContextForAction("settings-assistant", "invalid" as never)).toBe("none");
+    expect(manuscriptChapterContextForAction("settings-assistant")).toBe("summary");
+    expect(manuscriptChapterContextForAction("settings-assistant", "invalid" as never)).toBe("summary");
     expect(manuscriptChapterContextForAction("character-design", "summary")).toBe("summary");
     expect(manuscriptChapterContextForAction("settings-assistant", "full")).toBe("full");
-    expect(manuscriptChapterContextForAction("assistant", "none")).toBe("full");
+    expect(manuscriptChapterContextForAction("assistant", "summary")).toBe("full");
     expect(manuscriptChapterContextForAction("continue", "summary")).toBe("full");
-    expect(manuscriptChapterContextForAction("chapter-summary", "none")).toBe("full");
+    expect(manuscriptChapterContextForAction("chapter-summary", "summary")).toBe("full");
+  });
+
+  it("resolves multiple attachments in manuscript order and skips empty material", () => {
+    const chapters = [
+      { id: "one", title: "One", content: "Full one", summary: "Summary one", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+      { id: "two", title: "Two", content: "Full two", summary: "   ", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+      { id: "three", title: "Three", content: "  ", summary: "Summary three", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+    ];
+    expect(manuscriptChapterAttachments(chapters, ["three", "two", "one"], "summary")
+      .map((attachment) => attachment.id)).toEqual(["one", "three"]);
+    expect(manuscriptChapterAttachments(chapters, ["three", "two", "one"], "full")
+      .map((attachment) => attachment.id)).toEqual(["one", "two"]);
   });
 
   it("routes each manuscript feature to the intended response cap", () => {
@@ -94,7 +107,7 @@ describe("manuscript context packing", () => {
     expect(packed.chapterTruncated).toBe(true);
     expect(packed.chapterContent).toContain("OPENING");
     expect(packed.chapterContent).toContain("ENDING");
-    expect(packed.chapterContent).toContain("content omitted");
+    expect(packed.chapterContent).toContain("context omitted");
     expect(packed.includedChapterTokens).toBeLessThan(packed.originalChapterTokens);
     expect(packed.estimatedInputTokens).toBeLessThanOrEqual(packed.inputBudget);
   });

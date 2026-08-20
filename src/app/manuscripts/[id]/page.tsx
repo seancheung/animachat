@@ -53,7 +53,7 @@ import {
 import type {
   Manuscript,
   ManuscriptAssistantScope,
-  ManuscriptChapterContext,
+  ManuscriptChapterContextMode,
   ManuscriptConversation,
   ManuscriptPerspective,
   ManuscriptSession,
@@ -70,7 +70,7 @@ function manuscriptSnapshot(manuscript: Manuscript): string {
     perspective: manuscript.perspective,
     style: manuscript.style,
     modelId: manuscript.modelId,
-    assistantChapterContext: manuscript.assistantChapterContext,
+    chapterContextMode: manuscript.chapterContextMode,
     chapters: manuscript.chapters,
     characters: manuscript.characters,
     sessions: manuscript.sessions,
@@ -488,7 +488,17 @@ export default function ManuscriptEditorPage() {
       nextActiveChapterId !== activeChapter?.id
       && !(await confirmAssistantTransition("chapters"))
     ) return;
-    patch({ chapters });
+    patch({
+      chapters,
+      sessions: form.sessions.map((session) => ({
+        ...session,
+        chapterIds: session.chapterIds.filter((id) => id !== chapterId),
+      })),
+      conversations: form.conversations.map((conversation) => ({
+        ...conversation,
+        chapterIds: conversation.chapterIds.filter((id) => id !== chapterId),
+      })),
+    });
     setActiveChapterId(nextActiveChapterId);
     setQuote(null);
   };
@@ -678,17 +688,16 @@ export default function ManuscriptEditorPage() {
                     <ModelPicker value={form.modelId} onChange={(modelId) => patch({ modelId })} placeholder="(Manuscript default model)" />
                   </Field>
                   <Field
-                    label="Active chapter context"
-                    hint="Controls what the settings and character assistants receive from the active chapter."
+                    label="Chapter attachments"
+                    hint="Choose how chapters attached to assistants and conversations are injected into context. Empty content is skipped."
                   >
                     <Select
                       className="w-full"
-                      value={form.assistantChapterContext}
-                      onChange={(assistantChapterContext) => patch({
-                        assistantChapterContext: assistantChapterContext as ManuscriptChapterContext,
+                      value={form.chapterContextMode}
+                      onChange={(chapterContextMode) => patch({
+                        chapterContextMode: chapterContextMode as ManuscriptChapterContextMode,
                       })}
                       options={[
-                        { value: "none", label: "None" },
                         { value: "summary", label: "Summary" },
                         { value: "full", label: "Full content" },
                       ]}
@@ -836,7 +845,6 @@ export default function ManuscriptEditorPage() {
             <div className={rightPanel === "chats" ? "h-full min-h-0" : "hidden"}>
               <ManuscriptChatsPanel
                 manuscript={form}
-                chapterId={activeChapter?.id ?? ""}
                 onSaveConversation={saveConversation}
               />
             </div>

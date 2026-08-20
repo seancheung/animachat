@@ -1,8 +1,10 @@
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
+import { isManuscriptChapterSummaryStale } from "@/lib/manuscript";
 import {
   taskMaxTokens,
   type AiTask,
-  type ManuscriptChapterContext,
+  type ManuscriptChapter,
+  type ManuscriptChapterContextMode,
   type Settings,
 } from "@/lib/types";
 
@@ -37,15 +39,44 @@ export function manuscriptResponseTokens(
   return taskMaxTokens(settings, "assist");
 }
 
-/** Structured assistants use the manuscript preference; prose-dependent actions require full text. */
+/** Structured assistants use the attachment mode; prose-dependent actions require full text. */
 export function manuscriptChapterContextForAction(
   action: ManuscriptGenerationAction,
-  requested: ManuscriptChapterContext = "none"
-): ManuscriptChapterContext {
+  requested: ManuscriptChapterContextMode = "summary"
+): ManuscriptChapterContextMode {
   if (action === "settings-assistant" || action === "character-design") {
-    return requested === "summary" || requested === "full" ? requested : "none";
+    return requested === "full" ? "full" : "summary";
   }
   return "full";
+}
+
+export interface ManuscriptChapterAttachment {
+  id: string;
+  title: string;
+  content: string;
+  summaryStale?: boolean;
+}
+
+/** Resolve explicit attachments in manuscript order and omit blank source material. */
+export function manuscriptChapterAttachments(
+  chapters: ManuscriptChapter[],
+  chapterIds: string[],
+  mode: ManuscriptChapterContextMode
+): ManuscriptChapterAttachment[] {
+  const requested = new Set(chapterIds);
+  return chapters.flatMap((chapter) => {
+    if (!requested.has(chapter.id)) return [];
+    const content = (mode === "summary" ? chapter.summary : chapter.content).trim();
+    if (!content) return [];
+    return [{
+      id: chapter.id,
+      title: chapter.title,
+      content,
+      ...(mode === "summary"
+        ? { summaryStale: isManuscriptChapterSummaryStale(chapter) }
+        : {}),
+    }];
+  });
 }
 
 export interface BuiltManuscriptPrompt {
@@ -145,7 +176,7 @@ function excerptChapter(
     const omittedTokens = Math.max(0, originalTokens - includedTokens);
     return {
       content: segments.join(
-        `\n\n[Active chapter content omitted: approximately ${omittedTokens.toLocaleString("en-US")} tokens not included.]\n\n`
+        `\n\n[Chapter context omitted: approximately ${omittedTokens.toLocaleString("en-US")} tokens not included.]\n\n`
       ),
       includedTokens,
     };
@@ -174,7 +205,7 @@ function excerptChapter(
 }
 
 /**
- * Fit an active chapter and recent history into a model-aware input budget.
+ * Fit chapter context and recent history into a model-aware input budget.
  * Full context is kept when it fits. On overflow, the newest message is kept,
  * older history receives up to 25% of the remaining room, and the chapter uses
  * a beginning-and-ending excerpt (25/75) so setup and current continuity remain.

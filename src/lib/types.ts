@@ -492,7 +492,7 @@ export interface StoryBondsRecord {
 /* ---------------- manuscripts ---------------- */
 
 export type ManuscriptPerspective = "first" | "third-limited" | "third-omniscient" | "second";
-export type ManuscriptChapterContext = "none" | "summary" | "full";
+export type ManuscriptChapterContextMode = "summary" | "full";
 
 export interface ManuscriptChapter {
   id: string;
@@ -539,6 +539,8 @@ export interface ManuscriptSession {
   kind: "assistant";
   scope: ManuscriptAssistantScope;
   characterId: null;
+  /** Chapters explicitly attached to this assistant workspace. */
+  chapterIds: string[];
   messages: ManuscriptMessage[];
   createdAt: number;
   updatedAt: number;
@@ -556,7 +558,8 @@ export interface ManuscriptConversationSession {
 export interface ManuscriptConversation {
   id: string;
   characterIds: string[];
-  chapterContext: ManuscriptChapterContext;
+  /** Chapters explicitly attached to every session in this conversation. */
+  chapterIds: string[];
   sessions: ManuscriptConversationSession[];
   createdAt: number;
   updatedAt: number;
@@ -570,8 +573,8 @@ export interface Manuscript {
   style: string;
   /** null inherits Settings → Manuscript → global default. */
   modelId: string | null;
-  /** Active-chapter attachment used by the settings and character assistants. */
-  assistantChapterContext: ManuscriptChapterContext;
+  /** How explicitly attached chapters are injected into assistant context. */
+  chapterContextMode: ManuscriptChapterContextMode;
   chapters: ManuscriptChapter[];
   characters: ManuscriptCharacter[];
   sessions: ManuscriptSession[];

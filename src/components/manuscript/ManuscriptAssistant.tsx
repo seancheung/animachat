@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  BookOpenText,
   Check,
   History,
   MessageSquarePlus,
@@ -19,6 +20,8 @@ import { InputBox } from "@/components/app";
 import { Markdown } from "@/components/Markdown";
 import { confirmDialog } from "@/components/confirm";
 import Button from "@/components/ui/button";
+import Checkbox from "@/components/ui/checkbox";
+import Dialog from "@/components/ui/dialog";
 import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import type { CharacterDesignUpdate as CharacterDesignUpdatePayload } from "@/lib/ai/manuscriptCharacterDesign";
@@ -120,6 +123,9 @@ export function ManuscriptAssistant({
   const [busy, setBusy] = useState(false);
   const [streaming, setStreaming] = useState("");
   const [drafting, setDrafting] = useState<{ label?: string | null } | null>(null);
+  const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
+  const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  const [pickedChapterIds, setPickedChapterIds] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const active = assistantSessions.find((session) => session.id === activeId) ?? assistantSessions.at(-1) ?? null;
   const copy = PANEL_COPY[scope];
@@ -135,6 +141,7 @@ export function ManuscriptAssistant({
       kind: "assistant",
       scope,
       characterId: null,
+      chapterIds: [],
       messages: [],
       createdAt: t,
       updatedAt: t,
@@ -175,6 +182,27 @@ export function ManuscriptAssistant({
     );
   }
 
+  async function updateAttachedChapters(chapterIds: string[]) {
+    if (!active) {
+      setDraftChapterIds(chapterIds);
+      return;
+    }
+    const next = { ...active, chapterIds, updatedAt: timestamp() };
+    await onSaveSessions(manuscript.sessions.map(
+      (session) => session.id === active.id ? next : session
+    ));
+  }
+
+  function openChapterPicker() {
+    setPickedChapterIds(active?.chapterIds ?? draftChapterIds);
+    setChapterPickerOpen(true);
+  }
+
+  async function savePickedChapters() {
+    await updateAttachedChapters(pickedChapterIds);
+    setChapterPickerOpen(false);
+  }
+
   async function run(action: Action, prompt = input.trim()) {
     if (busy) return;
     const conversational = action === "assistant" || action === "settings-assistant" || action === "character-design";
@@ -193,6 +221,7 @@ export function ManuscriptAssistant({
         kind: "assistant",
         scope,
         characterId: null,
+        chapterIds: draftChapterIds,
         messages: [],
         createdAt: t,
         updatedAt: t,
@@ -236,8 +265,8 @@ export function ManuscriptAssistant({
         quote: scope === "manuscript" ? quote?.text : undefined,
         quoteStart: scope === "manuscript" ? quote?.start : undefined,
         quoteEnd: scope === "manuscript" ? quote?.end : undefined,
-        chapterContext: scope === "settings" || scope === "characters"
-          ? manuscript.assistantChapterContext
+        chapterIds: scope === "settings" || scope === "characters"
+          ? session?.chapterIds ?? draftChapterIds
           : undefined,
         prompt,
         messages: history,
@@ -249,7 +278,7 @@ export function ManuscriptAssistant({
           const details = [];
           if (event.chapter) {
             details.push(
-              `Using about ${Number(event.chapter.includedTokens).toLocaleString()} of ${Number(event.chapter.originalTokens).toLocaleString()} active-chapter tokens.`
+              `Using about ${Number(event.chapter.includedTokens).toLocaleString()} of ${Number(event.chapter.originalTokens).toLocaleString()} ${scope === "manuscript" ? "active-chapter" : "attached-chapter"} tokens.`
             );
           }
           if (event.omittedHistoryMessages) {
@@ -447,6 +476,18 @@ export function ManuscriptAssistant({
           }
         }}
       >
+        {(scope === "settings" || scope === "characters") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title={`Attach chapters${(active?.chapterIds ?? draftChapterIds).length ? ` (${(active?.chapterIds ?? draftChapterIds).length})` : ""}`}
+            disabled={busy}
+            onClick={openChapterPicker}
+          >
+            <BookOpenText />
+            {(active?.chapterIds ?? draftChapterIds).length || null}
+          </Button>
+        )}
         {scope === "manuscript" && (
           <>
             <Button variant="ghost" size="sm" onClick={() => run("continue", input.trim() || "Continue naturally.")} disabled={busy}>
@@ -464,6 +505,34 @@ export function ManuscriptAssistant({
           <Button size="sm" shape="square" title="Send" disabled={!input.trim()} onClick={() => run(sendAction)}><SendHorizontal /></Button>
         )}
       </InputBox>
+
+      <Dialog
+        open={chapterPickerOpen && (scope === "settings" || scope === "characters")}
+        onOpenChange={setChapterPickerOpen}
+        title="Attach chapters"
+        description={`Selected chapters are injected as ${manuscript.chapterContextMode === "full" ? "full content" : "summaries"}. Empty ${manuscript.chapterContextMode === "full" ? "chapters" : "summaries"} are skipped.`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setChapterPickerOpen(false)}>Cancel</Button>
+            <Button onClick={() => void savePickedChapters()}>Save attachments</Button>
+          </>
+        }
+      >
+        <div className="space-y-1">
+          {manuscript.chapters.map((chapter) => (
+            <div key={chapter.id} className="rounded-md px-2.5 py-2 hover:bg-base-300/60">
+              <Checkbox
+                className="w-full"
+                value={pickedChapterIds.includes(chapter.id)}
+                onChange={(checked) => setPickedChapterIds((current) => checked
+                  ? [...current, chapter.id]
+                  : current.filter((id) => id !== chapter.id))}
+                label={<span className="font-medium">{chapter.title}</span>}
+              />
+            </div>
+          ))}
+        </div>
+      </Dialog>
     </aside>
   );
 }

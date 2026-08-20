@@ -4,7 +4,7 @@ import type {
   Manuscript,
   ManuscriptAssistantScope,
   ManuscriptChapter,
-  ManuscriptChapterContext,
+  ManuscriptChapterContextMode,
   ManuscriptCharacter,
   ManuscriptConversation,
   ManuscriptConversationMessage,
@@ -26,7 +26,7 @@ const ASSISTANT_SCOPES = new Set<ManuscriptAssistantScope>([
   "characters",
   "settings",
 ]);
-const CHAPTER_CONTEXTS = new Set<ManuscriptChapterContext>(["none", "summary", "full"]);
+const CHAPTER_CONTEXT_MODES = new Set<ManuscriptChapterContextMode>(["summary", "full"]);
 
 const text = (value: unknown, fallback = "") =>
   typeof value === "string" ? value : fallback;
@@ -82,7 +82,8 @@ function normalizeMessage(value: Partial<ManuscriptMessage>): ManuscriptMessage 
 }
 
 export function normalizeManuscriptSession(
-  value: Partial<ManuscriptSession> = {}
+  value: Partial<ManuscriptSession> = {},
+  validChapterIds = new Set<string>()
 ): ManuscriptSession | null {
   if (value.kind !== "assistant") return null;
   const t = now();
@@ -94,6 +95,10 @@ export function normalizeManuscriptSession(
       ? value.scope as ManuscriptAssistantScope
       : "manuscript",
     characterId: null,
+    chapterIds: [...new Set(
+      (Array.isArray(value.chapterIds) ? value.chapterIds : [])
+        .filter((id): id is string => typeof id === "string" && validChapterIds.has(id))
+    )],
     messages: (Array.isArray(value.messages) ? value.messages : [])
       .map(normalizeMessage)
       .filter((m): m is ManuscriptMessage => !!m),
@@ -144,7 +149,8 @@ export function latestManuscriptConversationSession(
 
 export function normalizeManuscriptConversation(
   value: Partial<ManuscriptConversation> = {},
-  validCharacterIds?: Set<string>
+  validCharacterIds?: Set<string>,
+  validChapterIds = new Set<string>()
 ): ManuscriptConversation | null {
   const t = now();
   const requestedCharacterIds = [...new Set(
@@ -159,9 +165,10 @@ export function normalizeManuscriptConversation(
   return {
     id: text(value.id) || uid(),
     characterIds,
-    chapterContext: CHAPTER_CONTEXTS.has(value.chapterContext as ManuscriptChapterContext)
-      ? value.chapterContext as ManuscriptChapterContext
-      : "none",
+    chapterIds: [...new Set(
+      (Array.isArray(value.chapterIds) ? value.chapterIds : [])
+        .filter((id): id is string => typeof id === "string" && validChapterIds.has(id))
+    )],
     sessions: (Array.isArray(value.sessions) ? value.sessions : []).map(
       (session) => normalizeManuscriptConversationSession(session, new Set(characterIds))
     ),
@@ -182,13 +189,14 @@ export function normalizeManuscript(
   const characters = (Array.isArray(merged.characters) ? merged.characters : []).map(
     normalizeManuscriptCharacter
   );
+  const chapterIds = new Set(chapters.map((chapter) => chapter.id));
   const characterIds = new Set(characters.map((c) => c.id));
   const sessions = (Array.isArray(merged.sessions) ? merged.sessions : [])
-    .map(normalizeManuscriptSession)
+    .map((session) => normalizeManuscriptSession(session, chapterIds))
     .filter((session): session is ManuscriptSession => !!session);
   const conversationKeys = new Set<string>();
   const conversations = (Array.isArray(merged.conversations) ? merged.conversations : [])
-    .map((conversation) => normalizeManuscriptConversation(conversation, characterIds))
+    .map((conversation) => normalizeManuscriptConversation(conversation, characterIds, chapterIds))
     .filter((conversation): conversation is ManuscriptConversation => {
       if (!conversation) return false;
       const key = manuscriptConversationKey(conversation.characterIds);
@@ -196,7 +204,10 @@ export function normalizeManuscript(
       conversationKeys.add(key);
       return true;
     });
-  const requestedChapterContext = merged.assistantChapterContext;
+  const legacyChapterContext = (merged as typeof merged & {
+    assistantChapterContext?: unknown;
+  }).assistantChapterContext;
+  const requestedChapterContext = merged.chapterContextMode ?? legacyChapterContext;
   return {
     name: text(merged.name, "Untitled manuscript"),
     synopsis: text(merged.synopsis),
@@ -205,9 +216,9 @@ export function normalizeManuscript(
       : "third-limited",
     style: text(merged.style),
     modelId: text(merged.modelId) || null,
-    assistantChapterContext: CHAPTER_CONTEXTS.has(requestedChapterContext as ManuscriptChapterContext)
-      ? requestedChapterContext as ManuscriptChapterContext
-      : "none",
+    chapterContextMode: CHAPTER_CONTEXT_MODES.has(requestedChapterContext as ManuscriptChapterContextMode)
+      ? requestedChapterContext as ManuscriptChapterContextMode
+      : "summary",
     chapters: chapters.length ? chapters : [normalizeManuscriptChapter({ title: "Chapter 1" })],
     characters,
     sessions,
