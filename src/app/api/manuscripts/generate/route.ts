@@ -19,6 +19,7 @@ import {
   type StructuredAssistantResult,
 } from "@/lib/ai/manuscriptStructured";
 import {
+  manuscriptActiveChapterMaterial,
   manuscriptChapterAttachments,
   manuscriptChapterContextForAction,
   manuscriptGenerationModelTask,
@@ -68,15 +69,23 @@ function contextOf(
     activeChapterId?: string;
     attachedChapterIds?: string[];
     attachmentMode?: ManuscriptChapterContextMode;
+    chapterContext?: string | null;
     limits?: Pick<ManuscriptContextState<unknown>, "chapterContent" | "chapterTruncated" | "historyTruncated">;
   } = {}
 ) {
-  const { activeChapterId, attachedChapterIds, attachmentMode = "summary", limits } = options;
+  const {
+    activeChapterId,
+    attachedChapterIds,
+    attachmentMode = "summary",
+    chapterContext,
+    limits,
+  } = options;
   const chapter = manuscript.chapters.find((c) => c.id === activeChapterId) ?? manuscript.chapters[0];
   const usesAttachments = attachedChapterIds !== undefined;
+  const usesCombinedChapterContext = chapterContext !== undefined;
   const contextLimitNotices = [
     limits?.chapterTruncated
-      ? `Only an excerpt of the ${usesAttachments ? "attached chapter material" : "active chapter"} is present. Some content was omitted to fit the selected model's context window.`
+      ? `Only an excerpt of the ${usesCombinedChapterContext ? "active and attached chapter material" : usesAttachments ? "attached chapter material" : "active chapter"} is present. Some content was omitted to fit the selected model's context window.`
       : null,
     limits?.historyTruncated
       ? "Older conversation messages were omitted to fit the selected model's context window."
@@ -96,12 +105,17 @@ function contextOf(
       appearance: c.appearance,
       voice: c.voice,
     })),
-    activeChapter: usesAttachments || !chapter
+    activeChapter: usesCombinedChapterContext
+      ? chapter ? { title: chapter.title, content: "Included in chapterContext." } : null
+      : usesAttachments || !chapter
       ? null
       : { title: chapter.title, content: limits?.chapterContent ?? chapter.content },
-    attachedChapters: usesAttachments
+    attachedChapters: usesAttachments && !usesCombinedChapterContext
       ? limits?.chapterContent ?? attachedChapterMaterial(manuscript, attachedChapterIds, attachmentMode)
       : null,
+    ...(usesCombinedChapterContext
+      ? { chapterContext: limits?.chapterContent ?? chapterContext }
+      : {}),
     ...(contextLimitNotices.length ? { contextLimitNotices } : {}),
   };
 }
@@ -381,7 +395,8 @@ export const POST = handler(async (req: Request) => {
   if (!history.length) return bad("message required");
 
   const responseTokens = manuscriptResponseTokens(settings, body.action);
-  const usesAttachments = body.action === "settings-assistant" || body.action === "character-design";
+  const usesStandaloneAttachments = body.action === "settings-assistant" || body.action === "character-design";
+  const usesActiveChapterAttachments = ["continue", "rewrite", "assistant"].includes(body.action);
   const attachmentMode = manuscriptChapterContextForAction(
     body.action,
     chapterContextModeOf(body.manuscript)
@@ -391,24 +406,43 @@ export const POST = handler(async (req: Request) => {
     : [];
   const chapter = body.manuscript.chapters.find((item) => item.id === body.chapterId)
     ?? body.manuscript.chapters[0];
-  const chapterMaterial = usesAttachments
+  const activeChapterMaterial = usesActiveChapterAttachments
+    ? manuscriptActiveChapterMaterial(
+        body.manuscript.chapters,
+        chapter?.id,
+        attachedChapterIds,
+        attachmentMode
+      )
+    : null;
+  const chapterMaterial = usesStandaloneAttachments
     ? attachedChapterMaterial(body.manuscript, attachedChapterIds, attachmentMode)
-    : chapter?.content ?? null;
+    : activeChapterMaterial?.content ?? chapter?.content ?? null;
   const packed = packManuscriptPrompt({
     chapterContent: chapterMaterial,
     history,
     inputBudget: manuscriptInputBudget(settings, modelRef, responseTokens),
     chapterFocus: typeof body.quoteStart === "number" && typeof body.quoteEnd === "number"
-      ? { start: body.quoteStart, end: body.quoteEnd }
+      ? {
+          start: body.quoteStart + (activeChapterMaterial?.activeContentOffset ?? 0),
+          end: body.quoteEnd + (activeChapterMaterial?.activeContentOffset ?? 0),
+        }
       : undefined,
     build: (state) => {
-      const context = usesAttachments
+      const context = usesStandaloneAttachments
         ? contextOf(body.manuscript, {
             attachedChapterIds,
             attachmentMode,
             limits: state,
           })
-        : contextOf(body.manuscript, { activeChapterId: body.chapterId, limits: state });
+        : usesActiveChapterAttachments
+          ? contextOf(body.manuscript, {
+              activeChapterId: chapter?.id,
+              attachedChapterIds,
+              attachmentMode,
+              chapterContext: state.chapterContent,
+              limits: state,
+            })
+          : contextOf(body.manuscript, { activeChapterId: body.chapterId, limits: state });
       return {
         system:
           `You are an expert manuscript assistant. Respond in ${settings.language}. ` +

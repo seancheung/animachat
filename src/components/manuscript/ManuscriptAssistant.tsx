@@ -265,9 +265,7 @@ export function ManuscriptAssistant({
         quote: scope === "manuscript" ? quote?.text : undefined,
         quoteStart: scope === "manuscript" ? quote?.start : undefined,
         quoteEnd: scope === "manuscript" ? quote?.end : undefined,
-        chapterIds: scope === "settings" || scope === "characters"
-          ? session?.chapterIds ?? draftChapterIds
-          : undefined,
+        chapterIds: session?.chapterIds ?? draftChapterIds,
         prompt,
         messages: history,
       }, (event) => {
@@ -364,6 +362,9 @@ export function ManuscriptAssistant({
   const sendAction: Action = scope === "settings"
     ? "settings-assistant"
     : scope === "characters" ? "character-design" : "assistant";
+  const attachedChapterIds = (active?.chapterIds ?? draftChapterIds).filter(
+    (id) => scope !== "manuscript" || id !== chapterId
+  );
 
   return (
     <aside className="h-full min-h-0 flex flex-col border-l border-base-400 pl-4 pb-4">
@@ -476,18 +477,16 @@ export function ManuscriptAssistant({
           }
         }}
       >
-        {(scope === "settings" || scope === "characters") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            title={`Attach chapters${(active?.chapterIds ?? draftChapterIds).length ? ` (${(active?.chapterIds ?? draftChapterIds).length})` : ""}`}
-            disabled={busy}
-            onClick={openChapterPicker}
-          >
-            <BookOpenText />
-            {(active?.chapterIds ?? draftChapterIds).length || null}
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          title={`Attach chapters${attachedChapterIds.length ? ` (${attachedChapterIds.length})` : ""}`}
+          disabled={busy}
+          onClick={openChapterPicker}
+        >
+          <BookOpenText />
+          {attachedChapterIds.length || null}
+        </Button>
         {scope === "manuscript" && (
           <>
             <Button variant="ghost" size="sm" onClick={() => run("continue", input.trim() || "Continue naturally.")} disabled={busy}>
@@ -507,10 +506,12 @@ export function ManuscriptAssistant({
       </InputBox>
 
       <Dialog
-        open={chapterPickerOpen && (scope === "settings" || scope === "characters")}
+        open={chapterPickerOpen}
         onOpenChange={setChapterPickerOpen}
         title="Attach chapters"
-        description={`Selected chapters are injected as ${manuscript.chapterContextMode === "full" ? "full content" : "summaries"}. Empty ${manuscript.chapterContextMode === "full" ? "chapters" : "summaries"} are skipped.`}
+        description={scope === "manuscript"
+          ? `The active chapter is always included as full content. Other selected chapters are injected as ${manuscript.chapterContextMode === "full" ? "full content" : "summaries"}; empty ${manuscript.chapterContextMode === "full" ? "chapters" : "summaries"} are skipped.`
+          : `Selected chapters are injected as ${manuscript.chapterContextMode === "full" ? "full content" : "summaries"}. Empty ${manuscript.chapterContextMode === "full" ? "chapters" : "summaries"} are skipped.`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setChapterPickerOpen(false)}>Cancel</Button>
@@ -523,11 +524,21 @@ export function ManuscriptAssistant({
             <div key={chapter.id} className="rounded-md px-2.5 py-2 hover:bg-base-300/60">
               <Checkbox
                 className="w-full"
-                value={pickedChapterIds.includes(chapter.id)}
+                disabled={scope === "manuscript" && chapter.id === chapterId}
+                value={scope === "manuscript" && chapter.id === chapterId
+                  ? true
+                  : pickedChapterIds.includes(chapter.id)}
                 onChange={(checked) => setPickedChapterIds((current) => checked
                   ? [...current, chapter.id]
                   : current.filter((id) => id !== chapter.id))}
-                label={<span className="font-medium">{chapter.title}</span>}
+                label={(
+                  <span className="font-medium">
+                    {chapter.title}
+                    {scope === "manuscript" && chapter.id === chapterId && (
+                      <span className="ml-1.5 font-normal text-content-400">Active · full content</span>
+                    )}
+                  </span>
+                )}
               />
             </div>
           ))}

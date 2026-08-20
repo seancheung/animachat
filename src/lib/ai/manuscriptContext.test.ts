@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { estimateTokens, type LlmMessage, type ResolvedModel } from "./client";
 import {
+  manuscriptActiveChapterMaterial,
   manuscriptChapterAttachments,
   manuscriptChapterContextForAction,
   manuscriptGenerationModelTask,
@@ -27,13 +28,14 @@ describe("manuscript context packing", () => {
     expect(manuscriptGenerationModelTask("conversation-chat")).toBe("chat");
   });
 
-  it("applies the selected chapter attachment to structured assistants", () => {
+  it("applies the selected mode to explicit attachments", () => {
     expect(manuscriptChapterContextForAction("settings-assistant")).toBe("summary");
     expect(manuscriptChapterContextForAction("settings-assistant", "invalid" as never)).toBe("summary");
     expect(manuscriptChapterContextForAction("character-design", "summary")).toBe("summary");
     expect(manuscriptChapterContextForAction("settings-assistant", "full")).toBe("full");
-    expect(manuscriptChapterContextForAction("assistant", "summary")).toBe("full");
-    expect(manuscriptChapterContextForAction("continue", "summary")).toBe("full");
+    expect(manuscriptChapterContextForAction("assistant", "summary")).toBe("summary");
+    expect(manuscriptChapterContextForAction("continue", "summary")).toBe("summary");
+    expect(manuscriptChapterContextForAction("rewrite", "full")).toBe("full");
     expect(manuscriptChapterContextForAction("chapter-summary", "summary")).toBe("full");
   });
 
@@ -47,6 +49,27 @@ describe("manuscript context packing", () => {
       .map((attachment) => attachment.id)).toEqual(["one", "three"]);
     expect(manuscriptChapterAttachments(chapters, ["three", "two", "one"], "full")
       .map((attachment) => attachment.id)).toEqual(["one", "two"]);
+  });
+
+  it("keeps the active chapter in full after supplemental chapter attachments", () => {
+    const chapters = [
+      { id: "previous", title: "Previous", content: "Previous full text", summary: "Previous summary", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+      { id: "active", title: "Active", content: "Exact active prose", summary: "Active summary", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+      { id: "following", title: "Following", content: "Following full text", summary: "Following summary", summaryContentHash: null, createdAt: 1, updatedAt: 1 },
+    ];
+    const material = manuscriptActiveChapterMaterial(
+      chapters,
+      "active",
+      ["following", "active", "previous"],
+      "summary"
+    );
+
+    expect(material.content).toContain("## Chapter 1 — Previous chapter: Previous\n[Summary (stale)]\nPrevious summary");
+    expect(material.content).toContain("## Chapter 3 — Following chapter: Following\n[Summary (stale)]\nFollowing summary");
+    expect(material.content).toContain("## Chapter 2 — Active chapter: Active\n[Full content]\nExact active prose");
+    expect(material.content).not.toContain("Active summary");
+    expect(material.content?.slice(material.activeContentOffset)).toBe("Exact active prose");
+    expect(material.content?.endsWith("Exact active prose")).toBe(true);
   });
 
   it("routes each manuscript feature to the intended response cap", () => {

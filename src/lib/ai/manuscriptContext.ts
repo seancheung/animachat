@@ -39,12 +39,19 @@ export function manuscriptResponseTokens(
   return taskMaxTokens(settings, "assist");
 }
 
-/** Structured assistants use the attachment mode; prose-dependent actions require full text. */
+/** Explicit attachments use the manuscript setting; standalone chapter tasks require full text. */
 export function manuscriptChapterContextForAction(
   action: ManuscriptGenerationAction,
   requested: ManuscriptChapterContextMode = "summary"
 ): ManuscriptChapterContextMode {
-  if (action === "settings-assistant" || action === "character-design") {
+  if ([
+    "continue",
+    "rewrite",
+    "assistant",
+    "settings-assistant",
+    "character-design",
+    "conversation-chat",
+  ].includes(action)) {
     return requested === "full" ? "full" : "summary";
   }
   return "full";
@@ -77,6 +84,53 @@ export function manuscriptChapterAttachments(
         : {}),
     }];
   });
+}
+
+/**
+ * Build the chapter material for the manuscript workspace. Supplemental
+ * attachments follow the manuscript setting, while the active chapter is
+ * always appended as full text so continuation keeps its exact ending.
+ */
+export function manuscriptActiveChapterMaterial(
+  chapters: ManuscriptChapter[],
+  activeChapterId: string | undefined,
+  chapterIds: string[],
+  attachmentMode: ManuscriptChapterContextMode
+): { content: string | null; activeContentOffset: number } {
+  const activeChapter = chapters.find((chapter) => chapter.id === activeChapterId) ?? chapters[0];
+  if (!activeChapter) return { content: null, activeContentOffset: 0 };
+  const activeChapterIndex = chapters.findIndex((chapter) => chapter.id === activeChapter.id);
+
+  const attachments = manuscriptChapterAttachments(
+    chapters,
+    chapterIds.filter((id) => id !== activeChapter.id),
+    attachmentMode
+  );
+  if (!attachments.length) {
+    return { content: activeChapter.content, activeContentOffset: 0 };
+  }
+
+  const references = attachments.map((attachment) => {
+    const chapterIndex = chapters.findIndex((chapter) => chapter.id === attachment.id);
+    const distance = chapterIndex - activeChapterIndex;
+    const relationship = distance === -1
+      ? "Previous chapter"
+      : distance === 1
+        ? "Following chapter"
+        : distance < -1
+          ? `${Math.abs(distance)} chapters before active`
+          : `${distance} chapters after active`;
+    const label = attachmentMode === "summary"
+      ? `Summary${attachment.summaryStale ? " (stale)" : ""}`
+      : "Full content";
+    return `## Chapter ${chapterIndex + 1} — ${relationship}: ${attachment.title}\n[${label}]\n${attachment.content}`;
+  }).join("\n\n");
+  const activeHeader = `## Chapter ${activeChapterIndex + 1} — Active chapter: ${activeChapter.title}\n[Full content]\n`;
+  const prefix = `${references}\n\n${activeHeader}`;
+  return {
+    content: `${prefix}${activeChapter.content}`,
+    activeContentOffset: prefix.length,
+  };
 }
 
 export interface BuiltManuscriptPrompt {
