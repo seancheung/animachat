@@ -121,17 +121,24 @@ export function normalizeManuscriptSession(
 ): ManuscriptSession | null {
   if (value.kind !== "assistant") return null;
   const t = now();
+  const scope = ASSISTANT_SCOPES.has(value.scope as ManuscriptAssistantScope)
+    ? value.scope as ManuscriptAssistantScope
+    : "manuscript";
+  const requestedChapterId = text(value.chapterId);
+  if (scope === "manuscript" && !validChapterIds.has(requestedChapterId)) return null;
+  const chapterId = scope === "manuscript" ? requestedChapterId : null;
   return {
     id: text(value.id) || uid(),
     title: text(value.title, "New session"),
     kind: "assistant",
-    scope: ASSISTANT_SCOPES.has(value.scope as ManuscriptAssistantScope)
-      ? value.scope as ManuscriptAssistantScope
-      : "manuscript",
+    scope,
     characterId: null,
+    chapterId,
     chapterIds: [...new Set(
       (Array.isArray(value.chapterIds) ? value.chapterIds : [])
-        .filter((id): id is string => typeof id === "string" && validChapterIds.has(id))
+        .filter((id): id is string =>
+          typeof id === "string" && validChapterIds.has(id) && id !== chapterId
+        )
     )],
     messages: (Array.isArray(value.messages) ? value.messages : [])
       .map(normalizeMessage)
@@ -181,6 +188,15 @@ export function latestManuscriptConversationSession(
   );
 }
 
+export function manuscriptSessionMatchesWorkspace(
+  session: ManuscriptSession,
+  scope: ManuscriptAssistantScope,
+  chapterId: string
+): boolean {
+  return session.scope === scope
+    && (scope !== "manuscript" || session.chapterId === chapterId);
+}
+
 export function normalizeManuscriptConversation(
   value: Partial<ManuscriptConversation> = {},
   validCharacterIds?: Set<string>,
@@ -217,9 +233,12 @@ export function normalizeManuscript(
   existing?: Manuscript | null
 ): Omit<Manuscript, "id" | "createdAt" | "updatedAt"> {
   const merged = { ...existing, ...value };
-  const chapters = (Array.isArray(merged.chapters) ? merged.chapters : []).map(
+  const normalizedChapters = (Array.isArray(merged.chapters) ? merged.chapters : []).map(
     normalizeManuscriptChapter
   );
+  const chapters = normalizedChapters.length
+    ? normalizedChapters
+    : [normalizeManuscriptChapter({ title: "Chapter 1" })];
   const characters = (Array.isArray(merged.characters) ? merged.characters : []).map(
     normalizeManuscriptCharacter
   );
@@ -253,7 +272,7 @@ export function normalizeManuscript(
     chapterContextMode: CHAPTER_CONTEXT_MODES.has(requestedChapterContext as ManuscriptChapterContextMode)
       ? requestedChapterContext as ManuscriptChapterContextMode
       : "summary",
-    chapters: chapters.length ? chapters : [normalizeManuscriptChapter({ title: "Chapter 1" })],
+    chapters,
     characters,
     sessions,
     conversations,

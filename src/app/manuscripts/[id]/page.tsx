@@ -475,20 +475,19 @@ export default function ManuscriptEditorPage() {
     if (form.chapters.length === 1) return toast.warning("A manuscript needs at least one chapter.");
     const chapter = form.chapters.find((c) => c.id === chapterId);
     if (!(await confirmDialog({ title: "Delete chapter", message: `Delete “${chapter?.title}” and all its content?`, confirmLabel: "Delete", danger: true }))) return;
+    if (!(await confirmAssistantTransition("chapters"))) return;
     const chapters = form.chapters.filter((c) => c.id !== chapterId);
     const nextActiveChapterId = activeChapter?.id === chapterId
       ? chapters[0]?.id ?? null
       : activeChapter?.id ?? chapters[0]?.id ?? null;
-    if (
-      nextActiveChapterId !== activeChapter?.id
-      && !(await confirmAssistantTransition("chapters"))
-    ) return;
     patch({
       chapters,
-      sessions: form.sessions.map((session) => ({
-        ...session,
-        chapterIds: session.chapterIds.filter((id) => id !== chapterId),
-      })),
+      sessions: form.sessions
+        .filter((session) => session.scope !== "manuscript" || session.chapterId !== chapterId)
+        .map((session) => ({
+          ...session,
+          chapterIds: session.chapterIds.filter((id) => id !== chapterId),
+        })),
       conversations: form.conversations.map((conversation) => ({
         ...conversation,
         chapterIds: conversation.chapterIds.filter((id) => id !== chapterId),
@@ -817,7 +816,7 @@ export default function ManuscriptEditorPage() {
           <div className="h-full min-h-0 w-[380px]">
             {rightPanel === "assistant" && (
               <ManuscriptAssistant
-                key={tab}
+                key={tab === "manuscript" ? `${tab}:${activeChapter?.id ?? "none"}` : tab}
                 scope={tab}
                 manuscript={form}
                 chapterId={activeChapter?.id ?? ""}

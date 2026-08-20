@@ -543,6 +543,8 @@ export interface ManuscriptSession {
   kind: "assistant";
   scope: ManuscriptAssistantScope;
   characterId: null;
+  /** Owning chapter for manuscript-scope sessions; null for shared settings/character sessions. */
+  chapterId: string | null;
   /** Chapters explicitly attached to this assistant workspace. */
   chapterIds: string[];
   messages: ManuscriptMessage[];

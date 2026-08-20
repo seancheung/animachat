@@ -27,6 +27,7 @@ import { toast } from "@/components/ui/toast";
 import type { CharacterDesignUpdate as CharacterDesignUpdatePayload } from "@/lib/ai/manuscriptCharacterDesign";
 import type { ManuscriptChapterEdit } from "@/lib/ai/manuscriptStructured";
 import {
+  manuscriptSessionMatchesWorkspace,
   manuscriptSelectionMatches,
   retryableManuscriptAssistantTurn,
   truncateManuscriptAssistantAtUserMessage,
@@ -209,9 +210,9 @@ export function ManuscriptAssistant({
 }) {
   const assistantSessions = useMemo(
     () => manuscript.sessions.filter(
-      (session) => session.kind === "assistant" && (session.scope ?? "manuscript") === scope
+      (session) => manuscriptSessionMatchesWorkspace(session, scope, chapterId)
     ),
-    [manuscript.sessions, scope]
+    [chapterId, manuscript.sessions, scope]
   );
   const [activeId, setActiveId] = useState<string | null>(() => assistantSessions.at(-1)?.id ?? null);
   const [input, setInput] = useState("");
@@ -247,6 +248,7 @@ export function ManuscriptAssistant({
       kind: "assistant",
       scope,
       characterId: null,
+      chapterId: scope === "manuscript" ? chapterId : null,
       chapterIds: [],
       messages: [],
       createdAt: t,
@@ -266,7 +268,7 @@ export function ManuscriptAssistant({
     const sessions = manuscript.sessions.filter((item) => item.id !== session.id);
     if (active?.id === session.id) {
       const remaining = sessions.filter(
-        (item) => item.kind === "assistant" && (item.scope ?? "manuscript") === scope
+        (item) => manuscriptSessionMatchesWorkspace(item, scope, chapterId)
       );
       setActiveId(remaining.at(-1)?.id ?? null);
     }
@@ -351,6 +353,7 @@ export function ManuscriptAssistant({
         kind: "assistant",
         scope,
         characterId: null,
+        chapterId: scope === "manuscript" ? chapterId : null,
         chapterIds: draftChapterIds,
         messages: [],
         createdAt: t,

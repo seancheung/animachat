@@ -5,6 +5,7 @@ import {
   latestManuscriptConversationSession,
   manuscriptChapterContentHash,
   manuscriptConversationKey,
+  manuscriptSessionMatchesWorkspace,
   manuscriptSelectionMatches,
   normalizeManuscript,
   normalizeManuscriptChapter,
@@ -45,9 +46,17 @@ describe("manuscript document", () => {
   it("repairs invalid perspective and drops conversations with missing characters", () => {
     const manuscript = normalizeManuscript({
       perspective: "invalid" as never,
+      chapters: [{ id: "chapter", title: "Chapter" }] as never,
       characters: [{ id: "present", name: "Mira" } as never],
       sessions: [
-        { id: "assistant", kind: "assistant", characterId: null, messages: [] },
+        {
+          id: "assistant",
+          kind: "assistant",
+          scope: "manuscript",
+          characterId: null,
+          chapterId: "chapter",
+          messages: [],
+        },
       ] as never,
       conversations: [
         { id: "keep", characterIds: ["present"], sessions: [] },
@@ -58,6 +67,7 @@ describe("manuscript document", () => {
     expect(manuscript.perspective).toBe("third-limited");
     expect(manuscript.sessions.map((session) => session.id)).toEqual(["assistant"]);
     expect(manuscript.sessions[0].scope).toBe("manuscript");
+    expect(manuscript.sessions[0].chapterId).toBe(manuscript.chapters[0].id);
     expect(manuscript.sessions[0].chapterIds).toEqual([]);
     expect(manuscript.conversations.map((conversation) => conversation.id)).toEqual(["keep"]);
     expect(manuscript.conversations[0].chapterIds).toEqual([]);
@@ -71,6 +81,13 @@ describe("manuscript document", () => {
       ] as never,
       sessions: [
         {
+          id: "second-manuscript",
+          kind: "assistant",
+          scope: "manuscript",
+          chapterId: "also-keep",
+          messages: [],
+        },
+        {
           id: "settings",
           kind: "assistant",
           scope: "settings",
@@ -80,8 +97,49 @@ describe("manuscript document", () => {
         { id: "characters", kind: "assistant", scope: "characters", messages: [] },
       ] as never,
     });
-    expect(manuscript.sessions.map((session) => session.scope)).toEqual(["settings", "characters"]);
-    expect(manuscript.sessions[0].chapterIds).toEqual(["also-keep", "keep"]);
+    expect(manuscript.sessions.map((session) => session.scope)).toEqual([
+      "manuscript",
+      "settings",
+      "characters",
+    ]);
+    expect(manuscript.sessions[0].chapterId).toBe("also-keep");
+    expect(manuscript.sessions[1].chapterId).toBeNull();
+    expect(manuscript.sessions[1].chapterIds).toEqual(["also-keep", "keep"]);
+    expect(manuscript.sessions[2].chapterId).toBeNull();
+    expect(manuscriptSessionMatchesWorkspace(
+      manuscript.sessions[0],
+      "manuscript",
+      "also-keep"
+    )).toBe(true);
+    expect(manuscriptSessionMatchesWorkspace(
+      manuscript.sessions[0],
+      "manuscript",
+      "keep"
+    )).toBe(false);
+    expect(manuscriptSessionMatchesWorkspace(
+      manuscript.sessions[1],
+      "settings",
+      "also-keep"
+    )).toBe(true);
+  });
+
+  it("drops manuscript assistant sessions without a valid owning chapter", () => {
+    const manuscript = normalizeManuscript({
+      chapters: [{ id: "chapter", title: "Chapter" }] as never,
+      sessions: [
+        { id: "missing-owner", kind: "assistant", scope: "manuscript", messages: [] },
+        {
+          id: "invalid-owner",
+          kind: "assistant",
+          scope: "manuscript",
+          chapterId: "missing",
+          messages: [],
+        },
+        { id: "settings", kind: "assistant", scope: "settings", messages: [] },
+      ] as never,
+    });
+    expect(manuscript.sessions.map((session) => session.id)).toEqual(["settings"]);
+    expect(manuscript.sessions[0].chapterId).toBeNull();
   });
 
   it("preserves whether an assistant reply applied streamed fields", () => {
@@ -105,10 +163,12 @@ describe("manuscript document", () => {
 
   it("preserves rejected assistant edits without overriding accepted ones", () => {
     const manuscript = normalizeManuscript({
+      chapters: [{ id: "chapter", title: "Chapter" }] as never,
       sessions: [{
         id: "manuscript",
         kind: "assistant",
         scope: "manuscript",
+        chapterId: "chapter",
         messages: [
           { role: "assistant", content: "Rejected proposal", rejected: true },
           { role: "assistant", content: "Accepted proposal", applied: true, rejected: true },
