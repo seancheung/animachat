@@ -518,8 +518,10 @@ export interface ManuscriptCharacter {
 export interface ManuscriptMessage {
   role: "user" | "assistant";
   content: string;
-  /** This assistant reply streamed structured changes into the manuscript form. */
+  /** This assistant reply's structured changes were accepted and applied. */
   applied?: boolean;
+  /** This assistant edit proposal was explicitly rejected by the author. */
+  rejected?: boolean;
   createdAt: number;
 }
 

@@ -360,41 +360,33 @@ export default function ManuscriptEditorPage() {
     setForm(baselineWithIdentity);
   }
 
-  function applyAi(
-    action: "continue" | "rewrite" | "settings" | "character",
-    value: string | SettingsAssistantUpdate | CharacterDesignUpdate[],
-    selected?: ManuscriptQuote | null
+  function acceptChapterEdit(
+    chapterId: string,
+    baseTitle: string,
+    baseContent: string,
+    proposedTitle: string,
+    proposedContent: string
   ) {
     const previous = formRef.current ?? currentForm;
+    const targetChapter = previous.chapters.find((chapter) => chapter.id === chapterId);
+    if (
+      !targetChapter
+      || targetChapter.title !== baseTitle
+      || targetChapter.content !== baseContent
+    ) {
+      toast.error("The active chapter changed after this proposal was created. Ask the assistant to prepare a new edit.");
+      return false;
+    }
+    if (proposedTitle === baseTitle && proposedContent === baseContent) return false;
     const next = structuredClone(previous);
-    const targetChapter = next.chapters.find((chapter) => chapter.id === activeChapter?.id) ?? next.chapters[0];
-    if (action === "continue" && targetChapter && typeof value === "string") {
-      next.chapters = next.chapters.map((c) => c.id === targetChapter.id ? {
-        ...c,
-        content: `${c.content}${c.content && !c.content.endsWith("\n") ? "\n\n" : ""}${value}`,
-        updatedAt: Date.now(),
-      } : c);
-    } else if (action === "rewrite" && targetChapter && typeof value === "string" && selected) {
-      const chapter = next.chapters.find((c) => c.id === targetChapter.id)!;
-      let { start, end } = selected;
-      if (chapter.content.slice(start, end) !== selected.text) {
-        start = chapter.content.indexOf(selected.text);
-        end = start < 0 ? -1 : start + selected.text.length;
-      }
-      if (start < 0 || end < 0) return toast.error("The selected text changed before the rewrite finished.");
-      chapter.content = chapter.content.slice(0, start) + value + chapter.content.slice(end);
-      chapter.updatedAt = timestamp();
-    } else if ((action === "settings" || action === "character") && typeof value === "object") {
-      const structured = structuredAiNext(
-        previous,
-        action,
-        value as SettingsAssistantUpdate | CharacterDesignUpdate[]
-      );
-      if (!structured) return toast.error("The manuscript changed before the assistant finished. No assistant changes were applied.");
-      commitAi(structured, previous);
-      return;
-    } else return;
+    next.chapters = next.chapters.map((chapter) => chapter.id === chapterId ? {
+      ...chapter,
+      title: proposedTitle,
+      content: proposedContent,
+      updatedAt: timestamp(),
+    } : chapter);
     commitAi(next, previous);
+    return true;
   }
 
   const undo = () => {
@@ -831,7 +823,7 @@ export default function ManuscriptEditorPage() {
                 chapterId={activeChapter?.id ?? ""}
                 quote={tab === "manuscript" ? quote : null}
                 onClearQuote={() => setQuote(null)}
-                onApply={applyAi}
+                onAcceptChapterEdit={acceptChapterEdit}
                 onPreview={previewStructuredAi}
                 onCommitPreview={commitStructuredAiPreview}
                 onDiscardPreview={discardStructuredAiPreview}

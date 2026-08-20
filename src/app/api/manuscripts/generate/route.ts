@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai/manuscriptCharacterDesign";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
+  applyManuscriptChapterEdits,
   parseManuscriptAssistantFields,
   type ManuscriptStructuredAssistantAction,
   type StructuredAssistantResult,
@@ -62,6 +63,7 @@ const ACTIONS = new Set<Action>([
 const FIELDS_OPEN = "<fields>";
 const FIELDS_CLOSE = "</fields>";
 const ELIDED_FIELDS = `${FIELDS_OPEN}(elided — applied to the manuscript form)${FIELDS_CLOSE}`;
+const REJECTED_FIELDS = `${FIELDS_OPEN}(elided — rejected by the author)${FIELDS_CLOSE}`;
 
 function contextOf(
   manuscript: Manuscript,
@@ -368,10 +370,21 @@ export const POST = handler(async (req: Request) => {
       instruction = `Summarize the active chapter faithfully and concisely. Capture the important events, decisions, revelations, character and relationship changes, current state, and unresolved threads needed for later continuity. Return only the summary, with no heading or commentary.`;
       break;
     default:
-      instruction = `Act as the manuscript assistant. Discuss the active chapter, prose, plot, pacing, and continuity concretely. When quoted text is present, treat it as the user's selected manuscript passage. Do not claim to have edited the document; direct prose edits happen through Continue and Rewrite.\n\nSelected quote:\n${body.quote || "(none)"}`;
+      instruction = `Act as the manuscript assistant. Infer the requested behavior from the user's message:
+- For questions, feedback, brainstorming, or analysis, respond conversationally and do not emit a fields block.
+- When the user clearly requests one or more changes to the active chapter, respond concisely and end with one ${FIELDS_OPEN}{ "summary": "short description", "edits": [...] }${FIELDS_CLOSE} proposal. Available edits are:
+  - { "operation": "rename-chapter", "title": "new chapter title" } to rename the active chapter.
+  - { "operation": "append", "text": "new prose" } to continue from the exact chapter ending.
+  - { "operation": "replace-selection", "text": "replacement prose" } to replace Selected quote. This must be the proposal's only prose edit (it may accompany a rename) and is available only when Selected quote is not “(none)”.
+  - { "operation": "replace", "oldText": "exact unique source text", "text": "replacement" } to change or delete text anywhere; use an empty replacement to delete.
+  - { "operation": "insert-before" | "insert-after", "anchor": "exact unique source text", "text": "new prose" } to insert at a specific position.
+Edits apply in listed order. Every oldText or anchor must match exactly once at the point it is used; include enough surrounding source text to make it unique. If the target is unclear or cannot be identified uniquely, ask a clarifying question and do not emit a fields block. Preserve all text outside the requested edits. Emit at most one fields block. Never claim changes were accepted or applied—the user will review a diff and choose Accept or Reject. When quoted text is present but the user only asks to discuss it, treat it as reference and do not edit it.
+
+Selected quote:
+${body.quote || "(none)"}`;
   }
-  if (body.action === "settings-assistant" || body.action === "character-design") {
-    instruction += `\nThe fields block must contain valid JSON. Earlier applied blocks in conversation history may appear as ${ELIDED_FIELDS}; that marker only records a prior application—never emit or copy it yourself.`;
+  if (["assistant", "settings-assistant", "character-design"].includes(body.action)) {
+    instruction += `\nThe fields block must contain valid JSON. Earlier decided blocks in conversation history may appear as ${ELIDED_FIELDS} or ${REJECTED_FIELDS}; those markers only record prior decisions—never emit or copy them yourself.`;
   }
 
   const history = (Array.isArray(body.messages) ? body.messages : [])
@@ -384,7 +397,9 @@ export const POST = handler(async (req: Request) => {
       role: message.role,
       content: message.role === "assistant" && message.applied
         ? `${message.content}\n\n${ELIDED_FIELDS}`
-        : message.content,
+        : message.role === "assistant" && message.rejected
+          ? `${message.content}\n\n${REJECTED_FIELDS}`
+          : message.content,
     }));
   const conversational = ["assistant", "settings-assistant", "character-design"].includes(body.action);
   if (!conversational) {
@@ -467,7 +482,7 @@ export const POST = handler(async (req: Request) => {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`)); } catch { /* disconnected */ }
       };
       let collected = "";
-      const fieldsAction = body.action === "settings-assistant" || body.action === "character-design";
+      const fieldsAction = ["assistant", "settings-assistant", "character-design"].includes(body.action);
       let fieldsBuffer = "";
       let visibleLength = 0;
       let fieldsStart = -1;
@@ -504,6 +519,8 @@ export const POST = handler(async (req: Request) => {
 
       const maybeSendPartial = () => {
         if (!fieldsAction || fieldsStart === -1 || partialBroken) return;
+        // Direct prose operations are atomic; never preview an incomplete continuation or rewrite.
+        if (body.action === "assistant") return;
         const now = Date.now();
         if (now - lastPartialAt < 150) return;
         lastPartialAt = now;
@@ -586,6 +603,7 @@ export const POST = handler(async (req: Request) => {
             let raw = match[1].trim();
             let lastReply = fieldsBuffer;
             let result: StructuredAssistantResult | null = null;
+            let proposedChapter: { title: string; content: string } | null = null;
             let parseError: unknown = null;
             for (let attempt = 0; ; attempt++) {
               try {
@@ -594,8 +612,21 @@ export const POST = handler(async (req: Request) => {
                   raw,
                   body.manuscript
                 );
+                if (result.type === "manuscript-edit") {
+                  proposedChapter = applyManuscriptChapterEdits(
+                    { title: chapter?.title ?? "", content: chapter?.content ?? "" },
+                    result.edits,
+                    typeof body.quote === "string"
+                      && typeof body.quoteStart === "number"
+                      && typeof body.quoteEnd === "number"
+                      ? { text: body.quote, start: body.quoteStart, end: body.quoteEnd }
+                      : null
+                  );
+                }
                 break;
               } catch (error) {
+                result = null;
+                proposedChapter = null;
                 parseError = error;
                 if (attempt >= fixupRetries || abort.signal.aborted) break;
                 console.error(
@@ -635,7 +666,13 @@ export const POST = handler(async (req: Request) => {
               }
             }
             if (result) {
-              if (result.type === "settings-update") send(result);
+              if (result.type === "manuscript-edit" && proposedChapter !== null) {
+                send({
+                  ...result,
+                  proposedTitle: proposedChapter.title,
+                  proposedContent: proposedChapter.content,
+                });
+              } else if (result.type === "settings-update") send(result);
               else if (result.type === "character-updates") send(result);
             } else {
               console.error("manuscript assistant: fields block remained invalid:", parseError);

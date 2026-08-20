@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseManuscriptAssistantFields } from "./manuscriptStructured";
+import {
+  applyManuscriptChapterEdits,
+  parseManuscriptAssistantFields,
+} from "./manuscriptStructured";
 
 const manuscript = {
   characters: [{
@@ -13,6 +16,127 @@ const manuscript = {
 };
 
 describe("manuscript structured assistant fields", () => {
+  it("strictly parses direct manuscript edit proposals", () => {
+    expect(parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({
+        summary: "Continue the scene",
+        edits: [{ operation: "append", text: "The door opened." }],
+      }),
+      manuscript
+    )).toEqual({
+      type: "manuscript-edit",
+      summary: "Continue the scene",
+      edits: [{ operation: "append", text: "The door opened." }],
+    });
+    expect(parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({
+        summary: "Tighten a phrase",
+        edits: [{ operation: "replace", oldText: "very dark", text: "lightless" }],
+      }),
+      manuscript
+    )).toEqual({
+      type: "manuscript-edit",
+      summary: "Tighten a phrase",
+      edits: [{ operation: "replace", oldText: "very dark", text: "lightless" }],
+    });
+    expect(parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({
+        summary: "Add a beat around the selection",
+        edits: [{ operation: "insert-before", anchor: "The bell rang.", text: "She froze. " }],
+      }),
+      manuscript
+    )).toMatchObject({
+      edits: [{ operation: "insert-before", anchor: "The bell rang.", text: "She froze. " }],
+    });
+    expect(parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({
+        summary: "Rename the chapter",
+        edits: [{ operation: "rename-chapter", title: "  The Bell  " }],
+      }),
+      manuscript
+    )).toMatchObject({ edits: [{ operation: "rename-chapter", title: "The Bell" }] });
+  });
+
+  it("rejects malformed manuscript edit proposals", () => {
+    expect(() => parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({ summary: "Delete", edits: [{ operation: "delete", text: "Gone." }] }),
+      manuscript
+    )).toThrow("unsupported operation");
+    expect(() => parseManuscriptAssistantFields(
+      "assistant",
+      JSON.stringify({ summary: "", edits: [{ operation: "append", text: "More." }] }),
+      manuscript
+    )).toThrow("non-empty summary");
+  });
+
+  it("applies append, insertion, replacement, and deletion edits in order", () => {
+    expect(applyManuscriptChapterEdits(
+      { title: "Opening", content: "First line.\n\nSecond line." },
+      [
+        { operation: "insert-after", anchor: "First line.", text: " A new beat." },
+        { operation: "replace", oldText: "Second line.", text: "Revised second line." },
+        { operation: "append", text: "Final line." },
+      ]
+    )).toEqual({
+      title: "Opening",
+      content: "First line. A new beat.\n\nRevised second line.\n\nFinal line.",
+    });
+    expect(applyManuscriptChapterEdits(
+      { title: "Opening", content: "Keep this. Remove this." },
+      [{ operation: "replace", oldText: " Remove this.", text: "" }]
+    )).toEqual({ title: "Opening", content: "Keep this." });
+  });
+
+  it("replaces the exact selected range", () => {
+    expect(applyManuscriptChapterEdits(
+      { title: "Opening", content: "Same phrase, then same phrase." },
+      [{ operation: "replace-selection", text: "a chosen phrase" }],
+      { text: "same phrase", start: 18, end: 29 }
+    )).toEqual({ title: "Opening", content: "Same phrase, then a chosen phrase." });
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Opening", content: "Selected text." },
+      [
+        { operation: "replace-selection", text: "Replacement." },
+        { operation: "append", text: "More." },
+      ],
+      { text: "Selected text.", start: 0, end: 14 }
+    )).toThrow("must be the only prose edit");
+  });
+
+  it("rejects ambiguous anchors and stale selections", () => {
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Opening", content: "again and again." },
+      [{ operation: "replace", oldText: "again", text: "once" }]
+    )).toThrow("not unique");
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Opening", content: "Current text." },
+      [{ operation: "replace-selection", text: "New text." }],
+      { text: "Old text.", start: 0, end: 9 }
+    )).toThrow("no longer matches");
+  });
+
+  it("renames the active chapter atomically with optional prose edits", () => {
+    expect(applyManuscriptChapterEdits(
+      { title: "Chapter 1", content: "Opening text." },
+      [
+        { operation: "rename-chapter", title: "The Arrival" },
+        { operation: "append", text: "A second beat." },
+      ]
+    )).toEqual({
+      title: "The Arrival",
+      content: "Opening text.\n\nA second beat.",
+    });
+    expect(() => applyManuscriptChapterEdits(
+      { title: "Chapter 1", content: "Opening text." },
+      [{ operation: "rename-chapter", title: "Chapter 1" }]
+    )).toThrow("do not change");
+  });
+
   it("strictly parses settings updates", () => {
     expect(parseManuscriptAssistantFields(
       "settings-assistant",

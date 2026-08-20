@@ -5,16 +5,15 @@ import {
   Bot,
   BookOpenText,
   Check,
+  CircleX,
   History,
   MessageSquarePlus,
   Quote,
   Redo2,
   SendHorizontal,
-  Sparkles,
   Square,
   Trash2,
   Undo2,
-  WandSparkles,
 } from "lucide-react";
 import { InputBox } from "@/components/app";
 import { Markdown } from "@/components/Markdown";
@@ -25,6 +24,7 @@ import Dialog from "@/components/ui/dialog";
 import Popover from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
 import type { CharacterDesignUpdate as CharacterDesignUpdatePayload } from "@/lib/ai/manuscriptCharacterDesign";
+import type { ManuscriptChapterEdit } from "@/lib/ai/manuscriptStructured";
 import { streamSse, timestamp, uid } from "@/lib/ui";
 import type {
   Manuscript,
@@ -50,9 +50,82 @@ export interface ManuscriptAssistantActivity {
   stop: () => Promise<void>;
 }
 
-type ApplyAction = "continue" | "rewrite" | "settings" | "character";
-type ApplyValue = string | SettingsAssistantUpdate | CharacterDesignUpdate[];
-type Action = "continue" | "rewrite" | "assistant" | "settings-assistant" | "character-design";
+type Action = "assistant" | "settings-assistant" | "character-design";
+
+interface PendingChapterEdit {
+  sessionId: string;
+  messageCreatedAt: number;
+  chapterId: string;
+  baseTitle: string;
+  baseContent: string;
+  proposedTitle: string;
+  proposedContent: string;
+  summary: string;
+  edits: ManuscriptChapterEdit[];
+  selection: ManuscriptQuote | null;
+}
+
+type ChapterEditProposalDraft = Omit<PendingChapterEdit, "sessionId" | "messageCreatedAt">;
+
+function ChapterEditDiff({ proposal }: { proposal: PendingChapterEdit }) {
+  return (
+    <div className="space-y-3">
+      {proposal.edits.map((edit, index) => {
+        const before = edit.operation === "rename-chapter"
+          ? proposal.baseTitle
+          : edit.operation === "replace-selection"
+            ? proposal.selection?.text ?? ""
+            : edit.operation === "replace"
+              ? edit.oldText
+              : edit.operation === "append" ? "" : edit.anchor;
+        const after = edit.operation === "rename-chapter" ? edit.title : edit.text;
+        const label = edit.operation === "rename-chapter"
+          ? "Rename chapter"
+          : edit.operation === "append"
+            ? "Append at chapter end"
+            : edit.operation === "replace-selection"
+              ? "Replace selected passage"
+              : edit.operation === "replace"
+                ? after ? "Replace text" : "Delete text"
+                : edit.operation === "insert-before" ? "Insert before text" : "Insert after text";
+        const insertedBefore = edit.operation === "insert-before";
+        const insertedAfter = edit.operation === "insert-after";
+        return (
+          <section key={index} className="overflow-hidden rounded-md border border-base-400">
+            <div className="bg-base-300 px-3 py-1.5 text-xs font-medium text-content-300">
+              {index + 1}. {label}
+            </div>
+            <div className="grid grid-cols-2 border-t border-base-400">
+              <div className="min-w-0 border-r border-base-400">
+                <div className="border-b border-base-400 bg-error/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-error">
+                  Before
+                </div>
+                <pre className="max-h-56 min-h-20 overflow-auto whitespace-pre-wrap bg-base-100 px-3 py-2 font-mono text-xs">
+                  {before
+                    ? <span className={insertedBefore || insertedAfter ? "text-content-300" : "text-error"}>{before}</span>
+                    : <span className="italic text-content-400">Chapter end</span>}
+                </pre>
+              </div>
+              <div className="min-w-0">
+                <div className="border-b border-base-400 bg-success/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-success">
+                  After
+                </div>
+                <pre className="max-h-56 min-h-20 overflow-auto whitespace-pre-wrap bg-base-100 px-3 py-2 font-mono text-xs">
+                  {insertedBefore && <span className="text-success">{after}</span>}
+                  {(insertedBefore || insertedAfter) && <span className="text-content-300">{before}</span>}
+                  {insertedAfter && <span className="text-success">{after}</span>}
+                  {!insertedBefore && !insertedAfter && (after
+                    ? <span className="text-success">{after}</span>
+                    : <span className="italic text-content-400">Deleted</span>)}
+                </pre>
+              </div>
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
 
 const PANEL_COPY: Record<ManuscriptAssistantScope, {
   title: string;
@@ -61,8 +134,8 @@ const PANEL_COPY: Record<ManuscriptAssistantScope, {
 }> = {
   manuscript: {
     title: "Manuscript assistant",
-    empty: "Ask about the active chapter, add a direction and continue, or select a passage to rewrite.",
-    placeholder: "Ask about the manuscript or add direction…",
+    empty: "Ask about the active chapter or describe edits anywhere in it. Every proposed change is reviewed before it is applied.",
+    placeholder: "Ask about the manuscript or describe an edit…",
   },
   characters: {
     title: "Character designer",
@@ -82,7 +155,7 @@ export function ManuscriptAssistant({
   chapterId,
   quote,
   onClearQuote,
-  onApply,
+  onAcceptChapterEdit,
   onPreview,
   onCommitPreview,
   onDiscardPreview,
@@ -98,7 +171,13 @@ export function ManuscriptAssistant({
   chapterId: string;
   quote: ManuscriptQuote | null;
   onClearQuote: () => void;
-  onApply: (action: ApplyAction, value: ApplyValue, quote?: ManuscriptQuote | null) => void;
+  onAcceptChapterEdit: (
+    chapterId: string,
+    baseTitle: string,
+    baseContent: string,
+    proposedTitle: string,
+    proposedContent: string
+  ) => boolean;
   onPreview: (
     action: "settings" | "character",
     value: SettingsAssistantUpdate | CharacterDesignUpdate[]
@@ -126,11 +205,22 @@ export function ManuscriptAssistant({
   const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
   const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
   const [pickedChapterIds, setPickedChapterIds] = useState<string[]>([]);
+  const [pendingProposal, setPendingProposal] = useState<PendingChapterEdit | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const proposalRef = useRef<ChapterEditProposalDraft | null>(null);
+  const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const active = assistantSessions.find((session) => session.id === activeId) ?? assistantSessions.at(-1) ?? null;
   const copy = PANEL_COPY[scope];
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = messagesViewportRef.current;
+      if (viewport) viewport.scrollTop = viewport.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active?.messages.length, streaming, drafting]);
 
   async function newSession() {
     if (!active?.messages.length) return;
@@ -204,16 +294,11 @@ export function ManuscriptAssistant({
   }
 
   async function run(action: Action, prompt = input.trim()) {
-    if (busy) return;
-    const conversational = action === "assistant" || action === "settings-assistant" || action === "character-design";
-    if (conversational && !prompt) return;
-    if (action === "rewrite" && !quote?.text.trim()) {
-      toast.warning("Select manuscript text before rewriting.");
-      return;
-    }
+    if (busy || pendingProposal) return;
+    if (!prompt) return;
 
     let session = active;
-    if (conversational && !session) {
+    if (!session) {
       const t = timestamp();
       session = {
         id: uid(),
@@ -230,16 +315,15 @@ export function ManuscriptAssistant({
       await onSaveSessions([...manuscript.sessions, session]);
     }
 
-    const userMessage: ManuscriptMessage | null = conversational
-      ? { role: "user", content: prompt, createdAt: timestamp() }
-      : null;
-    const history = session ? [...session.messages, ...(userMessage ? [userMessage] : [])] : [];
-    if (userMessage && session) await persistMessages(session, history);
-    if (conversational) setInput("");
+    const userMessage: ManuscriptMessage = { role: "user", content: prompt, createdAt: timestamp() };
+    const history = session ? [...session.messages, userMessage] : [];
+    if (session) await persistMessages(session, history);
+    setInput("");
 
     setBusy(true);
     setStreaming("");
     setDrafting(null);
+    proposalRef.current = null;
     let acc = "";
     let previewLanded = false;
     let finalStructuredLanded = false;
@@ -286,6 +370,28 @@ export function ManuscriptAssistant({
         } else if (event.type === "drafting") {
           setDrafting({ label: typeof event.label === "string" ? event.label : null });
         } else if (
+          event.type === "manuscript-edit"
+          && typeof event.summary === "string"
+          && Array.isArray(event.edits)
+          && typeof event.proposedTitle === "string"
+          && typeof event.proposedContent === "string"
+        ) {
+          const chapter = manuscript.chapters.find((item) => item.id === chapterId)
+            ?? manuscript.chapters[0];
+          if (chapter) {
+            proposalRef.current = {
+              chapterId: chapter.id,
+              baseTitle: chapter.title,
+              baseContent: chapter.content,
+              proposedTitle: event.proposedTitle,
+              proposedContent: event.proposedContent,
+              summary: event.summary,
+              edits: event.edits as ManuscriptChapterEdit[],
+              selection: quote,
+            };
+          }
+          setDrafting(null);
+        } else if (
           (event.type === "settings-update-partial" || event.type === "settings-update")
           && event.update && typeof event.update === "object"
         ) {
@@ -330,25 +436,30 @@ export function ManuscriptAssistant({
         onDiscardPreview();
         previewCommitted = true;
       }
-      if (action === "continue" && acc.trim()) {
-        onApply("continue", acc.trim());
-      } else if (action === "rewrite" && acc.trim()) {
-        onApply("rewrite", acc.trim(), quote);
-        onClearQuote();
-      }
     } catch (error) {
       if (!abort.signal.aborted) toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       if (previewLanded && !previewCommitted) onDiscardPreview();
-      if (conversational && session && (acc.trim() || finalStructuredLanded)) {
+      // The SSE callback mutates this ref, which TypeScript cannot observe across the await.
+      const proposal = proposalRef.current as ChapterEditProposalDraft | null;
+      if (session && (acc.trim() || finalStructuredLanded || proposal)) {
+        const replyCreatedAt = timestamp();
         const reply: ManuscriptMessage = {
           role: "assistant",
-          content: acc.trim(),
+          content: acc.trim() || proposal?.summary || "Proposed chapter edits.",
           ...(finalStructuredLanded ? { applied: true } : {}),
-          createdAt: timestamp(),
+          createdAt: replyCreatedAt,
         };
         await persistMessages(session, [...history, reply]);
+        if (proposal) {
+          setPendingProposal({
+            ...proposal,
+            sessionId: session.id,
+            messageCreatedAt: replyCreatedAt,
+          });
+        }
       }
+      proposalRef.current = null;
       abortRef.current = null;
       setBusy(false);
       setStreaming("");
@@ -356,6 +467,53 @@ export function ManuscriptAssistant({
       onActivityChange?.(null);
       resolveStopped();
     }
+  }
+
+  async function markProposalDecision(
+    proposal: PendingChapterEdit,
+    decision: "accepted" | "rejected"
+  ) {
+    const sessions = manuscript.sessions.map((session) => {
+      if (session.id !== proposal.sessionId) return session;
+      return {
+        ...session,
+        messages: session.messages.map((message) => {
+          if (message.createdAt !== proposal.messageCreatedAt || message.role !== "assistant") {
+            return message;
+          }
+          const rest = { ...message };
+          delete rest.applied;
+          delete rest.rejected;
+          return decision === "accepted"
+            ? { ...rest, applied: true }
+            : { ...rest, rejected: true };
+        }),
+        updatedAt: timestamp(),
+      };
+    });
+    await onSaveSessions(sessions);
+  }
+
+  async function acceptProposal() {
+    if (!pendingProposal) return;
+    if (!onAcceptChapterEdit(
+      pendingProposal.chapterId,
+      pendingProposal.baseTitle,
+      pendingProposal.baseContent,
+      pendingProposal.proposedTitle,
+      pendingProposal.proposedContent
+    )) return;
+    if (pendingProposal.edits.some((edit) => edit.operation === "replace-selection")) {
+      onClearQuote();
+    }
+    await markProposalDecision(pendingProposal, "accepted");
+    setPendingProposal(null);
+  }
+
+  async function rejectProposal() {
+    if (!pendingProposal) return;
+    await markProposalDecision(pendingProposal, "rejected");
+    setPendingProposal(null);
   }
 
   const messages = active?.messages ?? [];
@@ -433,7 +591,7 @@ export function ManuscriptAssistant({
         <Button variant="ghost" size="sm" shape="square" title="Redo AI change" disabled={!canRedo || busy} onClick={onRedo}><Redo2 /></Button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
+      <div ref={messagesViewportRef} className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
         {!messages.length && !streaming && (
           <div className="text-xs text-content-400 leading-relaxed py-3">{copy.empty}</div>
         )}
@@ -443,6 +601,11 @@ export function ManuscriptAssistant({
             {message.applied && (
               <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-primary-400/90">
                 <Check /> Applied to the manuscript
+              </div>
+            )}
+            {message.rejected && (
+              <div className="mt-1.5 has-icon flex items-center gap-1 text-xs text-content-400">
+                <CircleX /> Rejected
               </div>
             )}
           </div>
@@ -487,16 +650,6 @@ export function ManuscriptAssistant({
           <BookOpenText />
           {attachedChapterIds.length || null}
         </Button>
-        {scope === "manuscript" && (
-          <>
-            <Button variant="ghost" size="sm" onClick={() => run("continue", input.trim() || "Continue naturally.")} disabled={busy}>
-              <Sparkles /> Continue
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => run("rewrite", input.trim() || "Improve this passage.")} disabled={busy || !quote}>
-              <WandSparkles /> Rewrite
-            </Button>
-          </>
-        )}
         <span className="flex-1" />
         {busy ? (
           <Button variant="danger" size="sm" shape="square" title="Stop" onClick={() => abortRef.current?.abort()}><Square /></Button>
@@ -504,6 +657,23 @@ export function ManuscriptAssistant({
           <Button size="sm" shape="square" title="Send" disabled={!input.trim()} onClick={() => run(sendAction)}><SendHorizontal /></Button>
         )}
       </InputBox>
+
+      <Dialog
+        open={!!pendingProposal}
+        title="Review chapter edits"
+        description={pendingProposal?.summary}
+        size="lg"
+        closable={false}
+        dismissable={false}
+        footer={pendingProposal ? (
+          <>
+            <Button variant="secondary" onClick={() => void rejectProposal()}>Reject</Button>
+            <Button onClick={() => void acceptProposal()}>Accept changes</Button>
+          </>
+        ) : null}
+      >
+        {pendingProposal && <ChapterEditDiff proposal={pendingProposal} />}
+      </Dialog>
 
       <Dialog
         open={chapterPickerOpen}

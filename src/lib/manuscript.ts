@@ -77,6 +77,7 @@ function normalizeMessage(value: Partial<ManuscriptMessage>): ManuscriptMessage 
     role: value.role!,
     content: text(value.content),
     ...(value.applied === true ? { applied: true } : {}),
+    ...(value.rejected === true && value.applied !== true ? { rejected: true } : {}),
     createdAt: timestamp(value.createdAt, now()),
   };
 }

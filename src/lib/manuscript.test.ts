@@ -100,6 +100,23 @@ describe("manuscript document", () => {
     expect(manuscript.sessions[0].messages[1]).not.toHaveProperty("applied");
   });
 
+  it("preserves rejected assistant edits without overriding accepted ones", () => {
+    const manuscript = normalizeManuscript({
+      sessions: [{
+        id: "manuscript",
+        kind: "assistant",
+        scope: "manuscript",
+        messages: [
+          { role: "assistant", content: "Rejected proposal", rejected: true },
+          { role: "assistant", content: "Accepted proposal", applied: true, rejected: true },
+        ],
+      }] as never,
+    });
+    expect(manuscript.sessions[0].messages[0].rejected).toBe(true);
+    expect(manuscript.sessions[0].messages[1].applied).toBe(true);
+    expect(manuscript.sessions[0].messages[1].rejected).toBeUndefined();
+  });
+
   it("canonicalizes fixed conversation members and drops duplicate member sets", () => {
     const manuscript = normalizeManuscript({
       chapters: [{ id: "chapter", title: "Chapter" }] as never,
