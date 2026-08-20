@@ -562,7 +562,7 @@ export default function SettingsPage() {
             <Field label="Output reserve" hint="tokens reserved for the reply">
               <SettingNumber integer min={1} value={settings.outputReserve} def={DEFAULT_SETTINGS.outputReserve} onCommit={(v) => patchSettings({ outputReserve: v })} />
             </Field>
-            <Field label="Co-writer JSON fixups" hint="retries feeding a field-data parse error back to the assistant; 0 = off">
+            <Field label="Assistant JSON fixups" hint="retries feeding invalid field data back to co-writers and manuscript assistants; 0 = off">
               <SettingNumber integer min={0} value={settings.assistFixupRetries} def={DEFAULT_SETTINGS.assistFixupRetries} onCommit={(v) => patchSettings({ assistFixupRetries: v })} />
             </Field>
           </div>

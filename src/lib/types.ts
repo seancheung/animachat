@@ -700,7 +700,7 @@ export interface Settings {
   userRelationshipsEnabled: boolean;
   /** track affinity between characters (group chats); off = no updates, no prompt injection */
   charRelationshipsEnabled: boolean;
-  /** co-writer JSON repair: how many times to feed a fields-block parse error back to the model for a fixup; 0 = off */
+  /** structured-assistant JSON repair: how many times to feed an invalid fields block back to the model for a fixup; 0 = off */
   assistFixupRetries: number;
   /** response-token cap overrides for the prose-sized tasks (sparse — an absent
    *  key means the TASK_MAX_TOKENS_DEFAULTS value; resolve via taskMaxTokens) */

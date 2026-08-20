@@ -14,6 +14,11 @@ import {
 } from "@/lib/ai/manuscriptCharacterDesign";
 import { describePartialProgress, dropOpenArrayElement, parsePartialJson } from "@/lib/ai/partialJson";
 import {
+  parseManuscriptAssistantFields,
+  type ManuscriptStructuredAssistantAction,
+  type StructuredAssistantResult,
+} from "@/lib/ai/manuscriptStructured";
+import {
   manuscriptChapterAttachments,
   manuscriptChapterContextForAction,
   manuscriptGenerationModelTask,
@@ -540,27 +545,66 @@ export const POST = handler(async (req: Request) => {
           if (!parsed?.name) send({ type: "error", message: "The model did not return a valid character sheet." });
           else send({ type: "character", character: parsed });
         } else if (fieldsAction) {
-          const match = fieldsBuffer.match(new RegExp(`${FIELDS_OPEN}([\\s\\S]*?)(?:${FIELDS_CLOSE}|$)`));
+          const fieldsRe = new RegExp(`${FIELDS_OPEN}([\\s\\S]*?)(?:${FIELDS_CLOSE}|$)`);
+          const match = fieldsBuffer.match(fieldsRe);
           if (match) {
-            try {
-              const raw = JSON.parse(match[1].trim()) as Record<string, unknown>;
-              if (body.action === "settings-assistant") {
-                const update: { synopsis?: string; style?: string } = {};
-                if (typeof raw.synopsis === "string") update.synopsis = raw.synopsis;
-                if (typeof raw.style === "string") update.style = raw.style;
-                if (Object.keys(update).length) send({ type: "settings-update", update });
-              } else {
-                const validation = validateCharacterDesignResult(
+            const fixupRetries = truncated ? 0 : Math.max(0, settings.assistFixupRetries);
+            let raw = match[1].trim();
+            let lastReply = fieldsBuffer;
+            let result: StructuredAssistantResult | null = null;
+            let parseError: unknown = null;
+            for (let attempt = 0; ; attempt++) {
+              try {
+                result = parseManuscriptAssistantFields(
+                  body.action as ManuscriptStructuredAssistantAction,
                   raw,
-                  new Set(body.manuscript.characters.map((item) => item.id))
+                  body.manuscript
                 );
-                if (!validation.ok) throw new Error(validation.error);
-                if (validation.updates.length) {
-                  send({ type: "character-updates", updates: validation.updates });
+                break;
+              } catch (error) {
+                parseError = error;
+                if (attempt >= fixupRetries || abort.signal.aborted) break;
+                console.error(
+                  `manuscript assistant: fields block invalid, requesting fixup ${attempt + 1}/${fixupRetries}:`,
+                  error
+                );
+                let fixed = "";
+                try {
+                  for await (const event of streamLlm({
+                    modelRef,
+                    system: packed.request.system,
+                    messages: [
+                      ...packed.request.messages,
+                      { role: "assistant", content: lastReply },
+                      {
+                        role: "user",
+                        content:
+                          `Your ${FIELDS_OPEN} block is invalid: ` +
+                          `${error instanceof Error ? error.message : String(error)}\n` +
+                          `Re-emit the ENTIRE block corrected: reply with only ${FIELDS_OPEN}...${FIELDS_CLOSE} — same content, valid JSON matching the requested schema, no prose.`,
+                      },
+                    ],
+                    maxTokens: responseTokens,
+                    temperature: 0.2,
+                    feature: "manuscriptWrite",
+                    signal: abort.signal,
+                  })) {
+                    if (event.type === "text") fixed += event.text;
+                  }
+                } catch (fixupError) {
+                  console.error("manuscript assistant: fixup request failed:", fixupError);
+                  break;
                 }
+                lastReply = fixed;
+                const fixedMatch = fixed.match(fieldsRe);
+                raw = (fixedMatch ? fixedMatch[1] : fixed).trim();
               }
-            } catch (error) {
-              console.error("manuscript assistant: fields block failed to parse:", error);
+            }
+            if (result) {
+              if (result.type === "settings-update") send(result);
+              else if (result.type === "character-updates") send(result);
+            } else {
+              console.error("manuscript assistant: fields block remained invalid:", parseError);
               send({
                 type: "text",
                 text: truncated
