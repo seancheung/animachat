@@ -19,7 +19,7 @@ import { toast } from "@/components/ui/toast";
 import { useGet } from "@/lib/queries";
 import { api, downloadBlob } from "@/lib/ui";
 import { cn } from "@/utils/cn";
-import { AI_TASKS, DEFAULT_SETTINGS, POV_LABELS, TASK_MAX_TOKENS_DEFAULTS, type CappedTask, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
+import { AI_TASKS, DEFAULT_SETTINGS, POV_LABELS, TASK_MAX_TOKENS_DEFAULTS, type CappedTask, type LlmProxyMode, type Model, type Pov, type Provider, type Settings } from "@/lib/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -432,6 +432,43 @@ export default function SettingsPage() {
                 />
               </Field>
             ))}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">LLM service proxy</h2>
+          <div className="panel p-4 grid md:grid-cols-2 gap-3">
+            <Field
+              label="Proxy mode"
+              hint={
+                settings.llmProxyMode === "auto"
+                  ? "Follow the server's https_proxy/http_proxy environment (including no_proxy and uppercase equivalents)."
+                  : settings.llmProxyMode === "none"
+                    ? "Connect to LLM providers directly, bypassing all proxy environment settings."
+                    : "Route every LLM provider request through the custom HTTP(S) proxy."
+              }
+            >
+              <Select
+                className="w-full"
+                value={settings.llmProxyMode}
+                onChange={(v) => patchSettings({ llmProxyMode: v as LlmProxyMode })}
+                options={[
+                  { value: "auto", label: "Auto (system environment)" },
+                  { value: "custom", label: "Custom proxy" },
+                  { value: "none", label: "None (direct)" },
+                ]}
+              />
+            </Field>
+            {settings.llmProxyMode === "custom" && (
+              <Field label="Proxy URL" hint="HTTP(S) proxy URL, for example http://127.0.0.1:7890">
+                <Input
+                  className="w-full"
+                  placeholder="http://127.0.0.1:7890"
+                  value={settings.llmProxyUrl}
+                  onChange={(v) => patchSettings({ llmProxyUrl: v })}
+                />
+              </Field>
+            )}
           </div>
         </section>
 

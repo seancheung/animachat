@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractJson, streamLlm, type ResolvedModel, type StreamEvent } from "./client";
+import { Agent, EnvHttpProxyAgent, ProxyAgent } from "undici";
+import { AiConfigError, extractJson, llmDispatcher, streamLlm, type ResolvedModel, type StreamEvent } from "./client";
+import { DEFAULT_SETTINGS } from "@/lib/types";
 import type { Model, Provider } from "@/lib/types";
 
 // the real store is async — the mocks must return promises (streamLlm chains
@@ -33,6 +35,30 @@ describe("extractJson", () => {
 
   it("parses arrays", () => {
     expect(extractJson("[1,2,3]")).toEqual([1, 2, 3]);
+  });
+});
+
+describe("llmDispatcher", () => {
+  it("uses the system proxy environment in the default auto mode", () => {
+    expect(llmDispatcher(DEFAULT_SETTINGS)).toBeInstanceOf(EnvHttpProxyAgent);
+  });
+
+  it("uses a direct agent when proxying is disabled", () => {
+    expect(llmDispatcher({ llmProxyMode: "none", llmProxyUrl: "" })).toBeInstanceOf(Agent);
+    expect(llmDispatcher({ llmProxyMode: "none", llmProxyUrl: "" })).not.toBeInstanceOf(ProxyAgent);
+  });
+
+  it("uses and reuses a proxy agent for a custom URL", () => {
+    const first = llmDispatcher({ llmProxyMode: "custom", llmProxyUrl: "http://proxy.test:7890" });
+    const second = llmDispatcher({ llmProxyMode: "custom", llmProxyUrl: " http://proxy.test:7890/ " });
+    expect(first).toBeInstanceOf(ProxyAgent);
+    expect(second).toBe(first);
+  });
+
+  it("rejects a missing, malformed, or unsupported custom proxy URL", () => {
+    expect(() => llmDispatcher({ llmProxyMode: "custom", llmProxyUrl: "" })).toThrow(AiConfigError);
+    expect(() => llmDispatcher({ llmProxyMode: "custom", llmProxyUrl: "not a URL" })).toThrow("invalid");
+    expect(() => llmDispatcher({ llmProxyMode: "custom", llmProxyUrl: "socks5://proxy.test" })).toThrow("http:// or https://");
   });
 });
 

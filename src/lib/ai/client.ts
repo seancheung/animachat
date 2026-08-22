@@ -1,5 +1,6 @@
 import { getModel, getProvider, getSettings, logUsage } from "@/lib/store";
-import type { AiTask, Chat, Model, Provider } from "@/lib/types";
+import type { AiTask, Chat, Model, Provider, Settings } from "@/lib/types";
+import { Agent, EnvHttpProxyAgent, ProxyAgent, type Dispatcher } from "undici";
 
 export interface LlmMessage {
   role: "user" | "assistant";
@@ -92,6 +93,64 @@ function joinUrl(base: string, path: string): string {
   return base.replace(/\/+$/, "") + path;
 }
 
+const directDispatcher = new Agent();
+const envDispatchers = new Map<string, EnvHttpProxyAgent>();
+const customDispatchers = new Map<string, ProxyAgent>();
+
+/** A dispatcher is passed on every LLM fetch so this setting remains authoritative
+ *  even if Node itself was launched with environment-proxy support enabled. */
+export function llmDispatcher(settings: Pick<Settings, "llmProxyMode" | "llmProxyUrl">): Dispatcher {
+  const mode = ["auto", "custom", "none"].includes(settings.llmProxyMode)
+    ? settings.llmProxyMode
+    : "auto";
+
+  if (mode === "none") return directDispatcher;
+
+  if (mode === "custom") {
+    const proxyUrl = settings.llmProxyUrl?.trim();
+    if (!proxyUrl) throw new AiConfigError("Custom LLM proxy URL is not configured.");
+    let parsed: URL;
+    try {
+      parsed = new URL(proxyUrl);
+    } catch {
+      throw new AiConfigError("Custom LLM proxy URL is invalid.");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new AiConfigError("Custom LLM proxy URL must use http:// or https://.");
+    }
+    const normalized = parsed.toString();
+    let dispatcher = customDispatchers.get(normalized);
+    if (!dispatcher) {
+      dispatcher = new ProxyAgent(normalized);
+      customDispatchers.set(normalized, dispatcher);
+    }
+    return dispatcher;
+  }
+
+  // EnvHttpProxyAgent also honors uppercase variants and no_proxy/NO_PROXY.
+  // Keying by the live environment makes runtime env changes take effect without
+  // rebuilding or restarting the app.
+  const envKey = JSON.stringify([
+    process.env.http_proxy,
+    process.env.https_proxy,
+    process.env.no_proxy,
+    process.env.HTTP_PROXY,
+    process.env.HTTPS_PROXY,
+    process.env.NO_PROXY,
+  ]);
+  let dispatcher = envDispatchers.get(envKey);
+  if (!dispatcher) {
+    dispatcher = new EnvHttpProxyAgent();
+    envDispatchers.set(envKey, dispatcher);
+  }
+  return dispatcher;
+}
+
+async function fetchLlm(url: string, init: RequestInit): Promise<Response> {
+  const settings = await getSettings();
+  return fetch(url, { ...init, dispatcher: llmDispatcher(settings) } as RequestInit);
+}
+
 async function* sseLines(res: Response): AsyncGenerator<string> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -143,7 +202,7 @@ async function* streamAnthropic(req: LlmRequest): AsyncGenerator<StreamEvent> {
     },
     model.customBody ?? {}
   );
-  const res = await fetch(joinUrl(provider.baseUrl, "/v1/messages"), {
+  const res = await fetchLlm(joinUrl(provider.baseUrl, "/v1/messages"), {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -203,7 +262,7 @@ async function* streamOpenAi(req: LlmRequest): AsyncGenerator<StreamEvent> {
     },
     model.customBody ?? {}
   );
-  const res = await fetch(joinUrl(provider.baseUrl, "/chat/completions"), {
+  const res = await fetchLlm(joinUrl(provider.baseUrl, "/chat/completions"), {
     method: "POST",
     headers: {
       "content-type": "application/json",

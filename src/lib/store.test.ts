@@ -58,13 +58,21 @@ afterAll(() => dropTestSchema(TEST_SCHEMA));
 
 describe("resetSettings", () => {
   it("clears every stored setting back to the defaults", async () => {
-    await putSettings({ language: "French", typingSpeed: 90, taskMaxTokens: { chat: 2500 } });
+    await putSettings({
+      language: "French",
+      typingSpeed: 90,
+      taskMaxTokens: { chat: 2500 },
+      llmProxyMode: "custom",
+      llmProxyUrl: "http://proxy.test:7890",
+    });
     expect((await getSettings()).language).toBe("French");
     await resetSettings();
     const s = await getSettings();
     expect(s.language).toBe("English");
     expect(s.typingSpeed).toBe(60);
     expect(s.taskMaxTokens).toEqual({});
+    expect(s.llmProxyMode).toBe("auto");
+    expect(s.llmProxyUrl).toBe("");
   });
 });
 

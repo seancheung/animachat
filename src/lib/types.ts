@@ -668,9 +668,16 @@ export function taskMaxTokens(settings: Settings, task: CappedTask): number {
   return typeof v === "number" && v > 0 ? v : TASK_MAX_TOKENS_DEFAULTS[task];
 }
 
+export type LlmProxyMode = "auto" | "custom" | "none";
+
 export interface Settings {
   defaultModelId: string | null;
   taskModels: Partial<Record<AiTask, string | null>>;
+  /** routing for server-side LLM provider requests: system proxy env, an explicit
+   *  proxy URL, or a guaranteed direct connection */
+  llmProxyMode: LlmProxyMode;
+  /** HTTP(S) proxy URL used only when llmProxyMode is "custom" */
+  llmProxyUrl: string;
   /** generate a short AI title after a casual/immersive chat's first exchange */
   titleGenerationEnabled: boolean;
   language: string;
@@ -716,6 +723,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   defaultModelId: null,
   taskModels: {},
+  llmProxyMode: "auto",
+  llmProxyUrl: "",
   titleGenerationEnabled: true,
   language: "English",
   pov: "user1st",

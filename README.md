@@ -27,6 +27,8 @@ Open http://localhost:3000 (or the port Next picks), then:
 
 Data lives in the docker volumes: the database in **Postgres** (`DATABASE_URL`, default `postgres://animachat:animachat@localhost:5432/animachat`), uploaded assets in the **MinIO** bucket (`S3_ENDPOINT`/`S3_BUCKET`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`, defaults matching the compose file). Uploads go from the browser straight to the bucket via presigned URLs — set `S3_PUBLIC_ENDPOINT` to the MinIO address your browser can reach if it differs from the server's view (LAN/docker deploys). The **Settings transfer** panel moves the system configuration (providers, models, keys, preferences) between instances as one JSON file; Library content travels as export bundles.
 
+LLM provider traffic defaults to **Settings → LLM service proxy → Auto**, which follows the server's `https_proxy` / `http_proxy` environment variables (plus `no_proxy` and uppercase equivalents). Choose **Custom** for an explicit HTTP(S) proxy URL or **None** to force direct provider connections.
+
 To run the app itself in Docker too: `docker compose --profile app up -d --build`.
 
 ## Suggested models per task
