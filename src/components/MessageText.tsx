@@ -3,6 +3,15 @@
 import { Fragment, useMemo } from "react";
 import { splitMentions } from "@/lib/mentions";
 
+/** Match double delimiters before the single-star action convention. */
+const BOLD = /(\*\*[^*\n]+\*\*|__[^_\n]+__)/g;
+
+function withBold(text: string) {
+  return text.split(BOLD).map((part, i) =>
+    i % 2 ? <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong> : part
+  );
+}
+
 /** Hide a half-arrived <mention> tag at the streaming tail so raw markup never flashes
  *  during the typewriter reveal (it completes into a chip a few characters later). */
 function hidePartialMentionTail(text: string): string {
@@ -18,15 +27,17 @@ function hidePartialMentionTail(text: string): string {
 }
 
 /**
- * Renders roleplay prose: *actions* italic/tinted, "dialogue" prominent,
+ * Renders chat prose: **bold**, *actions* italic/tinted, "dialogue" prominent,
  * <mention> tags as highlighted @chips.
  * In chat messages a single asterisk means action, not markdown emphasis.
  */
 export function MessageText({ text: rawText, streaming }: { text: string; streaming?: boolean }) {
   const text = streaming ? hidePartialMentionTail(rawText) : rawText;
   const parts = useMemo(() => {
-    const tokens: { kind: "action" | "quote" | "plain" | "mention"; text: string }[] = [];
-    const re = /(\*[^*\n]+\*?)|("[^"\n]*"?)|(“[^”\n]*”?)/g;
+    const tokens: { kind: "bold" | "action" | "quote" | "plain" | "mention"; text: string }[] = [];
+    // Consume even unfinished double-star spans as a unit, so streaming text
+    // never falls through to the single-star action matcher.
+    const re = /(\*\*[^*\n]+(?:\*\*)?\*?)|(__[^_\n]+__)|((?<!\*)\*(?!\*)[^*\n]+\*?)|("[^"\n]*"?)|(“[^”\n]*”?)/g;
     for (const seg of splitMentions(text)) {
       if (seg.type === "mention") {
         tokens.push({ kind: "mention", text: `@${seg.name ?? "all"}` });
@@ -38,7 +49,9 @@ export function MessageText({ text: rawText, streaming }: { text: string; stream
       while ((m = re.exec(seg.text))) {
         if (m.index > last) tokens.push({ kind: "plain", text: seg.text.slice(last, m.index) });
         const t = m[0];
-        if (t.startsWith("*")) tokens.push({ kind: "action", text: t.replace(/^\*|\*$/g, "") });
+        if (t.startsWith("**")) tokens.push({ kind: t.endsWith("**") ? "bold" : "plain", text: t.endsWith("**") ? t.slice(2, -2) : t });
+        else if (t.startsWith("__")) tokens.push({ kind: "bold", text: t.slice(2, -2) });
+        else if (t.startsWith("*")) tokens.push({ kind: "action", text: t.replace(/^\*|\*$/g, "") });
         else tokens.push({ kind: "quote", text: t });
         last = m.index + t.length;
       }
@@ -51,10 +64,12 @@ export function MessageText({ text: rawText, streaming }: { text: string; stream
     <span className={streaming ? "caret" : undefined}>
       {parts.map((p, i) => (
         <Fragment key={i}>
-          {p.kind === "action" ? (
+          {p.kind === "bold" ? (
+            <strong className="font-semibold">{p.text}</strong>
+          ) : p.kind === "action" ? (
             <span className="msg-action">{p.text}</span>
           ) : p.kind === "quote" ? (
-            <span className="msg-quote">{p.text}</span>
+            <span className="msg-quote">{withBold(p.text)}</span>
           ) : p.kind === "mention" ? (
             <span className="msg-mention">{p.text}</span>
           ) : (
