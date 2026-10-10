@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { MIX, useBlip, useChatAudio, useEmotionSfx } from "@/components/chat/audio";
 import { useBubblePacer } from "@/components/chat/bubblePacer";
+import { watchHistoryTop } from "@/components/chat/historyScroll";
 import { useTypewriter } from "@/components/chat/typewriter";
 import { MessageRow } from "@/components/chat/MessageRow";
 import { VNStage, type StageEmotions } from "@/components/chat/VNStage";
@@ -483,22 +484,31 @@ export default function ChatPage() {
   // distance-from-bottom at the moment the fetch starts — restored before paint after
   // the prepend, so the page growing at the top never shoves the reader's place around
   const anchorRef = useRef<number | null>(null);
+  const olderRequestRef = useRef<Promise<unknown> | null>(null);
+  // Both queries must resolve before the scroll container is mounted. In
+  // particular, message bodies can arrive before the chat metadata does.
+  const historyReady = !!data && !!chat && !messagesLoading;
   useEffect(() => {
     const el = topSentinelRef.current;
     const root = scrollRef.current;
-    if (!el || !root) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting || !hasOlder || fetchingOlder) return;
-        anchorRef.current = root.scrollHeight - root.scrollTop;
-        void fetchOlder();
-      },
-      { root, rootMargin: "300px 0px 0px 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
+    if (!historyReady || !el || !root) return;
+    return watchHistoryTop(root, el, () => {
+      if (!hasOlder || fetchingOlder || olderRequestRef.current) return;
+      anchorRef.current = root.scrollHeight - root.scrollTop;
+      const request = fetchOlder({ cancelRefetch: false });
+      olderRequestRef.current = request;
+      // The ref closes the gap before React commits fetchingOlder: scroll and
+      // intersection callbacks can arrive together, and must share one request.
+      void request.then(
+        () => { olderRequestRef.current = null; },
+        () => {
+          olderRequestRef.current = null;
+          anchorRef.current = null;
+        }
+      );
+    });
     // messages.length: re-check visibility after each page lands (short logs keep loading)
-  }, [layout, pictureMode, hasOlder, fetchingOlder, fetchOlder, messages.length]);
+  }, [id, historyReady, pure, layout, pictureMode, hasOlder, fetchingOlder, fetchOlder, messages.length]);
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (anchorRef.current === null || !el) return;
